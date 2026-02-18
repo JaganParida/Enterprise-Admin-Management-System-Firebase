@@ -9,7 +9,8 @@ import PrivateRoute from "./routes/PrivateRoute";
 import Splash from "./components/common/Splash";
 import Landing from "./pages/Landing";
 import Login from "./pages/auth/Login";
-import NotFound from "./pages/NotFound"; // ✅ Import NotFound
+import ForgotPassword from "./pages/auth/ForgotPassword"; // ✅ Naya import add kiya
+import NotFound from "./pages/NotFound";
 
 // Enterprise Features
 import EnterpriseDashboard from "./pages/dashboard/Dashboard";
@@ -54,7 +55,8 @@ function App() {
                ========================================================= */}
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
-
+            <Route path="/forgot-password" element={<ForgotPassword />} />{" "}
+            {/* ✅ Naya route add kiya */}
             {/* =========================================================
                 🔐 PROTECTED ADMIN ROUTES
                ========================================================= */}
@@ -121,7 +123,6 @@ function App() {
                 <Route path="/electricity" element={<ElectricBill />} />
               </Route>
             </Route>
-
             {/* ✅ 404 PAGE (Catches all unknown routes) */}
             <Route path="*" element={<NotFound />} />
           </Routes>
