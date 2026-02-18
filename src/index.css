@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    /* ✅ CHANGED: From Green-Black (#020403) to Neutral Pure Black (#000000) */
+    /* ✅ CHANGED: From text-emerald-50 to Neutral Slate (#f8fafc) */
+    @apply bg-black text-slate-50 antialiased selection:bg-blue-500 selection:text-white;
+  }
+}
+
+/* Scrollbar Styling - Made Neutral/Blue */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-black;
+}
+::-webkit-scrollbar-thumb {
+  /* ✅ CHANGED: Emerald -> Slate/Blue */
+  @apply bg-slate-800 rounded-full hover:bg-blue-600 transition-colors;
+}
+
+/* Normal view: Hide the report */
+.print-only {
+  display: none;
+}
+
+@media print {
+  .no-print,
+  nav,
+  aside,
+  button,
+  .sidebar,
+  .header-actions {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+    color: black !important;
+    background: white !important;
+    width: 100%;
+    padding: 20px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+  }
+  th,
+  td {
+    border: 1px solid #ddd;
+    padding: 12px;
+    text-align: left;
+  }
+  th {
+    background-color: #f2f2f2 !important;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+/* --- TRANSLATE FIXES --- */
+.goog-te-banner-frame,
+#goog-gt-tt,
+.goog-te-balloon-frame {
+  display: none !important;
+}
+body {
+  top: 0 !important;
+  position: static !important;
+}
+.goog-te-menu-frame {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
+  /* ✅ CHANGED: Border to Blue-ish */
+  border: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-radius: 16px !important;
+}
+iframe.goog-te-menu-frame {
+  filter: invert(0.9) hue-rotate(200deg) !important; /* Adjusted for Blue hue */
+}
+.goog-te-gadget-simple {
+  border: none !important;
+  background: transparent !important;
+}
+.goog-te-gadget-icon,
+.goog-te-menu-value span:nth-child(3),
+.goog-te-menu-value span:nth-child(5) {
+  display: none !important;
+}
+
+/* --- GOOGLE TRANSLATE UI CLEANUP --- */
+.goog-te-banner-frame,
+#goog-gt-tt,
+.goog-te-balloon-frame,
+.skiptranslate > iframe {
+  display: none !important;
+}
+
+body {
+  top: 0 !important;
+  position: static !important;
+}
+
+/* Force dark mode styling on the Google menu popup */
+.goog-te-menu-frame {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
+  border: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-radius: 16px !important;
+}
+
+/* This makes the white Google menu look dark */
+iframe.goog-te-menu-frame {
+  filter: invert(0.9) hue-rotate(200deg) !important;
+}
+
+/* Custom Scrollbar for Sidebar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+/* Ensure main content is pushed down on mobile to clear the Top Bar */
+@media (max-width: 768px) {
+  main,
+  .main-content {
+    padding-top: 64px;
+  }
+}
