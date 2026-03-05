@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import productionService from "../../services/productionService";
 import { useUI } from "../../context/UIProvider";
+import { useAuth } from "../../context/AuthContext";
 import { Factory, ArrowLeft, Save, RefreshCcw } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
@@ -12,10 +13,14 @@ const EditProduction = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useUI();
+  const { admin } = useAuth();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  // Audit record state
+  const [auditInfo, setAuditInfo] = useState(null);
 
   const [formData, setFormData] = useState({
     date: "",
@@ -27,7 +32,6 @@ const EditProduction = () => {
   useEffect(() => {
     const fetchLog = async () => {
       try {
-        // ✅ REMOVED ARTIFICIAL TIMEOUT DELAY
         const { data } = await productionService.getProductionById(id);
 
         const formattedDate = data.date
@@ -39,6 +43,14 @@ const EditProduction = () => {
           quantity: data.quantity || "",
           supervisor: data.supervisor || "",
         });
+
+        // Use lastEditedRole agar hai, nahi toh 'Admin'
+        if (data.lastEditedAt) {
+          setAuditInfo({
+            role: data.lastEditedRole || "Admin",
+            at: new Date(data.lastEditedAt).toLocaleString(),
+          });
+        }
       } catch (err) {
         console.error("Fetch Error:", err);
         toast.error("Security Check: Could not retrieve production log data.");
@@ -60,7 +72,10 @@ const EditProduction = () => {
   const executeUpdate = async () => {
     setSaving(true);
     try {
-      await productionService.updateProduction(id, formData);
+      // 👈 Safe Extraction of Role & Email
+      const currentUser = admin?.data ||
+        admin || { email: "Unknown", role: "admin" };
+      await productionService.updateProduction(id, formData, currentUser);
       toast.success("Production record updated successfully.");
       navigate("/enterprise/production");
     } catch (err) {
@@ -138,7 +153,7 @@ const EditProduction = () => {
                   name="productName"
                   value={formData.productName}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 appearance-none transition-all cursor-pointer"
+                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 appearance-none transition-all cursor-pointer"
                   required
                 >
                   <option value="" className="text-emerald-900">
@@ -186,6 +201,18 @@ const EditProduction = () => {
             value={formData.supervisor}
             onChange={handleChange}
           />
+
+          {/* 📝 ROLE AUDIT TRAIL DISPLAY */}
+          {auditInfo && (
+            <div className="pt-2 text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-widest border-t border-emerald-900/10 mt-6 pt-4">
+              Last updated by{" "}
+              <span className="text-emerald-400/70 font-bold tracking-widest">
+                {auditInfo.role}
+              </span>{" "}
+              on {auditInfo.at}
+            </div>
+          )}
+
           <div className="pt-8 flex justify-end gap-4 border-t border-emerald-900/10 mt-2">
             <Button
               type="button"

@@ -1,33 +1,41 @@
 import React, { useState, useEffect, useMemo } from "react";
 import maintenanceService from "../../services/maintenanceService";
 import { useUI } from "../../context/UIProvider";
+import { useAuth } from "../../context/AuthContext";
 import {
   Wrench,
   Truck,
   Calendar,
-  Settings,
-  AlertTriangle,
   IndianRupee,
   Save,
-  Download,
   Trash2,
   Edit2,
   X,
-  FileText,
+  History,
+  Settings,
 } from "lucide-react";
-import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
+import Input from "../../components/common/Input";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const Maintenance = () => {
   const { toast } = useUI();
+  const { admin } = useAuth();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
+  const [warningTooltip, setWarningTooltip] = useState(null);
+  const [historyModal, setHistoryModal] = useState({
+    isOpen: false,
+    data: [],
+    itemName: "",
+  });
+
+  const isManager = admin?.data?.role === "manager";
 
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -40,12 +48,12 @@ const Maintenance = () => {
 
   const fetchLogs = async () => {
     try {
-      // ✅ REMOVED ARTIFICIAL TIMEOUT DELAY
       const { data } = await maintenanceService.getLogs();
-      setLogs(data);
+      // 🚀 CRASH PROOF 1: Data null ya undefined ho toh empty array set karein
+      setLogs(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Fetch error:", err);
-      toast.error("Failed to load maintenance logs.");
+      toast.error("Failed to load maintenance records.");
     } finally {
       setLoading(false);
     }
@@ -56,9 +64,14 @@ const Maintenance = () => {
   }, []);
 
   const stats = useMemo(() => {
+    // 🚀 CRASH PROOF 2: Logs exist karte hain ya nahi, uska check
+    const currentLogs = Array.isArray(logs) ? logs : [];
     return {
-      totalCost: logs.reduce((acc, log) => acc + (log.cost || 0), 0),
-      serviceCount: logs.length,
+      totalCost: currentLogs.reduce(
+        (acc, log) => acc + (Number(log?.cost) || 0),
+        0,
+      ),
+      serviceCount: currentLogs.length,
     };
   }, [logs]);
 
@@ -66,52 +79,56 @@ const Maintenance = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const payload = { ...formData, cost: Number(formData.cost) };
+      const currentUser = admin?.data ||
+        admin || { email: "Unknown", role: "admin" };
+      const payload = { ...formData, cost: Number(formData.cost) || 0 };
       if (editId) {
-        await maintenanceService.updateLog(editId, payload);
-        toast.success("Maintenance log updated!");
+        await maintenanceService.updateLog(editId, payload, currentUser);
+        toast.success("Updated successfully!");
       } else {
-        await maintenanceService.addLog(payload);
-        toast.success("Maintenance logged successfully!");
+        await maintenanceService.addLog(payload, currentUser);
+        toast.success("Logged successfully!");
       }
       resetForm();
       fetchLogs();
     } catch (err) {
-      console.error("Submit Error:", err);
-      toast.error("Failed to save log.");
+      toast.error("Failed to save record.");
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleEdit = (log) => {
+    if (!log) return;
     setEditId(log._id);
     setFormData({
-      date: new Date(log.date).toISOString().split("T")[0],
-      vehicleNo: log.vehicleNo,
-      serviceType: log.serviceType,
+      date: log.date
+        ? new Date(log.date).toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0],
+      vehicleNo: log.vehicleNo || "",
+      serviceType: log.serviceType || "Routine Service",
       garage: log.garage || "",
-      cost: log.cost,
+      cost: log.cost || "",
       description: log.description || "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleDeleteClick = (id) => {
-    setDeleteModal({ isOpen: true, id });
+  const handleDisabledClick = (id) => {
+    setWarningTooltip(id);
+    setTimeout(() => setWarningTooltip(null), 2500);
   };
 
-  const executeDelete = async () => {
-    if (!deleteModal.id) return;
-    try {
-      await maintenanceService.deleteLog(deleteModal.id);
-      toast.info("Log deleted");
-      fetchLogs();
-    } catch (error) {
-      toast.error("Failed to delete log");
-    } finally {
-      setDeleteModal({ isOpen: false, id: null });
-    }
+  const openHistory = (log) => {
+    // 🚀 CRASH PROOF 3: Array spread se pehle type check
+    const historyData = Array.isArray(log?.editHistory)
+      ? [...log.editHistory].reverse()
+      : [];
+    setHistoryModal({
+      isOpen: true,
+      data: historyData,
+      itemName: `${log?.vehicleNo || "Unknown Vehicle"} Service`,
+    });
   };
 
   const resetForm = () => {
@@ -126,83 +143,51 @@ const Maintenance = () => {
     });
   };
 
-  const handleExport = () => {
+  const executeDelete = async () => {
+    if (!deleteModal.id) return;
     try {
-      if (logs.length === 0) return toast.info("No data to export");
-      const headers = [
-        "Date",
-        "Vehicle No",
-        "Service Type",
-        "Garage",
-        "Description",
-        "Cost",
-      ];
-      const rows = logs.map((l) => {
-        const dateStr = `="${new Date(l.date).toLocaleDateString("en-GB")}"`;
-        const garage = `"${(l.garage || "").replace(/"/g, '""')}"`;
-        const desc = `"${(l.description || "").replace(/"/g, '""')}"`;
-        return `${dateStr},${l.vehicleNo},${l.serviceType},${garage},${desc},${l.cost}`;
-      });
-      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute(
-        "download",
-        `Maintenance_Logs_${new Date().toISOString().split("T")[0]}.csv`,
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success("Exported successfully");
-    } catch (error) {
-      toast.error("Failed to export.");
+      await maintenanceService.deleteLog(deleteModal.id);
+      toast.info("Log removed.");
+      fetchLogs();
+    } catch (err) {
+      toast.error("Delete failed.");
+    } finally {
+      setDeleteModal({ isOpen: false, id: null });
     }
   };
 
-  if (loading) return <Loader />;
+  if (loading)
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader />
+      </div>
+    );
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="p-2 bg-amber-500/10 rounded-lg">
-              <Wrench className="text-amber-400" />
-            </div>{" "}
-            Maintenance
-          </h1>
-          <p className="text-amber-200/30 text-sm mt-1 ml-1">
-            Track vehicle repairs, parts, and servicing.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          className="gap-2 text-xs border-amber-900/50 text-amber-400 hover:bg-amber-900/20 rounded-lg"
-          onClick={handleExport}
-        >
-          <Download size={16} /> Export CSV
-        </Button>
-      </div>
+      <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+        <div className="p-2 bg-amber-500/10 rounded-lg">
+          <Wrench className="text-amber-400" />
+        </div>{" "}
+        Maintenance Logs
+      </h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* --- FORM SECTION --- */}
         <div
-          className={`bg-[#020617]/40 backdrop-blur-md border p-6 rounded-2xl shadow-xl relative overflow-hidden transition-colors duration-300 ${editId ? "border-amber-500/40 bg-amber-950/20" : "border-amber-500/10"}`}
+          className={`bg-[#050a08] border p-6 rounded-2xl shadow-xl relative transition-colors ${editId ? "border-amber-500/40 bg-amber-950/10" : "border-amber-900/30"}`}
         >
-          <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/5 rounded-full blur-3xl" />
-          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-amber-500/5">
-            <div className="p-2 bg-amber-600/20 rounded-lg text-amber-400 border border-amber-400/20 shadow-sm">
-              {editId ? <Edit2 size={18} /> : <Settings size={18} />}
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-white tracking-tight">
-                {editId ? "Update Record" : "Log Maintenance"}
-              </h3>
-            </div>
+          <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-500/5 blur-3xl rounded-full" />
           </div>
-
+          <h3 className="text-lg font-semibold text-white mb-6 flex items-center gap-2 relative z-10">
+            {editId ? (
+              <Edit2 size={18} className="text-amber-400" />
+            ) : (
+              <Settings size={18} className="text-amber-400" />
+            )}{" "}
+            {editId ? "Update Entry" : "Log Service"}
+          </h3>
           <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
             <Input
               label="Date"
@@ -216,7 +201,7 @@ const Maintenance = () => {
             />
             <Input
               label="Vehicle No."
-              placeholder="OD-02-A-1234"
+              placeholder="OD-02..."
               value={formData.vehicleNo}
               onChange={(e) =>
                 setFormData({ ...formData, vehicleNo: e.target.value })
@@ -224,209 +209,199 @@ const Maintenance = () => {
               icon={Truck}
               required
             />
-
-            <div className="relative">
-              <label className="block text-[10px] font-bold text-amber-200/60 uppercase tracking-widest mb-2 ml-1">
-                Service Type
-              </label>
-              <select
-                className="w-full px-4 py-3 bg-[#020403]/60 border border-amber-900/40 rounded-xl text-amber-50 outline-none focus:border-amber-500/50 appearance-none font-medium transition-colors"
-                value={formData.serviceType}
-                onChange={(e) =>
-                  setFormData({ ...formData, serviceType: e.target.value })
-                }
-              >
-                <option
-                  value="Routine Service"
-                  className="bg-[#020403] text-amber-100"
-                >
-                  Routine Service
-                </option>
-                <option
-                  value="Engine Repair"
-                  className="bg-[#020403] text-amber-100"
-                >
-                  Engine Repair
-                </option>
-                <option
-                  value="Tyre Replacement"
-                  className="bg-[#020403] text-amber-100"
-                >
-                  Tyre Replacement
-                </option>
-                <option
-                  value="Body Work"
-                  className="bg-[#020403] text-amber-100"
-                >
-                  Body Work
-                </option>
-                <option
-                  value="Electrical"
-                  className="bg-[#020403] text-amber-100"
-                >
-                  Electrical
-                </option>
-                <option value="Other" className="bg-[#020403] text-amber-100">
-                  Other
-                </option>
-              </select>
-              <div className="absolute right-4 top-[38px] pointer-events-none text-amber-500/50">
-                ▼
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Garage / Mechanic"
-                placeholder="Auto Care"
-                value={formData.garage}
-                onChange={(e) =>
-                  setFormData({ ...formData, garage: e.target.value })
-                }
-              />
-              <Input
-                label="Total Cost"
-                type="number"
-                placeholder="0"
-                value={formData.cost}
-                onChange={(e) =>
-                  setFormData({ ...formData, cost: e.target.value })
-                }
-                icon={IndianRupee}
-                required
-              />
-            </div>
-
             <Input
-              label="Description / Parts"
-              placeholder="Changed oil and filter"
-              value={formData.description}
+              label="Cost (₹)"
+              type="number"
+              value={formData.cost}
               onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
+                setFormData({ ...formData, cost: e.target.value })
               }
-              icon={FileText}
+              icon={IndianRupee}
+              required
             />
-
             <div className="flex gap-2 pt-2">
               {editId && (
-                <Button
+                <button
                   type="button"
-                  variant="secondary"
                   onClick={resetForm}
-                  className="flex-1 bg-transparent border-amber-900/50 text-amber-200/50 hover:text-white rounded-lg"
+                  className="p-3 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors"
                 >
-                  <X size={18} className="mr-1" /> Cancel
-                </Button>
+                  <X size={18} />
+                </button>
               )}
               <Button
                 type="submit"
-                className="flex-1 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 border-none py-3 rounded-lg font-semibold text-sm tracking-wide shadow-md"
+                className="flex-1 bg-gradient-to-r from-amber-600 to-orange-600 rounded-lg shadow-md"
                 disabled={submitting}
               >
-                <Save size={16} className="mr-2" />{" "}
-                {editId ? "Update Record" : "Save Record"}
+                <Save size={16} className="mr-2" /> {editId ? "Update" : "Save"}
               </Button>
             </div>
           </form>
         </div>
 
-        {/* --- STATS & TABLE SECTION --- */}
+        {/* --- LIST SECTION --- */}
         <div className="lg:col-span-2 space-y-6">
           <div className="grid grid-cols-2 gap-4">
-            <StatCard
-              title="Total Spent"
-              value={`₹ ${stats.totalCost.toLocaleString()}`}
-              icon={IndianRupee}
-              color="amber"
-            />
-            <StatCard
-              title="Services Logged"
-              value={stats.serviceCount}
-              icon={AlertTriangle}
-              color="orange"
-            />
+            <div className="p-4 bg-amber-900/10 border border-amber-500/10 rounded-2xl text-center">
+              <p className="text-[10px] text-amber-200/30 uppercase font-bold mb-1 tracking-widest">
+                Total Spent
+              </p>
+              <h4 className="text-xl font-bold text-white">
+                ₹ {(stats.totalCost || 0).toLocaleString()}
+              </h4>
+            </div>
+            <div className="p-4 bg-amber-900/10 border border-amber-500/10 rounded-2xl text-center">
+              <p className="text-[10px] text-amber-200/30 uppercase font-bold mb-1 tracking-widest">
+                Trips Logged
+              </p>
+              <h4 className="text-xl font-bold text-white">
+                {stats.serviceCount || 0}
+              </h4>
+            </div>
           </div>
 
-          <div className="bg-[#020617]/40 backdrop-blur-md border border-amber-500/10 rounded-2xl shadow-xl overflow-hidden flex flex-col w-full">
-            <div className="p-6 border-b border-amber-500/5 bg-white/[0.01]">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Wrench size={18} className="text-amber-500" />
+          <div className="bg-[#050a08] border border-emerald-900/20 rounded-2xl shadow-xl overflow-visible relative">
+            <div className="p-5 border-b border-emerald-900/20 bg-white/[0.01]">
+              <h3 className="text-lg font-semibold text-white">
                 Service History
               </h3>
             </div>
-
-            <div className="overflow-x-auto w-full custom-scrollbar p-1">
-              <table className="w-full text-left border-collapse min-w-[700px]">
-                <thead className="bg-[#020617] text-amber-200/30 text-[10px] uppercase font-bold tracking-wider border-b border-amber-500/10 sticky top-0 z-10">
+            <div className="overflow-x-auto p-1">
+              <table className="w-full text-left min-w-[750px]">
+                <thead className="bg-[#020403] text-amber-100/40 text-[10px] uppercase font-bold tracking-wider">
                   <tr>
-                    <th className="py-4 px-5">Date</th>
-                    <th className="py-4 px-5">Vehicle</th>
-                    <th className="py-4 px-5">Service Details</th>
-                    <th className="py-4 px-5 text-right">Cost</th>
-                    <th className="py-4 px-5 text-right">Actions</th>
+                    <th className="p-4">Date</th>
+                    <th className="p-4">Vehicle & Role</th>
+                    <th className="p-4">Service Type</th>
+                    <th className="p-4 text-right">Cost</th>
+                    <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="text-sm text-amber-100/70 divide-y divide-amber-500/5">
-                  {logs.length > 0 ? (
-                    logs.map((log) => (
+                <tbody className="text-sm text-amber-50/70 divide-y divide-emerald-900/10">
+                  {logs.map((log) => {
+                    // 🚀 CRASH PROOF 4: Optional chaining for array indexing
+                    const historyArray = Array.isArray(log?.editHistory)
+                      ? log.editHistory
+                      : [];
+                    const latestEdit =
+                      historyArray.length > 0
+                        ? historyArray[historyArray.length - 1]
+                        : null;
+
+                    return (
                       <tr
                         key={log._id}
-                        className="hover:bg-amber-400/[0.03] group transition-colors"
+                        className="hover:bg-amber-400/[0.02] transition-colors group"
                       >
-                        <td className="p-4 text-amber-200/40 text-xs font-mono whitespace-nowrap">
-                          {new Date(log.date).toLocaleDateString("en-GB")}
+                        <td className="p-4 font-mono text-xs align-middle">
+                          {log.date
+                            ? new Date(log.date).toLocaleDateString("en-GB")
+                            : "N/A"}
                         </td>
-                        <td className="p-4">
+                        <td className="p-4 align-middle">
                           <div className="font-medium text-white whitespace-nowrap">
-                            {log.vehicleNo}
+                            {log.vehicleNo || "N/A"}
                           </div>
+                          {historyArray.length > 0 ? (
+                            <div
+                              onClick={() => openHistory(log)}
+                              className="mt-2 flex flex-col gap-0.5 cursor-pointer bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 p-1.5 rounded-lg transition-all w-max whitespace-nowrap"
+                            >
+                              <div className="text-[10px] font-mono text-amber-400/90 flex items-center gap-1 uppercase tracking-widest font-bold leading-none">
+                                <History size={10} />{" "}
+                                {latestEdit?.role || "ADMIN"}
+                                {historyArray.length > 1 && (
+                                  <span className="text-[8px] opacity-60 ml-1">
+                                    +{historyArray.length - 1} MORE
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[8px] text-amber-200/30 ml-4">
+                                {latestEdit?.at
+                                  ? new Date(latestEdit.at).toLocaleString(
+                                      "en-GB",
+                                      {
+                                        day: "2-digit",
+                                        month: "short",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      },
+                                    )
+                                  : ""}
+                              </span>
+                            </div>
+                          ) : log.lastEditedRole ? (
+                            <div className="text-[9px] font-mono text-amber-400/50 font-bold mt-1.5 uppercase tracking-widest flex flex-col gap-0.5">
+                              <span>✍️ {log.lastEditedRole}</span>
+                              {log.lastEditedAt && (
+                                <span className="text-amber-200/20 font-medium ml-4">
+                                  {new Date(log.lastEditedAt).toLocaleString(
+                                    "en-GB",
+                                    {
+                                      day: "2-digit",
+                                      month: "short",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    },
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-[9px] text-amber-200/30 mt-1 uppercase font-bold tracking-widest">
+                              {log.createdRole || "ADMIN"}
+                            </div>
+                          )}
                         </td>
-                        <td className="p-4">
-                          <div className="font-semibold text-amber-400/80 text-xs uppercase tracking-wide mb-0.5">
-                            {log.serviceType}
+                        <td className="p-4 align-middle">
+                          <div className="text-amber-400/80 font-bold text-xs uppercase tracking-wide">
+                            {log.serviceType || "Routine"}
                           </div>
-                          <div
-                            className="text-xs text-amber-200/60 max-w-[200px] truncate"
-                            title={log.description || log.garage}
-                          >
+                          <div className="text-[10px] opacity-40 line-clamp-1">
                             {log.description || log.garage || "-"}
                           </div>
                         </td>
-                        <td className="p-4 text-right whitespace-nowrap">
-                          <div className="font-mono text-white font-medium">
-                            ₹ {log.cost.toLocaleString()}
-                          </div>
+                        <td className="p-4 text-right font-bold text-white align-middle">
+                          ₹{(Number(log.cost) || 0).toLocaleString()}
                         </td>
-                        <td className="p-4 text-right">
-                          <div className="flex justify-end gap-2">
+                        <td className="p-4 align-middle">
+                          <div className="flex justify-end gap-2 items-center relative">
                             <button
                               onClick={() => handleEdit(log)}
-                              className="p-1.5 text-amber-200/60 hover:text-amber-400 hover:bg-amber-500/10 rounded-md transition-colors"
-                              title="Edit"
+                              className="p-2 text-amber-100/40 hover:text-amber-400 transition-colors"
                             >
                               <Edit2 size={16} />
                             </button>
-                            <button
-                              onClick={() => handleDeleteClick(log._id)}
-                              className="p-1.5 text-rose-200/60 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            <div className="relative">
+                              <button
+                                onClick={() =>
+                                  isManager
+                                    ? handleDisabledClick(log._id)
+                                    : setDeleteModal({
+                                        isOpen: true,
+                                        id: log._id,
+                                      })
+                                }
+                                className={`p-2 rounded-lg transition-colors ${isManager ? "opacity-30 cursor-not-allowed" : "hover:text-rose-500"}`}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                              {/* 🔥 TOOLTIP FIX: High Z-Index & Container escape */}
+                              {warningTooltip === log._id && (
+                                <div className="absolute bottom-full right-0 mb-2 z-[9999] animate-in fade-in zoom-in-95 duration-200">
+                                  <div className="bg-[#050a08] border border-red-500/30 text-red-400 text-[10px] uppercase font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-2xl">
+                                    🚫 Action Denied
+                                  </div>
+                                  <div className="absolute -bottom-1 right-3 w-2 h-2 bg-[#050a08] border-b border-r border-red-500/30 rotate-45" />
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan="5"
-                        className="text-center py-10 text-amber-200/20 italic"
-                      >
-                        No maintenance records found.
-                      </td>
-                    </tr>
-                  )}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -434,32 +409,73 @@ const Maintenance = () => {
         </div>
       </div>
 
+      {/* --- HISTORY MODAL --- */}
+      {historyModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#050a08] border border-amber-900/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-amber-900/20 flex justify-between items-center bg-[#020403]">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <History size={18} className="text-amber-500" /> Log History
+              </h3>
+              <button
+                onClick={() =>
+                  setHistoryModal({ isOpen: false, data: [], itemName: "" })
+                }
+                className="text-emerald-100/40 hover:text-white p-1 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5 max-h-[60vh] overflow-y-auto space-y-3">
+              {historyModal.data.map((edit, idx) => (
+                <div
+                  key={idx}
+                  className="flex justify-between items-center bg-[#020403] p-4 rounded-xl border border-amber-900/20 group hover:border-emerald-500/30 transition-colors"
+                >
+                  <div className="flex items-center gap-3 relative z-10">
+                    <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 font-black text-sm uppercase shadow-inner">
+                      {edit.role ? edit.role.charAt(0) : "A"}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-emerald-100 uppercase tracking-widest">
+                        {edit.role || "Admin"}
+                      </p>
+                      <p className="text-[9px] text-emerald-100/30 font-mono mt-0.5">
+                        {edit.by}
+                      </p>
+                      <p className="text-[10px] text-amber-400/60 font-mono mt-1">
+                        {new Date(edit.at).toLocaleString("en-GB")}
+                      </p>
+                    </div>
+                  </div>
+                  {idx === 0 && (
+                    <span className="relative z-10 text-[9px] bg-amber-500/20 text-emerald-400 px-2 py-1 rounded-md uppercase font-black border border-emerald-500/20">
+                      Latest
+                    </span>
+                  )}
+                </div>
+              ))}
+              {historyModal.data.length === 0 && (
+                <p className="text-center py-10 text-white/20 italic">
+                  No edit history available.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ isOpen: false, id: null })}
         onConfirm={executeDelete}
         title="Delete Record?"
-        message="Are you sure you want to delete this maintenance record? This cannot be undone."
+        message="Are you sure you want to delete this maintenance record?"
         confirmText="Delete"
-        cancelText="Cancel"
         isDestructive={true}
       />
     </div>
   );
 };
-
-const StatCard = ({ title, value, icon: Icon, color }) => (
-  <div className="p-5 bg-[#020617]/40 backdrop-blur-md border border-amber-500/10 rounded-2xl flex flex-col items-center text-center hover:bg-amber-600/5 hover:border-amber-500/30 transition-all cursor-default group relative overflow-hidden">
-    <div
-      className={`p-2.5 rounded-xl mb-3 border text-${color}-400 bg-${color}-500/10 border-${color}-400/20 group-hover:scale-110 transition-transform`}
-    >
-      <Icon size={20} />
-    </div>
-    <p className="relative z-10 text-[10px] text-amber-200/30 uppercase font-bold tracking-wider mb-1">
-      {title}
-    </p>
-    <h4 className="relative z-10 text-xl font-bold text-white">{value}</h4>
-  </div>
-);
 
 export default Maintenance;

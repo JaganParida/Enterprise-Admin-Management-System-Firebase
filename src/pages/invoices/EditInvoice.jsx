@@ -1,18 +1,33 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import invoiceService from "../../services/invoiceService";
 import { useUI } from "../../context/UIProvider";
-import { useAuth } from "../../context/AuthContext"; // 👈 Import kiya
-import { Plus, Trash2, Save, FileText } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
+import {
+  Plus,
+  Trash2,
+  Save,
+  FileText,
+  ArrowLeft,
+  RefreshCcw,
+} from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
+import Loader from "../../components/common/Loader";
+import ConfirmDialog from "../../components/common/ConfirmDialog";
 
-const CreateInvoice = () => {
+const EditInvoice = () => {
+  const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useUI();
-  const { admin } = useAuth(); // 👈 Login details
-  const [loading, setLoading] = useState(false);
+  const { admin } = useAuth();
 
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [auditInfo, setAuditInfo] = useState(null);
+
+  // Invoice State
   const [client, setClient] = useState({
     name: "",
     phone: "",
@@ -23,10 +38,9 @@ const CreateInvoice = () => {
     { id: 1, name: "", quantity: 1, price: 0, total: 0 },
   ]);
   const [gstRate, setGstRate] = useState(18);
-  const [invoiceDate, setInvoiceDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
+  const [invoiceDate, setInvoiceDate] = useState("");
   const [status, setStatus] = useState("Pending");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
 
   const [totals, setTotals] = useState({
     subTotal: 0,
@@ -35,15 +49,42 @@ const CreateInvoice = () => {
   });
 
   useEffect(() => {
+    const fetchInvoice = async () => {
+      try {
+        const { data } = await invoiceService.getInvoiceById(id);
+        setClient(data.client);
+        setItems(data.items);
+        setGstRate(data.gstRate);
+        setInvoiceDate(data.date);
+        setStatus(data.status);
+        setInvoiceNumber(data.invoiceNumber);
+
+        if (data.lastEditedAt) {
+          setAuditInfo({
+            role: data.lastEditedRole || "Admin",
+            at: new Date(data.lastEditedAt).toLocaleString(),
+          });
+        }
+      } catch (error) {
+        console.error("Fetch Error:", error);
+        toast.error("Could not load invoice data.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInvoice();
+  }, [id]);
+
+  useEffect(() => {
     const subTotal = items.reduce((acc, item) => acc + (item.total || 0), 0);
     const gstAmount = (subTotal * gstRate) / 100;
     const grandTotal = subTotal + gstAmount;
     setTotals({ subTotal, gstAmount, grandTotal });
   }, [items, gstRate]);
 
-  const handleItemChange = (id, field, value) => {
+  const handleItemChange = (itemId, field, value) => {
     const newItems = items.map((item) => {
-      if (item.id === id) {
+      if (item.id === itemId) {
         const updatedItem = { ...item, [field]: value };
         const qty = parseFloat(updatedItem.quantity) || 0;
         const price = parseFloat(updatedItem.price) || 0;
@@ -60,17 +101,20 @@ const CreateInvoice = () => {
       ...items,
       { id: Date.now(), name: "", quantity: 1, price: 0, total: 0 },
     ]);
-
-  const removeItem = (id) => {
-    if (items.length > 1) setItems(items.filter((item) => item.id !== id));
+  const removeItem = (itemId) => {
+    if (items.length > 1) setItems(items.filter((item) => item.id !== itemId));
   };
 
-  const handleSubmit = async (e) => {
+  const handleFormSubmitClick = (e) => {
     e.preventDefault();
-    setLoading(true);
+    setIsDialogOpen(true);
+  };
 
+  const executeUpdate = async () => {
+    setSaving(true);
     if (!client.name) {
-      setLoading(false);
+      setSaving(false);
+      setIsDialogOpen(false);
       return toast.error("Client name is required");
     }
 
@@ -83,36 +127,49 @@ const CreateInvoice = () => {
       gstAmount: totals.gstAmount,
       grandTotal: totals.grandTotal,
       status,
+      invoiceNumber,
     };
 
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
-      await invoiceService.createInvoice(invoiceData, currentUser); // 👈 User pass kiya
-      toast.success("Invoice created successfully!");
+      await invoiceService.updateInvoice(id, invoiceData, currentUser);
+      toast.success("Invoice updated successfully!");
       navigate("/enterprise/invoices");
     } catch (error) {
-      console.error("Error creating invoice:", error);
-      toast.error(error.response?.data?.message || "Failed to create invoice");
+      console.error("Error updating invoice:", error);
+      toast.error(error.response?.data?.message || "Failed to update invoice");
     } finally {
-      setLoading(false);
+      setSaving(false);
+      setIsDialogOpen(false);
     }
   };
 
+  if (loading)
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader />
+      </div>
+    );
+
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Header */}
+      <button
+        onClick={() => navigate("/enterprise/invoices")}
+        className="flex items-center text-emerald-100/50 hover:text-white mb-2 transition-colors"
+      >
+        <ArrowLeft size={18} className="mr-2" /> Back to Invoices
+      </button>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20">
               <FileText size={24} />
             </div>
-            Create New Invoice
+            Edit Invoice:{" "}
+            <span className="text-emerald-400">{invoiceNumber}</span>
           </h1>
-          <p className="text-emerald-100/40 text-sm mt-1 ml-1">
-            Generate a new bill for client.
-          </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
           <select
@@ -121,7 +178,8 @@ const CreateInvoice = () => {
             className="bg-[#050a08] border border-emerald-900/30 text-emerald-100 text-sm rounded-xl px-4 py-3 sm:py-2 outline-none focus:border-emerald-500/50 w-full sm:w-auto"
           >
             <option value="Pending">Pending</option>
-            <option value="Paid">Paid (Add to Revenue)</option>
+            <option value="Paid">Paid</option>
+            <option value="Cancelled">Cancelled</option>
           </select>
           <div className="text-emerald-100/60 text-sm font-mono border border-emerald-900/30 px-4 py-3 sm:py-2 rounded-xl bg-[#050a08] w-full sm:w-auto text-center sm:text-left">
             Date:{" "}
@@ -130,32 +188,28 @@ const CreateInvoice = () => {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <form onSubmit={handleFormSubmitClick} className="space-y-8">
         {/* Client Details */}
         <div className="bg-[#050a08] p-6 md:p-8 rounded-2xl border border-emerald-900/30 shadow-lg relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl rounded-full pointer-events-none"></div>
           <h3 className="text-lg font-bold text-white mb-6 border-b border-emerald-900/20 pb-4 flex items-center gap-2">
-            <span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>
+            <span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>{" "}
             Client Details
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Input
               label="Client Name"
-              placeholder="e.g. Ramesh Textiles"
               value={client.name}
               onChange={(e) => setClient({ ...client, name: e.target.value })}
               required
             />
             <Input
               label="Phone Number"
-              placeholder="e.g. 9876543210"
               value={client.phone}
               onChange={(e) => setClient({ ...client, phone: e.target.value })}
               required
             />
             <Input
               label="Address"
-              placeholder="Full billing address"
               value={client.address}
               onChange={(e) =>
                 setClient({ ...client, address: e.target.value })
@@ -164,7 +218,6 @@ const CreateInvoice = () => {
             />
             <Input
               label="GSTIN (Optional)"
-              placeholder="e.g. 22AAAAA0000A1Z5"
               value={client.gst}
               onChange={(e) => setClient({ ...client, gst: e.target.value })}
             />
@@ -174,8 +227,8 @@ const CreateInvoice = () => {
         {/* Items */}
         <div className="bg-[#050a08] p-6 md:p-8 rounded-2xl border border-emerald-900/30 shadow-lg">
           <h3 className="text-lg font-bold text-white mb-6 border-b border-emerald-900/20 pb-4 flex items-center gap-2">
-            <span className="w-1.5 h-6 bg-teal-500 rounded-full"></span>
-            Invoice Items
+            <span className="w-1.5 h-6 bg-teal-500 rounded-full"></span> Invoice
+            Items
           </h3>
           <div className="overflow-x-auto pb-4 custom-scrollbar">
             <table className="w-full text-left mb-4 min-w-[750px]">
@@ -194,8 +247,7 @@ const CreateInvoice = () => {
                     <td className="py-4 pr-3 pl-2">
                       <input
                         type="text"
-                        className="w-full bg-[#020403] border border-emerald-900/30 rounded-lg px-4 py-3 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm placeholder:text-emerald-900/50"
-                        placeholder="Item name"
+                        className="w-full bg-[#020403] border border-emerald-900/30 rounded-lg px-4 py-3 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm"
                         value={item.name}
                         onChange={(e) =>
                           handleItemChange(item.id, "name", e.target.value)
@@ -309,6 +361,16 @@ const CreateInvoice = () => {
           </div>
         </div>
 
+        {auditInfo && (
+          <div className="pt-2 text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-widest border-t border-emerald-900/10 mt-6 pt-4">
+            Last updated by{" "}
+            <span className="text-emerald-400/70 font-bold tracking-widest">
+              {auditInfo.role}
+            </span>{" "}
+            on {auditInfo.at}
+          </div>
+        )}
+
         <div className="flex flex-col-reverse sm:flex-row justify-end gap-4 pb-8">
           <Button
             type="button"
@@ -316,19 +378,34 @@ const CreateInvoice = () => {
             onClick={() => navigate("/enterprise/invoices")}
             className="w-full sm:w-auto text-emerald-100/60 hover:text-white"
           >
-            Discard
+            Discard Changes
           </Button>
           <Button
             type="submit"
             className="w-full sm:w-auto px-8 shadow-emerald-500/20"
-            disabled={loading}
+            disabled={saving}
           >
-            <Save size={18} /> {loading ? "Generating..." : "Generate Invoice"}
+            {saving ? (
+              <RefreshCcw size={18} className="animate-spin" />
+            ) : (
+              <Save size={18} />
+            )}
+            {saving ? " Updating..." : " Update Invoice"}
           </Button>
         </div>
       </form>
+
+      <ConfirmDialog
+        isOpen={isDialogOpen}
+        onClose={() => setIsDialogOpen(false)}
+        onConfirm={executeUpdate}
+        title="Update Invoice"
+        message="Are you sure you want to save changes to this invoice?"
+        confirmText="Save Update"
+        isDestructive={false}
+      />
     </div>
   );
 };
 
-export default CreateInvoice;
+export default EditInvoice;

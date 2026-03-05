@@ -6,6 +6,22 @@ import {
   signOut,
 } from "firebase/auth";
 
+// 🔒 STRICT SECURITY & ROLES: Yahan email ke sath role define karna hai
+const ALLOWED_USERS = {
+  "jagan.parida.dev@gmail.com": "admin", // Admin ko sab access hai
+  "jaganparida39064@gmail.com": "manager", // Manager sirf view aur edit karega, delete nahi
+};
+
+// Helper function: Email check karne aur role nikalne ke liye
+const verifyAndGetRole = async (user) => {
+  const role = ALLOWED_USERS[user.email];
+  if (!role) {
+    await signOut(auth); // Unauthorized user ko turant bahar nikalo
+    throw new Error("Access Denied: You are not authorized.");
+  }
+  return role;
+};
+
 // 1. Login with Email & Password
 export const loginAdmin = async (data) => {
   const userCredential = await signInWithEmailAndPassword(
@@ -13,13 +29,34 @@ export const loginAdmin = async (data) => {
     data.email,
     data.password,
   );
-  return { data: userCredential.user };
+
+  // Security Guard checks role
+  const userRole = await verifyAndGetRole(userCredential.user);
+
+  // User ke data ke sath uska role bhi return kar rahe hain
+  return {
+    data: {
+      uid: userCredential.user.uid,
+      email: userCredential.user.email,
+      role: userRole,
+    },
+  };
 };
 
-// 2. Login with Google
+// 2. Login with Google (Secured)
 export const loginWithGoogle = async () => {
   const userCredential = await signInWithPopup(auth, googleProvider);
-  return { data: userCredential.user };
+
+  // Security Guard checks role
+  const userRole = await verifyAndGetRole(userCredential.user);
+
+  return {
+    data: {
+      uid: userCredential.user.uid,
+      email: userCredential.user.email,
+      role: userRole,
+    },
+  };
 };
 
 // 3. Forgot Password (Sends a secure reset link to email)
@@ -33,6 +70,3 @@ export const logoutAdmin = async () => {
   await signOut(auth);
   localStorage.removeItem("adminInfo");
 };
-
-// Note: Phone Auth OTP logic is handled directly in Login.jsx
-// because it requires a physical reCAPTCHA element in the DOM.

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import stockService from "../../services/stockService";
 import { useUI } from "../../context/UIProvider";
+import { useAuth } from "../../context/AuthContext";
 import { Package, ArrowLeft, Save, RefreshCcw } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
@@ -12,10 +13,13 @@ const EditStock = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useUI();
+  const { admin } = useAuth();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const [auditInfo, setAuditInfo] = useState(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -29,7 +33,6 @@ const EditStock = () => {
   useEffect(() => {
     const fetchStock = async () => {
       try {
-        // ✅ REMOVED ARTIFICIAL TIMEOUT DELAY
         const { data } = await stockService.getStockById(id);
 
         setFormData({
@@ -40,6 +43,14 @@ const EditStock = () => {
           price: data.price || "",
           supplier: data.supplier || "",
         });
+
+        // 🚀 UPDATED: Display Role in Audit Text
+        if (data.lastEditedAt) {
+          setAuditInfo({
+            role: data.lastEditedRole || "Admin",
+            at: new Date(data.lastEditedAt).toLocaleString(),
+          });
+        }
       } catch (err) {
         console.error("Fetch Error:", err);
         toast.error("Security Check: Could not retrieve item data.");
@@ -61,7 +72,10 @@ const EditStock = () => {
   const executeUpdate = async () => {
     setSaving(true);
     try {
-      await stockService.updateStock(id, formData);
+      const currentUserData = admin?.data ||
+        admin || { email: "Unknown", role: "admin" };
+
+      await stockService.updateStock(id, formData, currentUserData);
       toast.success("Inventory record synchronized successfully.");
       navigate("/enterprise/stock");
     } catch (err) {
@@ -187,7 +201,17 @@ const EditStock = () => {
             />
           </div>
 
-          <div className="pt-8 flex justify-end gap-4 border-t border-emerald-900/10 mt-2">
+          {auditInfo && (
+            <div className="pt-2 text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-widest border-t border-emerald-900/10 mt-6 pt-4">
+              Last updated by{" "}
+              <span className="text-emerald-400/70 font-bold tracking-widest">
+                {auditInfo.role}
+              </span>{" "}
+              on {auditInfo.at}
+            </div>
+          )}
+
+          <div className="pt-6 flex justify-end gap-4 mt-2">
             <Button
               type="button"
               variant="secondary"

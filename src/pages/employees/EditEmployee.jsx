@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import employeeService from "../../services/employeeService";
 import { useUI } from "../../context/UIProvider";
+import { useAuth } from "../../context/AuthContext";
 import { UserCheck, ArrowLeft, Save, RefreshCcw } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
@@ -12,10 +13,12 @@ const EditEmployee = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useUI();
+  const { admin } = useAuth();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [auditInfo, setAuditInfo] = useState(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -30,9 +33,7 @@ const EditEmployee = () => {
   useEffect(() => {
     const fetchEmployee = async () => {
       try {
-        // ✅ REMOVED ARTIFICIAL TIMEOUT
         const { data } = await employeeService.getEmployeeById(id);
-
         setFormData({
           name: data.name || "",
           position: data.position || "",
@@ -44,6 +45,13 @@ const EditEmployee = () => {
             ? new Date(data.joinDate).toISOString().split("T")[0]
             : "",
         });
+
+        if (data.lastEditedAt) {
+          setAuditInfo({
+            role: data.lastEditedRole || "Admin",
+            at: new Date(data.lastEditedAt).toLocaleString(),
+          });
+        }
       } catch (err) {
         console.error("Fetch Error:", err);
         toast.error("Could not retrieve employee details.");
@@ -65,7 +73,9 @@ const EditEmployee = () => {
   const executeUpdate = async () => {
     setSaving(true);
     try {
-      await employeeService.updateEmployee(id, formData);
+      const currentUser = admin?.data ||
+        admin || { email: "Unknown", role: "admin" };
+      await employeeService.updateEmployee(id, formData, currentUser);
       toast.success("Employee profile updated successfully.");
       navigate("/enterprise/employees");
     } catch (err) {
@@ -96,13 +106,12 @@ const EditEmployee = () => {
         <ArrowLeft
           size={18}
           className="mr-2 group-hover:-translate-x-1 transition-transform"
-        />
+        />{" "}
         Return to Directory
       </button>
 
       <div className="bg-[#050a08] rounded-2xl shadow-2xl border border-emerald-900/30 p-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-3xl rounded-full pointer-events-none"></div>
-
         <div className="flex items-center gap-4 mb-8 border-b border-emerald-900/10 pb-6 relative z-10">
           <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shadow-inner">
             <UserCheck size={28} />
@@ -146,7 +155,6 @@ const EditEmployee = () => {
               onChange={handleChange}
               required
             />
-
             <div>
               <label className="block text-xs font-bold text-emerald-100/60 uppercase tracking-wider mb-2 ml-1">
                 Status
@@ -195,6 +203,16 @@ const EditEmployee = () => {
               className="text-emerald-100"
             />
           </div>
+
+          {auditInfo && (
+            <div className="pt-2 text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-widest border-t border-emerald-900/10 mt-6 pt-4">
+              Last updated by{" "}
+              <span className="text-emerald-400/70 font-bold tracking-widest">
+                {auditInfo.role}
+              </span>{" "}
+              on {auditInfo.at}
+            </div>
+          )}
 
           <div className="pt-8 flex justify-end gap-4 border-t border-emerald-900/10 mt-2">
             <Button

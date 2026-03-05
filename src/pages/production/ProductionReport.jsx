@@ -23,7 +23,6 @@ const ProductionReport = () => {
   useEffect(() => {
     const fetchLogs = async () => {
       try {
-        // ✅ REMOVED ARTIFICIAL TIMEOUT DELAY
         const { data } = await productionService.getAllProduction();
         setLogs(data);
       } catch (error) {
@@ -42,25 +41,21 @@ const ProductionReport = () => {
         return toast.info("No production records to export");
 
       const headers = ["Date,Product Name,Quantity Produced,Supervisor"];
-
       const rows = logs.map((log) => {
         let dateStr = "-";
         if (log.date) {
           const d = new Date(log.date);
           dateStr = `\t${d.toLocaleDateString("en-GB")}`;
         }
-
         const product = `"${log.productName || "Standard Brick"}"`;
         const quantity = log.quantity || 0;
         const supervisor = `"${log.supervisor || "-"}"`;
-
         return `${dateStr},${product},${quantity},${supervisor}`;
       });
 
       const csvContent = [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute(
@@ -184,14 +179,21 @@ const ProductionReport = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
+        {/* 🚀 RESPONSIVENESS FIX */}
+        <div className="overflow-x-auto pb-4">
+          <table className="w-full text-left min-w-max">
             <thead className="bg-[#020403] text-emerald-100/40 text-xs uppercase tracking-wider font-semibold">
               <tr>
-                <th className="p-4 md:pl-6">Date</th>
-                <th className="p-4">Product Name</th>
-                <th className="p-4 text-right">Output Qty</th>
-                <th className="p-4 text-right md:pr-6">Supervisor / Kiln</th>
+                <th className="p-4 md:pl-6 whitespace-nowrap min-w-[120px]">
+                  Date
+                </th>
+                <th className="p-4 whitespace-nowrap min-w-[180px]">
+                  Product Name
+                </th>
+                <th className="p-4 text-right whitespace-nowrap">Output Qty</th>
+                <th className="p-4 text-right md:pr-6 whitespace-nowrap">
+                  Supervisor / Kiln
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-900/20 text-sm">
@@ -200,16 +202,16 @@ const ProductionReport = () => {
                   key={log._id}
                   className="hover:bg-emerald-900/10 transition-colors"
                 >
-                  <td className="p-4 md:pl-6 text-emerald-100/70 font-mono text-xs">
+                  <td className="p-4 md:pl-6 text-emerald-100/70 font-mono text-xs whitespace-nowrap">
                     {new Date(log.date).toLocaleDateString("en-GB")}
                   </td>
-                  <td className="p-4 font-medium text-white">
+                  <td className="p-4 font-medium text-white whitespace-nowrap">
                     {log.productName || "Standard Brick"}
                   </td>
-                  <td className="p-4 text-right font-mono font-bold text-emerald-400">
+                  <td className="p-4 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
                     {log.quantity?.toLocaleString()} pcs
                   </td>
-                  <td className="p-4 text-right text-emerald-100/60 md:pr-6">
+                  <td className="p-4 text-right text-emerald-100/60 md:pr-6 whitespace-nowrap">
                     {log.supervisor || "-"}
                   </td>
                 </tr>

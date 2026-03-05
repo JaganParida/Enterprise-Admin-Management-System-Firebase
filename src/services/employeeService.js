@@ -25,12 +25,14 @@ const employeeService = {
     return { data };
   },
 
-  // 2. Add new employee
-  addEmployee: async (employeeData) => {
+  // 2. Add new employee (Tracking Creator)
+  addEmployee: async (employeeData, user) => {
     const payload = {
       ...employeeData,
       status: "Active",
       createdAt: new Date().toISOString(),
+      createdBy: user?.email || "Unknown",
+      createdRole: user?.role || "Admin",
     };
     const docRef = await addDoc(empCollection, payload);
     return { data: { _id: docRef.id, ...payload } };
@@ -46,10 +48,37 @@ const employeeService = {
     throw new Error("Employee not found");
   },
 
-  // 4. Update employee
-  updateEmployee: async (id, updateData) => {
+  // 4. Update employee (With History limit 10)
+  updateEmployee: async (id, updateData, user) => {
     const docRef = doc(db, "employees", id);
-    await updateDoc(docRef, updateData);
+    const snapshot = await getDoc(docRef);
+
+    let currentHistory = [];
+    if (snapshot.exists() && snapshot.data().editHistory) {
+      currentHistory = snapshot.data().editHistory;
+    }
+
+    const currentEdit = {
+      by: user?.email || "Unknown",
+      role: user?.role || "Admin",
+      at: new Date().toISOString(),
+    };
+
+    currentHistory.push(currentEdit);
+
+    if (currentHistory.length > 10) {
+      currentHistory = currentHistory.slice(currentHistory.length - 10);
+    }
+
+    const payload = {
+      ...updateData,
+      lastEditedBy: currentEdit.by,
+      lastEditedRole: currentEdit.role,
+      lastEditedAt: currentEdit.at,
+      editHistory: currentHistory,
+    };
+
+    await updateDoc(docRef, payload);
     return { message: "Updated successfully" };
   },
 
@@ -62,30 +91,30 @@ const employeeService = {
 
   // --- SALARY SECTION ---
 
-  // 6. Record Salary/Advance Payment
-  addSalaryPayment: async (paymentData) => {
+  // 6. Record Salary/Advance Payment (Tracking who paid)
+  addSalaryPayment: async (paymentData, user) => {
     const payload = {
       ...paymentData,
       amount: Number(paymentData.amount),
       createdAt: new Date().toISOString(),
+      recordedBy: user?.email || "Unknown",
+      recordedRole: user?.role || "Admin", // 👈 Kaun payment de raha hai (Admin/Manager)
     };
     const docRef = await addDoc(salaryCollection, payload);
     return { data: { _id: docRef.id, ...payload } };
   },
 
-  // 7. Get Salary History (With Employee Names)
+  // 7. Get Salary History
   getSalaryHistory: async () => {
     const q = query(salaryCollection, orderBy("date", "desc"));
     const salarySnap = await getDocs(q);
     const employeesSnap = await getDocs(empCollection);
 
-    // Create a map of employees for quick lookup
     const empMap = {};
     employeesSnap.docs.forEach((d) => {
       empMap[d.id] = { name: d.data().name, position: d.data().position };
     });
 
-    // Attach employee details to each payment record
     const data = salarySnap.docs.map((doc) => {
       const payment = doc.data();
       return {

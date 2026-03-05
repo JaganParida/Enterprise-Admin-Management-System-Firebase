@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import employeeService from "../../services/employeeService";
 import { useUI } from "../../context/UIProvider";
+import { useAuth } from "../../context/AuthContext";
 import { Banknote, Plus, History, Calendar } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
@@ -8,6 +9,7 @@ import Loader from "../../components/common/Loader";
 
 const SalaryManagement = () => {
   const { toast } = useUI();
+  const { admin } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,10 +25,8 @@ const SalaryManagement = () => {
 
   const fetchData = async () => {
     try {
-      // ✅ REMOVED ARTIFICIAL TIMEOUT DELAY
       const empReq = employeeService.getAllEmployees();
       const histReq = employeeService.getSalaryHistory();
-
       const [empRes, histRes] = await Promise.all([empReq, histReq]);
 
       setEmployees(empRes.data);
@@ -50,12 +50,13 @@ const SalaryManagement = () => {
 
     setPaying(true);
     try {
-      await employeeService.addSalaryPayment(paymentData);
-      toast.success("Payment recorded successfully");
+      const currentUser = admin?.data ||
+        admin || { email: "Unknown", role: "admin" };
+      await employeeService.addSalaryPayment(paymentData, currentUser);
 
+      toast.success("Payment recorded successfully");
       const { data } = await employeeService.getSalaryHistory();
       setHistory(data);
-
       setPaymentData((prev) => ({ ...prev, amount: "", remarks: "" }));
     } catch (error) {
       toast.error("Failed to record payment");
@@ -64,11 +65,15 @@ const SalaryManagement = () => {
     }
   };
 
-  if (loading) return <Loader />;
+  if (loading)
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader />
+      </div>
+    );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Left: Payment Form */}
       <div className="lg:col-span-1">
         <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 p-6 md:p-8 sticky top-24">
           <div className="flex items-center gap-3 mb-8">
@@ -90,7 +95,7 @@ const SalaryManagement = () => {
               </label>
               <div className="relative">
                 <select
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 appearance-none transition-all"
+                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 appearance-none transition-all"
                   value={paymentData.employeeId}
                   onChange={(e) =>
                     setPaymentData({
@@ -154,7 +159,6 @@ const SalaryManagement = () => {
               }
               required
             />
-
             <Input
               label="Remarks"
               placeholder="Optional notes"
@@ -175,7 +179,6 @@ const SalaryManagement = () => {
         </div>
       </div>
 
-      {/* Right: Payment History */}
       <div className="lg:col-span-2">
         <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 overflow-hidden h-full">
           <div className="p-6 border-b border-emerald-900/20 flex items-center justify-between">
@@ -187,14 +190,16 @@ const SalaryManagement = () => {
             </h2>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
+          <div className="overflow-x-auto pb-4">
+            <table className="w-full text-left min-w-max">
               <thead className="bg-[#020403] text-emerald-100/40 text-xs uppercase tracking-wider font-semibold">
                 <tr>
-                  <th className="p-5 md:pl-6">Date</th>
-                  <th className="p-5">Employee</th>
-                  <th className="p-5">Type</th>
-                  <th className="p-5 text-right md:pr-6">Amount</th>
+                  <th className="p-5 md:pl-6 whitespace-nowrap">Date</th>
+                  <th className="p-5 whitespace-nowrap">Employee</th>
+                  <th className="p-5 whitespace-nowrap">Type</th>
+                  <th className="p-5 text-right md:pr-6 whitespace-nowrap">
+                    Amount
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-emerald-900/20 text-sm">
@@ -203,19 +208,27 @@ const SalaryManagement = () => {
                     key={record._id}
                     className="hover:bg-emerald-900/10 transition-colors group"
                   >
-                    <td className="p-5 md:pl-6 text-emerald-100/60 font-mono text-xs">
-                      <div className="flex items-center gap-2">
+                    <td className="p-5 md:pl-6 align-middle">
+                      <div className="flex items-center gap-2 text-emerald-100/60 font-mono text-xs whitespace-nowrap">
                         <Calendar size={14} />
-                        {new Date(record.date).toLocaleDateString()}
+                        {new Date(record.date).toLocaleDateString("en-GB")}
+                      </div>
+                      {/* 🛡️ Payer Name Tag */}
+                      {record.recordedRole && (
+                        <div className="text-[9px] font-mono text-emerald-400/40 font-bold mt-2 uppercase tracking-widest whitespace-nowrap">
+                          Paid By: {record.recordedRole}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-5 align-middle">
+                      <div className="font-bold text-white whitespace-nowrap">
+                        {record.employee ? record.employee.name : "Unknown"}
+                        <span className="block text-[10px] text-emerald-100/40 font-normal mt-0.5">
+                          {record.employee ? record.employee.position : "-"}
+                        </span>
                       </div>
                     </td>
-                    <td className="p-5 font-bold text-white">
-                      {record.employee ? record.employee.name : "Unknown"}
-                      <span className="block text-[10px] text-emerald-100/40 font-normal">
-                        {record.employee ? record.employee.position : "-"}
-                      </span>
-                    </td>
-                    <td className="p-5">
+                    <td className="p-5 align-middle whitespace-nowrap">
                       <span
                         className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${
                           record.type === "Advance"
@@ -226,7 +239,7 @@ const SalaryManagement = () => {
                         {record.type}
                       </span>
                     </td>
-                    <td className="p-5 md:pr-6 text-right font-mono font-bold text-white">
+                    <td className="p-5 md:pr-6 text-right font-mono font-bold text-white align-middle whitespace-nowrap">
                       ₹ {record.amount.toLocaleString()}
                     </td>
                   </tr>

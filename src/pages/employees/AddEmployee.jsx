@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import employeeService from "../../services/employeeService";
 import { useUI } from "../../context/UIProvider";
+import { useAuth } from "../../context/AuthContext"; // 👈 Import
 import { UserPlus, ArrowLeft, Save } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
@@ -9,6 +10,7 @@ import Button from "../../components/common/Button";
 const AddEmployee = () => {
   const navigate = useNavigate();
   const { toast } = useUI();
+  const { admin } = useAuth(); // 👈 Call Context
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -20,16 +22,17 @@ const AddEmployee = () => {
     joinDate: new Date().toISOString().split("T")[0],
   });
 
-  const handleChange = (e) => {
+  const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      await employeeService.addEmployee(formData);
+      const currentUser = admin?.data ||
+        admin || { email: "Unknown", role: "admin" }; // 👈 Pass User
+      await employeeService.addEmployee(formData, currentUser);
       toast.success("Employee added successfully!");
       navigate("/enterprise/employees");
     } catch (error) {
@@ -83,7 +86,6 @@ const AddEmployee = () => {
               required
             />
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Input
               label="Phone Number"
@@ -103,7 +105,6 @@ const AddEmployee = () => {
               className="text-emerald-100"
             />
           </div>
-
           <Input
             label="Address"
             name="address"
@@ -111,7 +112,6 @@ const AddEmployee = () => {
             value={formData.address}
             onChange={handleChange}
           />
-
           <Input
             label="Base Salary (₹)"
             name="baseSalary"

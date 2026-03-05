@@ -14,34 +14,31 @@ import {
 const stockCollection = collection(db, "stocks");
 
 const stockService = {
-  // 1. Get all inventory items
   getAllStocks: async () => {
-    // Latest items pehle dikhane ke liye createdAt use kiya hai
     const q = query(stockCollection, orderBy("createdAt", "desc"));
     const snapshot = await getDocs(q);
 
     const data = snapshot.docs.map((doc) => ({
-      _id: doc.id, // Firestore ID mapping for UI compatibility
+      _id: doc.id,
       ...doc.data(),
     }));
 
     return { data };
   },
 
-  // 2. Create new stock item
-  createStock: async (stockData) => {
+  createStock: async (stockData, user) => {
     const payload = {
       ...stockData,
       quantity: Number(stockData.quantity),
       price: Number(stockData.price),
       createdAt: new Date().toISOString(),
+      createdBy: user?.email || "Unknown",
     };
 
     const docRef = await addDoc(stockCollection, payload);
     return { data: { _id: docRef.id, ...payload } };
   },
 
-  // 3. Get single item by ID (For Edit mode)
   getStockById: async (id) => {
     const docRef = doc(db, "stocks", id);
     const snapshot = await getDoc(docRef);
@@ -53,20 +50,43 @@ const stockService = {
     }
   },
 
-  // 4. Update stock details
-  updateStock: async (id, updateData) => {
+  updateStock: async (id, updateData, user) => {
     const docRef = doc(db, "stocks", id);
+
+    const snapshot = await getDoc(docRef);
+    let currentHistory = [];
+
+    if (snapshot.exists() && snapshot.data().editHistory) {
+      currentHistory = snapshot.data().editHistory;
+    }
+
+    // 🚀 UPDATED: Role save kar rahe hain yahan
+    const currentEdit = {
+      by: user?.email || "Unknown",
+      role: user?.role || "Admin", // 👈 ROLE SAVE KIYA
+      at: new Date().toISOString(),
+    };
+
+    currentHistory.push(currentEdit);
+
+    if (currentHistory.length > 10) {
+      currentHistory = currentHistory.slice(currentHistory.length - 10);
+    }
+
     const payload = {
       ...updateData,
       quantity: Number(updateData.quantity),
       price: Number(updateData.price),
+      lastEditedBy: currentEdit.by,
+      lastEditedRole: currentEdit.role, // 👈 ROLE UPDATE KIYA
+      lastEditedAt: currentEdit.at,
+      editHistory: currentHistory,
     };
 
     await updateDoc(docRef, payload);
     return { message: "Stock updated successfully" };
   },
 
-  // 5. Delete item
   deleteStock: async (id) => {
     const docRef = doc(db, "stocks", id);
     await deleteDoc(docRef);

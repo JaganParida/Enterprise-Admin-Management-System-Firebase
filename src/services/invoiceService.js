@@ -14,28 +14,45 @@ import {
 
 const invCollection = collection(db, "invoices");
 
+// Helper function history maintain karne ke liye
+const getUpdatedHistory = async (id, user) => {
+  const docRef = doc(db, "invoices", id);
+  const snapshot = await getDoc(docRef);
+  let currentHistory = [];
+
+  if (snapshot.exists() && snapshot.data().editHistory) {
+    currentHistory = snapshot.data().editHistory;
+  }
+
+  const currentEdit = {
+    by: user?.email || "Unknown",
+    role: user?.role || "Admin",
+    at: new Date().toISOString(),
+  };
+
+  currentHistory.push(currentEdit);
+
+  if (currentHistory.length > 10) {
+    currentHistory = currentHistory.slice(currentHistory.length - 10);
+  }
+
+  return { currentEdit, currentHistory, docRef };
+};
+
 const invoiceService = {
-  // 1. Get all invoices (List view)
   getAllInvoices: async () => {
     const q = query(invCollection, orderBy("createdAt", "desc"));
     const snapshot = await getDocs(q);
-
-    const data = snapshot.docs.map((doc) => ({
-      _id: doc.id, // Firestore ID to UI _id
-      ...doc.data(),
-    }));
-
+    const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
     return { data };
   },
 
-  // 2. Create New Invoice (With auto-incrementing readable ID)
-  createInvoice: async (invoiceData) => {
+  createInvoice: async (invoiceData, user) => {
     try {
-      // Logic to generate a readable Invoice Number (e.g., INV-001)
       const q = query(invCollection, orderBy("createdAt", "desc"), limit(1));
       const lastInvSnap = await getDocs(q);
 
-      let nextNumber = 1001; // Starting number
+      let nextNumber = 1001;
       if (!lastInvSnap.empty) {
         const lastInvData = lastInvSnap.docs[0].data();
         if (lastInvData.invoiceNumber) {
@@ -45,11 +62,12 @@ const invoiceService = {
       }
 
       const invoiceNumber = `INV-${nextNumber}`;
-
       const payload = {
         ...invoiceData,
         invoiceNumber,
         createdAt: new Date().toISOString(),
+        createdBy: user?.email || "Unknown",
+        createdRole: user?.role || "Admin",
       };
 
       const docRef = await addDoc(invCollection, payload);
@@ -60,11 +78,9 @@ const invoiceService = {
     }
   },
 
-  // 3. Get Single Invoice by ID (View mode)
   getInvoiceById: async (id) => {
     const docRef = doc(db, "invoices", id);
     const snapshot = await getDoc(docRef);
-
     if (snapshot.exists()) {
       return { data: { _id: snapshot.id, ...snapshot.data() } };
     } else {
@@ -72,14 +88,42 @@ const invoiceService = {
     }
   },
 
-  // 4. Update Invoice Status (List view toggle)
-  updateStatus: async (id, newStatus) => {
-    const docRef = doc(db, "invoices", id);
-    await updateDoc(docRef, { status: newStatus });
+  // 🚀 NAYA: Poora Invoice Edit karne ke liye
+  updateInvoice: async (id, invoiceData, user) => {
+    const { currentEdit, currentHistory, docRef } = await getUpdatedHistory(
+      id,
+      user,
+    );
+
+    const payload = {
+      ...invoiceData,
+      lastEditedBy: currentEdit.by,
+      lastEditedRole: currentEdit.role,
+      lastEditedAt: currentEdit.at,
+      editHistory: currentHistory,
+    };
+
+    await updateDoc(docRef, payload);
+    return { message: "Invoice updated successfully" };
+  },
+
+  // 🚀 UPDATED: Status update bhi history mein record hoga!
+  updateStatus: async (id, newStatus, user) => {
+    const { currentEdit, currentHistory, docRef } = await getUpdatedHistory(
+      id,
+      user,
+    );
+
+    await updateDoc(docRef, {
+      status: newStatus,
+      lastEditedBy: currentEdit.by,
+      lastEditedRole: currentEdit.role,
+      lastEditedAt: currentEdit.at,
+      editHistory: currentHistory,
+    });
     return { message: "Status updated" };
   },
 
-  // 5. Delete Invoice
   deleteInvoice: async (id) => {
     const docRef = doc(db, "invoices", id);
     await deleteDoc(docRef);

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import stockService from "../../services/stockService";
 import { useUI } from "../../context/UIProvider";
+import { useAuth } from "../../context/AuthContext";
 import { Package, ArrowLeft, Save } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
@@ -9,13 +10,14 @@ import Button from "../../components/common/Button";
 const AddStock = () => {
   const navigate = useNavigate();
   const { toast } = useUI();
+  const { admin } = useAuth();
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
     category: "Raw Material",
     quantity: "",
-    unit: "", // Removed default "kg" to let user choose
+    unit: "",
     price: "",
     supplier: "",
   });
@@ -29,7 +31,9 @@ const AddStock = () => {
     setLoading(true);
 
     try {
-      await stockService.createStock(formData);
+      const currentUser = admin?.data ||
+        admin || { email: "Unknown", role: "admin" };
+      await stockService.createStock(formData, currentUser);
       toast.success("Stock item added successfully!");
       navigate("/enterprise/stock");
     } catch (err) {
@@ -68,7 +72,7 @@ const AddStock = () => {
           <Input
             label="Item Name"
             name="name"
-            placeholder="e.g. River Sand, Red Bricks, Cement" // 👈 Bricks Factory Context
+            placeholder="e.g. River Sand, Red Bricks, Cement"
             value={formData.name}
             onChange={handleChange}
             required
@@ -118,10 +122,6 @@ const AddStock = () => {
               required
             />
 
-            {/* For Bricks Factory:
-                - Use 'tons' or 'kg' for raw materials
-                - Use 'pcs' (pieces) for finished bricks
-            */}
             <Input
               label="Unit"
               name="unit"

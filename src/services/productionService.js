@@ -14,33 +14,30 @@ import {
 const prodCollection = collection(db, "production");
 
 const productionService = {
-  // 1. Get all production logs (For List & Reports)
   getAllProduction: async () => {
-    // Latest production date ke hisaab se sort kiya hai
     const q = query(prodCollection, orderBy("date", "desc"));
     const snapshot = await getDocs(q);
 
     const data = snapshot.docs.map((doc) => ({
-      _id: doc.id, // Firestore ID to UI _id
+      _id: doc.id,
       ...doc.data(),
     }));
 
     return { data };
   },
 
-  // 2. Add new production entry
-  addProduction: async (formData) => {
+  addProduction: async (formData, user) => {
     const payload = {
       ...formData,
-      quantity: Number(formData.quantity), // Ensure quantity is a number
+      quantity: Number(formData.quantity),
       createdAt: new Date().toISOString(),
+      createdBy: user?.email || "Unknown",
     };
 
     const docRef = await addDoc(prodCollection, payload);
     return { data: { _id: docRef.id, ...payload } };
   },
 
-  // 3. Get single log by ID (For Edit mode)
   getProductionById: async (id) => {
     const docRef = doc(db, "production", id);
     const snapshot = await getDoc(docRef);
@@ -52,19 +49,45 @@ const productionService = {
     }
   },
 
-  // 4. Update existing production log
-  updateProduction: async (id, updateData) => {
+  // 🚀 UPDATED: Role save karna aur Top 10 History Limit
+  updateProduction: async (id, updateData, user) => {
     const docRef = doc(db, "production", id);
+
+    // 1. Purani history nikalna
+    const snapshot = await getDoc(docRef);
+    let currentHistory = [];
+
+    if (snapshot.exists() && snapshot.data().editHistory) {
+      currentHistory = snapshot.data().editHistory;
+    }
+
+    // 2. Naya edit record with ROLE
+    const currentEdit = {
+      by: user?.email || "Unknown",
+      role: user?.role || "Admin", // 👈 ROLE SAVE KIYA
+      at: new Date().toISOString(),
+    };
+
+    currentHistory.push(currentEdit);
+
+    // 3. Top 10 Limit Capping
+    if (currentHistory.length > 10) {
+      currentHistory = currentHistory.slice(currentHistory.length - 10);
+    }
+
     const payload = {
       ...updateData,
       quantity: Number(updateData.quantity),
+      lastEditedBy: currentEdit.by,
+      lastEditedRole: currentEdit.role, // 👈 ROLE UPDATE KIYA
+      lastEditedAt: currentEdit.at,
+      editHistory: currentHistory,
     };
 
     await updateDoc(docRef, payload);
     return { message: "Record updated successfully" };
   },
 
-  // 5. Delete production log
   deleteProduction: async (id) => {
     const docRef = doc(db, "production", id);
     await deleteDoc(docRef);

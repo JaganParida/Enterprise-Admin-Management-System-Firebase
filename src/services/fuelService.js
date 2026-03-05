@@ -3,6 +3,7 @@ import {
   collection,
   addDoc,
   getDocs,
+  getDoc,
   doc,
   updateDoc,
   deleteDoc,
@@ -13,48 +14,61 @@ import {
 const fuelCollection = collection(db, "fuels");
 
 const fuelService = {
-  // 1. Get all fuel logs
   getLogs: async () => {
     const q = query(fuelCollection, orderBy("date", "desc"));
     const snapshot = await getDocs(q);
-    const data = snapshot.docs.map((doc) => ({
-      _id: doc.id,
-      ...doc.data(),
-    }));
-    return { data };
+    return {
+      data: snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() })),
+    };
   },
 
-  // 2. Add new fuel log
-  addLog: async (payload) => {
+  addLog: async (payload, user) => {
     const dataToSave = {
       ...payload,
       liters: Number(payload.liters),
       pricePerLiter: Number(payload.pricePerLiter),
       totalCost: Number(payload.totalCost),
       createdAt: new Date().toISOString(),
+      createdBy: user?.email || "Unknown",
+      createdRole: user?.role || "Admin",
     };
     const docRef = await addDoc(fuelCollection, dataToSave);
     return { data: { _id: docRef.id, ...dataToSave } };
   },
 
-  // 3. Update log
-  updateLog: async (id, payload) => {
+  updateLog: async (id, payload, user) => {
     const docRef = doc(db, "fuels", id);
+    const snapshot = await getDoc(docRef);
+    let currentHistory =
+      snapshot.exists() && snapshot.data().editHistory
+        ? snapshot.data().editHistory
+        : [];
+
+    const currentEdit = {
+      by: user?.email || "Unknown",
+      role: user?.role || "Admin",
+      at: new Date().toISOString(),
+    };
+    currentHistory.push(currentEdit);
+    if (currentHistory.length > 10)
+      currentHistory = currentHistory.slice(currentHistory.length - 10);
+
     const dataToUpdate = {
       ...payload,
       liters: Number(payload.liters),
       pricePerLiter: Number(payload.pricePerLiter),
       totalCost: Number(payload.totalCost),
+      lastEditedRole: currentEdit.role,
+      lastEditedAt: currentEdit.at,
+      editHistory: currentHistory,
     };
     await updateDoc(docRef, dataToUpdate);
-    return { message: "Updated successfully" };
+    return { message: "Updated" };
   },
 
-  // 4. Delete log
   deleteLog: async (id) => {
-    const docRef = doc(db, "fuels", id);
-    await deleteDoc(docRef);
-    return { message: "Deleted successfully" };
+    await deleteDoc(doc(db, "fuels", id));
+    return { message: "Deleted" };
   },
 };
 

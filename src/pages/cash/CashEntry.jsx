@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import cashService from "../../services/cashService";
 import { useUI } from "../../context/UIProvider";
+import { useAuth } from "../../context/AuthContext";
 import { ArrowUpCircle, ArrowDownCircle, Wallet, Save } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
@@ -9,6 +10,7 @@ import Button from "../../components/common/Button";
 const CashEntry = () => {
   const navigate = useNavigate();
   const { toast } = useUI();
+  const { admin } = useAuth();
   const [loading, setLoading] = useState(false);
 
   const [type, setType] = useState("Expense");
@@ -38,7 +40,9 @@ const CashEntry = () => {
         date: date,
       };
 
-      await cashService.addTransaction(payload);
+      const currentUser = admin?.data ||
+        admin || { email: "Unknown", role: "admin" };
+      await cashService.addTransaction(payload, currentUser);
 
       toast.success("Transaction recorded successfully!");
       navigate("/enterprise/cash");
@@ -184,7 +188,7 @@ const CashEntry = () => {
               disabled={loading}
             >
               {loading ? (
-                <span className="flex items-center gap-2">
+                <span className="flex items-center justify-center gap-2">
                   <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/50 border-t-white"></span>
                   Processing...
                 </span>

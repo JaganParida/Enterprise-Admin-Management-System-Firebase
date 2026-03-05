@@ -1,5 +1,5 @@
 import React from "react";
-import { Bell, UserCircle, Search, Menu, LogOut } from "lucide-react";
+import { UserCircle, Menu, LogOut } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -8,9 +8,14 @@ const Navbar = ({ toggleMobileSidebar }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // 1. Precise check for the Landing Page
   const isHomePage = location.pathname === "/";
   const isTransport = location.pathname.includes("/transportation");
+
+  // 🚀 Logic updated: "User" fallback completely removed
+  const userData = admin?.data || admin;
+  const userName = userData?.name || ""; // Placeholder hata diya
+  const userRole =
+    userData?.role?.toLowerCase() === "admin" ? "Admin" : "Manager";
 
   const handleLogout = async () => {
     try {
@@ -26,7 +31,6 @@ const Navbar = ({ toggleMobileSidebar }) => {
     border: isTransport ? "border-blue-900/20" : "border-emerald-900/20",
     textHighlight: isTransport ? "text-blue-400" : "text-emerald-400",
     textSubtle: isTransport ? "text-blue-200/50" : "text-emerald-100/50",
-    hoverBg: isTransport ? "hover:bg-blue-900/20" : "hover:bg-emerald-900/20",
     ping: isTransport ? "bg-blue-400" : "bg-emerald-400",
     dot: isTransport ? "bg-blue-500" : "bg-emerald-500",
     gradientFrom: isTransport ? "from-blue-500" : "from-emerald-500",
@@ -39,10 +43,8 @@ const Navbar = ({ toggleMobileSidebar }) => {
       className={`h-20 ${theme.bg} backdrop-blur-md border-b ${theme.border} flex items-center justify-between px-6 md:px-8 sticky top-0 z-40`}
     >
       <div className="flex items-center gap-4">
-        {/* MOBILE BUTTON LOGIC */}
         <div className="md:hidden">
           {isHomePage ? (
-            /* Show Logout on Landing Page (Home) */
             <button
               onClick={handleLogout}
               className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
@@ -50,7 +52,6 @@ const Navbar = ({ toggleMobileSidebar }) => {
               <LogOut size={24} />
             </button>
           ) : (
-            /* Show Hamburger on Admin/Enterprise Pages */
             <button
               onClick={toggleMobileSidebar}
               className={`p-2 ${theme.textHighlight} ${theme.hoverBg} rounded-lg transition-colors`}
@@ -87,17 +88,21 @@ const Navbar = ({ toggleMobileSidebar }) => {
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Profile Section - Only show if admin is logged in */}
         {admin && (
           <div
             className={`flex items-center gap-4 pl-6 border-l ${theme.border}`}
           >
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-bold text-white">{admin.name}</p>
+              {/* Only show name if it exists */}
+              {userName && (
+                <p className="text-sm font-bold text-white leading-tight mb-0.5">
+                  {userName}
+                </p>
+              )}
               <p
-                className={`text-[10px] uppercase ${theme.textHighlight} font-bold`}
+                className={`text-[10px] uppercase ${theme.textHighlight} font-bold tracking-wider`}
               >
-                Admin
+                {userRole}
               </p>
             </div>
             <div className="relative group">

@@ -10,12 +10,13 @@ export const AuthProvider = ({ children }) => {
     // Check localStorage for an existing session on startup
     const storedAdmin = localStorage.getItem("adminInfo");
     if (storedAdmin) {
-      setAdmin(JSON.parse(storedAdmin));
+      setAdmin(JSON.parse(storedAdmin)); // Ab isme automatically 'role' bhi load ho jayega
     }
     setLoading(false); // Done loading
   }, []);
 
   const login = (userData) => {
+    // userData format ab ye hai: { data: { uid, email, role } }
     localStorage.setItem("adminInfo", JSON.stringify(userData));
     setAdmin(userData);
   };
