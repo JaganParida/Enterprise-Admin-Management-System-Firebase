@@ -87,7 +87,7 @@ const PublicNavbar = () => {
           ) : (
             <Link to="/login">
               <button className="px-4 md:px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all border border-emerald-500/20 shadow-lg">
-                Admin Login
+                Login
               </button>
             </Link>
           )}
