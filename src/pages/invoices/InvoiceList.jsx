@@ -14,6 +14,7 @@ import {
   History,
   X,
   Filter,
+  AlertOctagon,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -25,12 +26,11 @@ const InvoiceList = () => {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🚀 Filters State
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterAmount, setFilterAmount] = useState("All");
   const [filterDate, setFilterDate] = useState("All");
-  const [filterExactDate, setFilterExactDate] = useState(""); // 📅 New Exact Date State
+  const [filterExactDate, setFilterExactDate] = useState("");
 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
   const [warningTooltip, setWarningTooltip] = useState(null);
@@ -47,7 +47,6 @@ const InvoiceList = () => {
       const { data } = await invoiceService.getAllInvoices();
       setInvoices(data || []);
     } catch (error) {
-      console.error("Error fetching invoices:", error);
       toast.error("Failed to load invoices");
     } finally {
       setLoading(false);
@@ -58,11 +57,78 @@ const InvoiceList = () => {
     fetchInvoices();
   }, []);
 
+  // Formatters
+  const formatModalDate = (isoString) => {
+    if (!isoString) return "";
+    const d = new Date(isoString);
+    return (
+      d.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }) +
+      ", " +
+      d.toLocaleTimeString("en-GB")
+    );
+  };
+
+  const formatInlineDate = (isoString) => {
+    if (!isoString) return "";
+    const d = new Date(isoString);
+    return (
+      d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) +
+      ", " +
+      d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+    );
+  };
+
+  const filteredInvoices = invoices.filter((inv) => {
+    const matchesSearch =
+      inv.client?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      inv.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = filterStatus === "All" || inv.status === filterStatus;
+
+    let matchesAmount = true;
+    if (filterAmount !== "All") {
+      const amount = Number(inv.grandTotal) || 0;
+      if (filterAmount === "Under10k") matchesAmount = amount < 10000;
+      else if (filterAmount === "10k-50k")
+        matchesAmount = amount >= 10000 && amount <= 50000;
+      else if (filterAmount === "Above50k") matchesAmount = amount > 50000;
+    }
+
+    let matchesDate = true;
+    if (filterExactDate && inv.date) {
+      const invDateObj = new Date(inv.date);
+      const formattedInvDate = `${invDateObj.getFullYear()}-${String(invDateObj.getMonth() + 1).padStart(2, "0")}-${String(invDateObj.getDate()).padStart(2, "0")}`;
+      matchesDate = formattedInvDate === filterExactDate;
+    } else if (filterDate !== "All" && inv.date) {
+      const invDate = new Date(inv.date);
+      const today = new Date();
+      const diffTime = Math.abs(today - invDate);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (filterDate === "Last7Days") matchesDate = diffDays <= 7;
+      else if (filterDate === "Last30Days") matchesDate = diffDays <= 30;
+      else if (filterDate === "ThisMonth")
+        matchesDate =
+          invDate.getMonth() === today.getMonth() &&
+          invDate.getFullYear() === today.getFullYear();
+    }
+    return matchesSearch && matchesStatus && matchesAmount && matchesDate;
+  });
+
+  const activeFiltersCount =
+    [filterStatus, filterAmount, filterDate].filter((f) => f !== "All").length +
+    (filterExactDate ? 1 : 0);
+
   const handleExport = () => {
     try {
       if (filteredInvoices.length === 0)
         return toast.info("No invoices to export");
-      const headers = ["Date,Invoice No,Client Name,Status,Total Amount"];
+      const headers = [
+        "Date,Invoice No,Client Name,Status,SubTotal,GST Rate,Grand Total",
+      ];
       const rows = filteredInvoices.map((inv) => {
         const date = inv.date
           ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
@@ -70,8 +136,7 @@ const InvoiceList = () => {
         const number = inv.invoiceNumber || "-";
         const client = `"${inv.client?.name || "Unknown"}"`;
         const status = inv.status || "Pending";
-        const amount = inv.grandTotal || 0;
-        return `${date},${number},${client},${status},${amount}`;
+        return `${date},${number},${client},${status},${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0}`;
       });
 
       const csvContent = [headers.join(","), ...rows].join("\n");
@@ -81,14 +146,14 @@ const InvoiceList = () => {
       link.href = url;
       link.setAttribute(
         "download",
-        `Filtered_Invoices_${new Date().toISOString().split("T")[0]}.csv`,
+        `Invoices_Export_${new Date().toISOString().split("T")[0]}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Filtered list exported successfully");
+      toast.success("Exported successfully");
     } catch (error) {
-      toast.error("Failed to export invoices");
+      toast.error("Failed to export");
     }
   };
 
@@ -140,73 +205,17 @@ const InvoiceList = () => {
     });
   };
 
-  // 🚀 ADVANCED FILTERING LOGIC
-  const filteredInvoices = invoices.filter((inv) => {
-    // 1. Search Filter
-    const matchesSearch =
-      inv.client?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inv.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    // 2. Status Filter
-    const matchesStatus = filterStatus === "All" || inv.status === filterStatus;
-
-    // 3. Amount Filter
-    let matchesAmount = true;
-    if (filterAmount !== "All") {
-      const amount = Number(inv.grandTotal) || 0;
-      if (filterAmount === "Under10k") matchesAmount = amount < 10000;
-      else if (filterAmount === "10k-50k")
-        matchesAmount = amount >= 10000 && amount <= 50000;
-      else if (filterAmount === "Above50k") matchesAmount = amount > 50000;
-    }
-
-    // 4. 📅 Date Filter (Exact Date OR Range)
-    let matchesDate = true;
-    if (filterExactDate && inv.date) {
-      // Compare exact date string (YYYY-MM-DD)
-      const invDateObj = new Date(inv.date);
-      const formattedInvDate = `${invDateObj.getFullYear()}-${String(invDateObj.getMonth() + 1).padStart(2, "0")}-${String(invDateObj.getDate()).padStart(2, "0")}`;
-      matchesDate = formattedInvDate === filterExactDate;
-    } else if (filterDate !== "All" && inv.date) {
-      const invDate = new Date(inv.date);
-      const today = new Date();
-      const diffTime = Math.abs(today - invDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      if (filterDate === "Last7Days") matchesDate = diffDays <= 7;
-      else if (filterDate === "Last30Days") matchesDate = diffDays <= 30;
-      else if (filterDate === "ThisMonth")
-        matchesDate =
-          invDate.getMonth() === today.getMonth() &&
-          invDate.getFullYear() === today.getFullYear();
-    }
-
-    return matchesSearch && matchesStatus && matchesAmount && matchesDate;
-  });
-
-  const activeFiltersCount =
-    [filterStatus, filterAmount, filterDate].filter((f) => f !== "All").length +
-    (filterExactDate ? 1 : 0);
-
-  if (loading)
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader />
-      </div>
-    );
+  if (loading) return <Loader />;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20">
-              <FileText size={24} />
-            </div>
-            Invoice Ledger
-          </h1>
-        </div>
-
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20">
+            <FileText size={24} />
+          </div>
+          Invoice Ledger
+        </h1>
         <div className="flex gap-3">
           <Button
             variant="outline"
@@ -217,14 +226,13 @@ const InvoiceList = () => {
           </Button>
           <Link to="/enterprise/invoices/create">
             <Button className="gap-2 shadow-lg shadow-emerald-900/20">
-              <Plus size={18} /> Create
+              <Plus size={18} /> Create Bill
             </Button>
           </Link>
         </div>
       </div>
 
       <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 overflow-visible relative">
-        {/* Top Search Bar */}
         <div className="p-5 border-b border-emerald-900/20 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#020403]/50">
           <div className="relative w-full md:w-96">
             <Search
@@ -234,17 +242,16 @@ const InvoiceList = () => {
             <input
               type="text"
               placeholder="Search by client or invoice number..."
-              className="w-full bg-[#020403] border border-emerald-900/40 rounded-xl pl-9 pr-3 py-2.5 text-sm text-emerald-100 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 outline-none transition-all"
+              className="w-full bg-[#020403] border border-emerald-900/40 rounded-xl pl-9 pr-3 py-2.5 text-sm text-emerald-100 focus:border-emerald-500/50 outline-none transition-all"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           <div className="text-emerald-100/40 text-xs font-mono">
-            Showing {filteredInvoices.length} result(s)
+            Showing {filteredInvoices.length} bill(s)
           </div>
         </div>
 
-        {/* 🚀 FILTER BAR WITH EXACT DATE PICKER */}
         <div className="p-3 border-b border-emerald-900/20 flex flex-wrap items-center gap-3 bg-[#020403]/80">
           <div className="flex items-center gap-1.5 text-emerald-500 text-xs font-bold uppercase tracking-wider px-2 border-r border-emerald-900/40 mr-2">
             <Filter size={14} /> Filters
@@ -254,87 +261,73 @@ const InvoiceList = () => {
               </span>
             )}
           </div>
-
-          {/* Status Filter */}
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterStatus !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60 hover:border-emerald-500/30"}`}
+            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterStatus !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60"}`}
           >
-            <option value="All" className="bg-[#050a08] text-emerald-100">
+            <option value="All" className="bg-[#050a08]">
               All Status
             </option>
-            <option value="Pending" className="bg-[#050a08] text-emerald-100">
+            <option value="Pending" className="bg-[#050a08]">
               Pending
             </option>
-            <option value="Paid" className="bg-[#050a08] text-emerald-100">
+            <option value="Paid" className="bg-[#050a08]">
               Paid
             </option>
-            <option value="Cancelled" className="bg-[#050a08] text-emerald-100">
+            <option value="Cancelled" className="bg-[#050a08]">
               Cancelled
             </option>
           </select>
-
-          {/* Amount Filter */}
           <select
             value={filterAmount}
             onChange={(e) => setFilterAmount(e.target.value)}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterAmount !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60 hover:border-emerald-500/30"}`}
+            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterAmount !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60"}`}
           >
-            <option value="All" className="bg-[#050a08] text-emerald-100">
+            <option value="All" className="bg-[#050a08]">
               Any Amount
             </option>
-            <option value="Under10k" className="bg-[#050a08] text-emerald-100">
+            <option value="Under10k" className="bg-[#050a08]">
               Under ₹10,000
             </option>
-            <option value="10k-50k" className="bg-[#050a08] text-emerald-100">
+            <option value="10k-50k" className="bg-[#050a08]">
               ₹10k - ₹50k
             </option>
-            <option value="Above50k" className="bg-[#050a08] text-emerald-100">
+            <option value="Above50k" className="bg-[#050a08]">
               Above ₹50,000
             </option>
           </select>
-
-          {/* Range Date Filter */}
           <select
             value={filterDate}
             onChange={(e) => {
               setFilterDate(e.target.value);
-              if (e.target.value !== "All") setFilterExactDate(""); // Reset exact date if range is selected
+              if (e.target.value !== "All") setFilterExactDate("");
             }}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterDate !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60 hover:border-emerald-500/30"}`}
+            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterDate !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60"}`}
           >
-            <option value="All" className="bg-[#050a08] text-emerald-100">
+            <option value="All" className="bg-[#050a08]">
               Any Date
             </option>
-            <option value="Last7Days" className="bg-[#050a08] text-emerald-100">
+            <option value="Last7Days" className="bg-[#050a08]">
               Last 7 Days
             </option>
-            <option
-              value="Last30Days"
-              className="bg-[#050a08] text-emerald-100"
-            >
+            <option value="Last30Days" className="bg-[#050a08]">
               Last 30 Days
             </option>
-            <option value="ThisMonth" className="bg-[#050a08] text-emerald-100">
+            <option value="ThisMonth" className="bg-[#050a08]">
               This Month
             </option>
           </select>
-
-          {/* 📅 Exact Date Calendar Filter */}
           <input
             type="date"
             value={filterExactDate}
             onChange={(e) => {
               setFilterExactDate(e.target.value);
-              if (e.target.value) setFilterDate("All"); // Reset range filter if exact date is picked
+              if (e.target.value) setFilterDate("All");
             }}
-            title="Pick Exact Date"
             style={{ colorScheme: "dark" }}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterExactDate ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60 hover:border-emerald-500/30"}`}
+            className={`text-xs px-3 py-1.5 rounded-full border bg-transparent cursor-pointer ${filterExactDate ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10" : "border-emerald-900/40 text-emerald-100/60"}`}
           />
-
-          {/* Clear Filters Button */}
           {activeFiltersCount > 0 && (
             <button
               onClick={() => {
@@ -344,14 +337,13 @@ const InvoiceList = () => {
                 setFilterExactDate("");
                 setSearchTerm("");
               }}
-              className="text-xs text-rose-400/80 hover:text-rose-400 underline underline-offset-2 ml-2 transition-colors"
+              className="text-xs text-rose-400/80 hover:text-rose-400 underline ml-2"
             >
               Clear All
             </button>
           )}
         </div>
 
-        {/* Table Area */}
         <div className="overflow-x-auto pb-4 custom-scrollbar">
           <table className="w-full text-left min-w-max">
             <thead className="bg-[#020403] text-emerald-100/30 text-[10px] uppercase tracking-widest font-bold">
@@ -368,163 +360,116 @@ const InvoiceList = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-900/10 text-sm">
-              {filteredInvoices.map((inv) => {
-                const latestEdit =
-                  Array.isArray(inv?.editHistory) && inv.editHistory.length > 0
-                    ? inv.editHistory[inv.editHistory.length - 1]
-                    : null;
-                return (
-                  <tr
-                    key={inv._id}
-                    className="hover:bg-emerald-400/[0.02] transition-colors group"
-                  >
-                    <td className="p-5 md:pl-6 align-middle">
-                      <div className="font-mono font-bold text-emerald-400 whitespace-nowrap">
-                        {inv.invoiceNumber || "N/A"}
-                      </div>
-                      <div className="text-emerald-100/40 text-[10px] mt-1 whitespace-nowrap font-medium tracking-wide">
-                        {inv.date
-                          ? new Date(inv.date).toLocaleDateString("en-GB")
-                          : "Unknown Date"}
-                      </div>
-                    </td>
-                    <td className="p-5 align-middle">
-                      <div className="font-medium text-emerald-50 whitespace-nowrap">
-                        {inv.client?.name || "Unknown"}
-                      </div>
-                      {/* History Badge */}
-                      {Array.isArray(inv.editHistory) &&
-                      inv.editHistory.length > 0 ? (
+              {filteredInvoices.map((inv) => (
+                <tr
+                  key={inv._id}
+                  className="hover:bg-emerald-400/[0.02] transition-colors group"
+                >
+                  <td className="p-5 md:pl-6 align-middle">
+                    <div className="font-mono font-bold text-emerald-400 whitespace-nowrap">
+                      {inv.invoiceNumber || "N/A"}
+                    </div>
+                    <div className="text-emerald-100/40 text-[10px] mt-1 whitespace-nowrap font-medium tracking-wide">
+                      {inv.date
+                        ? new Date(inv.date).toLocaleDateString("en-GB")
+                        : "Unknown Date"}
+                    </div>
+                  </td>
+                  <td className="p-5 align-middle">
+                    <div className="font-medium text-emerald-50 whitespace-nowrap">
+                      {inv.client?.name || "Unknown"}
+                    </div>
+                    {/* 🚀 SMART HISTORY BADGE */}
+                    {Array.isArray(inv.editHistory) &&
+                      inv.editHistory.length > 0 && (
                         <div
                           onClick={() => openHistory(inv)}
-                          className="mt-1.5 inline-flex flex-col gap-0.5 cursor-pointer bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/20 p-1.5 rounded-lg transition-all w-max whitespace-nowrap"
+                          className="mt-1.5 inline-flex flex-col gap-0.5 cursor-pointer bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/20 p-1.5 rounded-lg transition-all w-max"
                         >
                           <div className="text-[9px] font-mono text-emerald-400/90 flex items-center gap-1 uppercase tracking-widest font-bold leading-none">
-                            <History size={10} /> {latestEdit?.role || "ADMIN"}
-                            {inv.editHistory.length > 1 && (
-                              <span className="bg-emerald-500/20 text-emerald-400 px-1 py-0.5 rounded text-[8px] ml-1">
-                                +{inv.editHistory.length - 1} MORE
-                              </span>
-                            )}
+                            <History size={10} />{" "}
+                            {inv.editHistory[inv.editHistory.length - 1]
+                              ?.role || "ADMIN"}
                           </div>
                           <span className="text-emerald-100/30 text-[8px] ml-4 font-medium">
-                            {latestEdit?.at
-                              ? new Date(latestEdit.at).toLocaleString(
-                                  "en-GB",
-                                  {
-                                    day: "2-digit",
-                                    month: "short",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  },
-                                )
-                              : ""}
+                            {formatInlineDate(
+                              inv.editHistory[inv.editHistory.length - 1]?.at,
+                            )}
                           </span>
                         </div>
-                      ) : inv.lastEditedRole ? (
-                        <div className="text-[9px] font-mono text-emerald-400/50 font-bold mt-1.5 uppercase tracking-widest flex flex-col gap-0.5 w-max">
-                          <span>✍️ {inv.lastEditedRole}</span>
-                          {inv.lastEditedAt && (
-                            <span className="text-emerald-100/20 normal-case tracking-normal ml-4">
-                              {new Date(inv.lastEditedAt).toLocaleString(
-                                "en-GB",
-                                {
-                                  day: "2-digit",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                },
-                              )}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="text-[9px] text-emerald-100/20 mt-1 uppercase font-bold tracking-widest">
-                          {inv.createdRole || "ADMIN"}
-                        </div>
                       )}
-                    </td>
-                    <td className="p-5 font-bold text-white font-mono align-middle whitespace-nowrap">
-                      ₹ {(Number(inv.grandTotal) || 0).toLocaleString("en-IN")}
-                    </td>
-                    <td className="p-5 align-middle whitespace-nowrap">
-                      <select
-                        value={inv.status}
-                        onChange={(e) =>
-                          handleStatusChange(inv._id, e.target.value)
-                        }
-                        className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-md border outline-none cursor-pointer transition-colors ${
-                          inv.status === "Paid"
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            : inv.status === "Cancelled"
-                              ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                              : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                        }`}
+                  </td>
+                  <td className="p-5 font-bold text-white font-mono align-middle whitespace-nowrap">
+                    ₹ {(Number(inv.grandTotal) || 0).toLocaleString("en-IN")}
+                  </td>
+                  <td className="p-5 align-middle whitespace-nowrap">
+                    <select
+                      value={inv.status}
+                      onChange={(e) =>
+                        handleStatusChange(inv._id, e.target.value)
+                      }
+                      className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-md border outline-none cursor-pointer transition-colors ${inv.status === "Paid" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : inv.status === "Cancelled" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20"}`}
+                    >
+                      <option
+                        value="Pending"
+                        className="bg-[#020403] text-amber-400"
                       >
-                        <option
-                          value="Pending"
-                          className="bg-[#020403] text-amber-400"
+                        Pending
+                      </option>
+                      <option
+                        value="Paid"
+                        className="bg-[#020403] text-emerald-400"
+                      >
+                        Paid
+                      </option>
+                      <option
+                        value="Cancelled"
+                        className="bg-[#020403] text-rose-400"
+                      >
+                        Cancelled
+                      </option>
+                    </select>
+                  </td>
+                  <td className="p-5 md:pr-6 align-middle overflow-visible">
+                    <div className="flex justify-end gap-1.5 items-center relative overflow-visible">
+                      <Link
+                        to={`/enterprise/invoices/view/${inv._id}`}
+                        className="p-1.5 text-emerald-100/30 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors"
+                        title="View PDF"
+                      >
+                        <Eye size={16} />
+                      </Link>
+                      <Link
+                        to={`/enterprise/invoices/edit/${inv._id}`}
+                        className="p-1.5 text-emerald-100/30 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors"
+                        title="Edit Invoice"
+                      >
+                        <Edit size={16} />
+                      </Link>
+                      <div className="relative overflow-visible">
+                        <button
+                          onClick={() =>
+                            isManager
+                              ? handleDisabledClick(inv._id)
+                              : handleDeleteClick(inv._id)
+                          }
+                          className={`p-1.5 rounded-md transition-colors ${isManager ? "text-emerald-100/10 opacity-50 cursor-not-allowed" : "text-emerald-100/30 hover:text-red-400 hover:bg-red-500/10"}`}
                         >
-                          Pending
-                        </option>
-                        <option
-                          value="Paid"
-                          className="bg-[#020403] text-emerald-400"
-                        >
-                          Paid
-                        </option>
-                        <option
-                          value="Cancelled"
-                          className="bg-[#020403] text-rose-400"
-                        >
-                          Cancelled
-                        </option>
-                      </select>
-                    </td>
-                    <td className="p-5 md:pr-6 align-middle overflow-visible">
-                      <div className="flex justify-end gap-1.5 items-center relative overflow-visible">
-                        <Link
-                          to={`/enterprise/invoices/view/${inv._id}`}
-                          className="p-1.5 text-emerald-100/30 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors"
-                          title="View PDF"
-                        >
-                          <Eye size={16} />
-                        </Link>
-                        <Link
-                          to={`/enterprise/invoices/edit/${inv._id}`}
-                          className="p-1.5 text-emerald-100/30 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors"
-                          title="Edit Invoice"
-                        >
-                          <Edit size={16} />
-                        </Link>
-                        <div className="relative overflow-visible">
-                          <button
-                            onClick={() =>
-                              isManager
-                                ? handleDisabledClick(inv._id)
-                                : handleDeleteClick(inv._id)
-                            }
-                            className={`p-1.5 rounded-md transition-colors ${isManager ? "text-emerald-100/10 opacity-50 cursor-not-allowed hover:bg-red-500/5 hover:text-red-400/50" : "text-emerald-100/30 hover:text-red-400 hover:bg-red-500/10"}`}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                          {warningTooltip === inv._id && (
-                            <div className="absolute bottom-full right-0 mb-2 z-[9999] animate-in fade-in zoom-in-95 duration-200">
-                              <div className="bg-[#050a08] border border-red-500/30 shadow-2xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
-                                <span className="bg-red-500/20 p-1 rounded text-[8px] leading-none">
-                                  🚫
-                                </span>{" "}
-                                Action Denied
-                              </div>
-                              <div className="absolute -bottom-1 right-3 w-2 h-2 bg-[#050a08] border-b border-r border-red-500/30 rotate-45"></div>
-                            </div>
-                          )}
-                        </div>
+                          <Trash2 size={16} />
+                        </button>
+                        {warningTooltip === inv._id && (
+                          <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#050a08] border border-red-500/30 shadow-2xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                            <span className="bg-red-500/20 p-1 rounded text-[8px] leading-none">
+                              🚫
+                            </span>{" "}
+                            Access Denied
+                          </div>
+                        )}
                       </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                </tr>
+              ))}
               {filteredInvoices.length === 0 && (
                 <tr>
                   <td
@@ -540,19 +485,22 @@ const InvoiceList = () => {
         </div>
       </div>
 
-      {/* History Modal */}
+      {/* 🚀 MODAL UI MATCHED EXACTLY WITH IMAGE */}
       {historyModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#050a08] border border-emerald-900/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="p-5 border-b border-emerald-900/20 flex justify-between items-center bg-[#020403]">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <History size={18} className="text-emerald-500" /> Log History
+                <History size={18} className="text-emerald-500" /> Log History:{" "}
+                <span className="text-emerald-400 text-sm ml-1">
+                  {historyModal.itemName}
+                </span>
               </h3>
               <button
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: [], itemName: "" })
                 }
-                className="text-emerald-100/40 hover:text-white p-1 transition-colors"
+                className="text-emerald-100/40 hover:text-white p-1 hover:bg-emerald-500/10 rounded-lg"
               >
                 <X size={20} />
               </button>
@@ -561,37 +509,28 @@ const InvoiceList = () => {
               {historyModal.data.map((edit, idx) => (
                 <div
                   key={idx}
-                  className="flex justify-between items-center bg-[#020403] p-4 rounded-xl border border-emerald-900/20 group hover:border-emerald-500/30 transition-colors"
+                  className="bg-[#020403] border border-emerald-900/20 rounded-xl p-4 flex items-center justify-between group hover:border-emerald-500/30 transition-colors"
                 >
-                  <div className="flex items-center gap-3 relative z-10">
-                    <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 font-black text-sm uppercase shadow-inner">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 font-black text-lg uppercase shadow-inner">
                       {edit.role ? edit.role.charAt(0) : "A"}
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-emerald-100 uppercase tracking-widest">
+                      <div className="text-emerald-100 font-bold uppercase tracking-widest text-sm">
                         {edit.role || "Admin"}
-                      </p>
-                      <p className="text-[9px] text-emerald-100/30 font-mono mt-0.5">
+                      </div>
+                      <div className="text-emerald-100/40 text-[10px] font-mono lowercase">
                         {edit.by}
-                      </p>
-                      <p className="text-[10px] text-emerald-400/60 font-mono mt-1">
-                        {edit.at
-                          ? new Date(edit.at).toLocaleString("en-GB", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            })
-                          : "N/A"}
-                      </p>
+                      </div>
+                      <div className="text-emerald-400/80 text-[10px] font-mono mt-1 tracking-wider">
+                        {formatModalDate(edit.at)}
+                      </div>
                     </div>
                   </div>
                   {idx === 0 && (
-                    <span className="relative z-10 text-[9px] bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-md uppercase font-black tracking-widest border border-emerald-500/20">
-                      Latest
-                    </span>
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] px-3 py-1 rounded-md font-bold tracking-widest uppercase">
+                      LATEST
+                    </div>
                   )}
                 </div>
               ))}
