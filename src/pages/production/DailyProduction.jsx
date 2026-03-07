@@ -8,15 +8,14 @@ import {
   Plus,
   Save,
   Layers,
-  Edit,
-  Trash2,
   ArrowRight,
   History,
-  X,
   Users,
   IndianRupee,
+  AlertCircle,
+  X,
+  ChevronDown,
 } from "lucide-react";
-import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -25,87 +24,106 @@ const DailyProduction = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
 
-  // 🚀 TAB STATE FOR SLIDING FORMS
-  const [activeTab, setActiveTab] = useState("production"); // 'production' | 'labour'
+  // 🚀 TAB STATES
+  const [activeFormTab, setActiveFormTab] = useState("production");
+  const [activeTableTab, setActiveTableTab] = useState("prod_history");
 
-  // Production States
   const [entries, setEntries] = useState([]);
+  const [labourEntries, setLabourEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
-  // Labour States
   const [submittingLabour, setSubmittingLabour] = useState(false);
 
-  // Modals
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [entryToDelete, setEntryToDelete] = useState(null);
-  const [warningTooltip, setWarningTooltip] = useState(null);
+  // 🚀 CONFIRM DIALOG STATE
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    type: "",
+  });
+
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
     data: [],
     itemName: "",
   });
 
-  const isManager = admin?.data?.role === "manager";
-
-  // FORM 1: PRODUCTION LOG STATE
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split("T")[0],
     productName: "",
     quantity: "",
   });
 
-  // FORM 2: LABOUR CONTRACTOR PAYMENT STATE
   const [labourData, setLabourData] = useState({
+    date: new Date().toISOString().split("T")[0],
     labourName: "",
+    payoutCategory: "Labour",
     quantityProduced: "",
     cost: "",
     amountPaid: "",
+    amountDue: "",
   });
 
-  // Auto Calculate Amount Due
-  const amountDue =
-    (Number(labourData.cost) || 0) - (Number(labourData.amountPaid) || 0);
+  const categories = ["Labour", "Contractor", "Consumer", "Other"];
 
-  const fetchProduction = async () => {
+  const fetchAllData = async () => {
     try {
-      const { data } = await productionService.getAllProduction();
-      setEntries(data || []);
+      const prodRes = await productionService.getAllProduction();
+      setEntries(prodRes.data || []);
+
+      const labRes = await productionService.getAllLabourPayouts();
+      setLabourEntries(labRes.data || []);
     } catch (error) {
-      console.error("Error fetching production:", error);
-      toast.error("Failed to load production history.");
+      console.error("Error fetching data:", error);
+      toast.error("Failed to load history.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchProduction();
+    fetchAllData();
   }, []);
 
-  // --- Handlers for Production ---
-  const handleProdChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  // 🚀 ONLY TOP 10 RECENT ENTRIES
+  const topProductionEntries = entries.slice(0, 10);
+  const topLabourEntries = labourEntries.slice(0, 10);
+  const topDuesEntries = labourEntries
+    .filter((e) => Number(e.amountDue) > 0)
+    .slice(0, 10);
+
+  // 🚀 SMART PARSER
+  const parseProduct = (fullName) => {
+    if (!fullName) return { name: "-", size: "-" };
+    if (fullName.includes("(")) {
+      const parts = fullName.split("(");
+      return { name: parts[0].trim(), size: parts[1].replace(")", "").trim() };
+    }
+    return { name: fullName, size: "-" };
   };
 
-  const handleProdSubmit = async (e) => {
+  // --- Handlers for Production ---
+  const handleProdChange = (e) =>
+    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+
+  const handleProdSubmit = (e) => {
     e.preventDefault();
+    setConfirmDialog({ isOpen: true, type: "production" });
+  };
+
+  const executeProdSubmit = async () => {
     setSubmitting(true);
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
       await productionService.addProduction(formData, currentUser);
       toast.success("Production log entry saved!");
-      fetchProduction();
+      fetchAllData();
       setFormData({
         date: new Date().toISOString().split("T")[0],
         productName: "",
         quantity: "",
       });
     } catch (error) {
-      console.error("Error adding production:", error);
-      toast.error(error.response?.data?.message || "Failed to save entry.");
+      toast.error("Failed to save entry.");
     } finally {
       setSubmitting(false);
     }
@@ -114,65 +132,63 @@ const DailyProduction = () => {
   // --- Handlers for Labour Payment ---
   const handleLabourChange = (e) => {
     const { name, value } = e.target;
-    setLabourData((prev) => ({ ...prev, [name]: value }));
+
+    setLabourData((prev) => {
+      let newData = { ...prev, [name]: value };
+      const cost = Number(newData.cost) || 0;
+
+      if (name === "cost") {
+        const paid = Number(newData.amountPaid) || 0;
+        newData.amountDue = cost > 0 ? Math.max(0, cost - paid).toString() : "";
+      } else if (name === "amountPaid") {
+        const paid = Number(value) || 0;
+        newData.amountDue = cost > 0 ? Math.max(0, cost - paid).toString() : "";
+      } else if (name === "amountDue") {
+        const due = Number(value) || 0;
+        if (cost > 0) {
+          newData.amountPaid = Math.max(0, cost - due).toString();
+        }
+      }
+      return newData;
+    });
   };
 
-  const handleLabourSubmit = async (e) => {
+  const handleLabourSubmit = (e) => {
     e.preventDefault();
+    setConfirmDialog({ isOpen: true, type: "labour" });
+  };
+
+  const executeLabourSubmit = async () => {
     setSubmittingLabour(true);
     try {
-      // 🚧 Replace this with actual Labour API call later
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      toast.success(`Payment for ${labourData.labourName} recorded!`);
+      const currentUser = admin?.data ||
+        admin || { email: "Unknown", role: "admin" };
+      await productionService.addLabourPayout(labourData, currentUser);
+      toast.success(`Record for ${labourData.labourName} saved!`);
+      fetchAllData();
       setLabourData({
+        date: new Date().toISOString().split("T")[0],
         labourName: "",
+        payoutCategory: "Labour",
         quantityProduced: "",
         cost: "",
         amountPaid: "",
+        amountDue: "",
       });
     } catch (error) {
-      toast.error("Failed to record labour payment.");
+      toast.error("Failed to record payment.");
     } finally {
       setSubmittingLabour(false);
     }
   };
 
-  // --- Utility Handlers ---
-  const handleDeleteClick = (entry) => {
-    setEntryToDelete(entry);
-    setIsDialogOpen(true);
-  };
-
-  const handleDisabledClick = (entryId) => {
-    setWarningTooltip(entryId);
-    setTimeout(() => setWarningTooltip(null), 2500);
-  };
-
-  const confirmDelete = async () => {
-    if (!entryToDelete) return;
-    try {
-      await productionService.deleteProduction(entryToDelete._id);
-      toast.success("Production log deleted successfully.");
-      fetchProduction();
-    } catch (error) {
-      console.error("Error deleting log:", error);
-      toast.error("Failed to delete log.");
-    } finally {
-      setIsDialogOpen(false);
-      setEntryToDelete(null);
+  // Dialog Confirm Router
+  const handleDialogConfirm = () => {
+    if (confirmDialog.type === "production") {
+      executeProdSubmit();
+    } else if (confirmDialog.type === "labour") {
+      executeLabourSubmit();
     }
-  };
-
-  const openHistory = (entry) => {
-    const sortedHistory = Array.isArray(entry.editHistory)
-      ? [...entry.editHistory].reverse()
-      : [];
-    setHistoryModal({
-      isOpen: true,
-      data: sortedHistory,
-      itemName: `${entry.quantity} ${entry.productName}`,
-    });
   };
 
   if (loading)
@@ -184,43 +200,35 @@ const DailyProduction = () => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      {/* 🚀 LEFT COLUMN: SLIDING FORMS CONTAINER */}
+      {/* 🚀 LEFT COLUMN: FORMS */}
       <div className="lg:col-span-1">
-        <div
-          className={`bg-[#050a08] rounded-2xl shadow-xl border p-6 md:p-8 relative overflow-hidden transition-colors duration-700 ${activeTab === "production" ? "border-emerald-900/30" : "border-blue-900/30"}`}
-        >
-          {/* Dynamic Background Glow */}
-          <div
-            className={`absolute top-0 right-0 w-40 h-40 blur-3xl rounded-full pointer-events-none transition-colors duration-700 ${activeTab === "production" ? "bg-emerald-500/10" : "bg-blue-500/10"}`}
-          ></div>
+        <div className="bg-[#050a08] rounded-2xl shadow-xl border p-6 md:p-8 relative overflow-hidden transition-colors duration-700 border-emerald-900/30">
+          <div className="absolute top-0 right-0 w-40 h-40 blur-3xl rounded-full pointer-events-none transition-colors duration-700 bg-emerald-500/10"></div>
 
-          {/* 🚀 TAB SWITCHER NAVBAR */}
+          {/* 🚀 FORM TAB SWITCHER */}
           <div className="flex p-1.5 bg-[#020403] rounded-xl border border-emerald-900/20 mb-8 relative z-10 shadow-inner">
             <button
-              onClick={() => setActiveTab("production")}
-              className={`flex-1 py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-widest rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${
-                activeTab === "production"
-                  ? "bg-emerald-500/20 text-emerald-400 shadow-md border border-emerald-500/20"
-                  : "text-emerald-100/30 hover:text-emerald-100/60 transparent"
-              }`}
+              onClick={() => {
+                setActiveFormTab("production");
+                setActiveTableTab("prod_history");
+              }}
+              className={`flex-1 py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-widest rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${activeFormTab === "production" ? "bg-emerald-500/20 text-emerald-400 shadow-md border border-emerald-500/20" : "text-emerald-100/30 hover:text-emerald-100/60 transparent"}`}
             >
               <Factory size={14} /> Production
             </button>
             <button
-              onClick={() => setActiveTab("labour")}
-              className={`flex-1 py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-widest rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${
-                activeTab === "labour"
-                  ? "bg-blue-500/20 text-blue-400 shadow-md border border-blue-500/20"
-                  : "text-emerald-100/30 hover:text-blue-100/60 transparent"
-              }`}
+              onClick={() => {
+                setActiveFormTab("labour");
+                setActiveTableTab("labour_history");
+              }}
+              className={`flex-1 py-2.5 text-[10px] sm:text-xs font-bold uppercase tracking-widest rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${activeFormTab === "labour" ? "bg-emerald-500/20 text-emerald-400 shadow-md border border-emerald-500/20" : "text-emerald-100/30 hover:text-emerald-100/60 transparent"}`}
             >
-              <Users size={14} /> Labour
+              <IndianRupee size={14} /> Payouts
             </button>
           </div>
 
-          {/* 🚀 SLIDING FORMS RENDERER */}
           <div className="relative z-10">
-            {activeTab === "production" ? (
+            {activeFormTab === "production" ? (
               <div
                 key="production"
                 className="animate-in fade-in slide-in-from-left-8 duration-300"
@@ -240,15 +248,22 @@ const DailyProduction = () => {
                 </div>
 
                 <form onSubmit={handleProdSubmit} className="space-y-4">
-                  <Input
-                    label="Production Date"
-                    name="date"
-                    type="date"
-                    value={formData.date}
-                    onChange={handleProdChange}
-                    required
-                    className="text-emerald-100"
-                  />
+                  {/* Fixed Production Date Input */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                      Production Date
+                    </label>
+                    <input
+                      type="date"
+                      name="date"
+                      value={formData.date}
+                      onChange={handleProdChange}
+                      required
+                      className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                      style={{ colorScheme: "dark" }}
+                    />
+                  </div>
+
                   <div>
                     <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
                       Brick Type / Product
@@ -256,10 +271,10 @@ const DailyProduction = () => {
                     <div className="relative">
                       <select
                         name="productName"
-                        className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 appearance-none transition-all cursor-pointer"
                         value={formData.productName}
                         onChange={handleProdChange}
                         required
+                        className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner appearance-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 cursor-pointer"
                       >
                         <option
                           value=""
@@ -272,22 +287,22 @@ const DailyProduction = () => {
                           className="bg-[#020403] text-emerald-500 font-bold"
                         >
                           <option
-                            value="10 inch"
-                            className="bg-[#050a08] text-emerald-100 font-normal"
+                            value="Bricks (10 inch)"
+                            className="bg-[#050a08] text-white font-normal"
                           >
-                            10 inch
+                            Bricks (10 inch)
                           </option>
                           <option
-                            value="9 inch"
-                            className="bg-[#050a08] text-emerald-100 font-normal"
+                            value="Bricks (9 inch)"
+                            className="bg-[#050a08] text-white font-normal"
                           >
-                            9 inch
+                            Bricks (9 inch)
                           </option>
                           <option
-                            value="8 inch"
-                            className="bg-[#050a08] text-emerald-100 font-normal"
+                            value="Bricks (8 inch)"
+                            className="bg-[#050a08] text-white font-normal"
                           >
-                            8 inch
+                            Bricks (8 inch)
                           </option>
                         </optgroup>
                         <optgroup
@@ -296,61 +311,98 @@ const DailyProduction = () => {
                         >
                           <option
                             value="Zig Zag (60mm)"
-                            className="bg-[#050a08] text-emerald-100 font-normal"
+                            className="bg-[#050a08] text-white font-normal"
                           >
                             Zig Zag (60mm)
                           </option>
                           <option
                             value="Zig Zag (80mm)"
-                            className="bg-[#050a08] text-emerald-100 font-normal"
+                            className="bg-[#050a08] text-white font-normal"
                           >
                             Zig Zag (80mm)
                           </option>
                           <option
                             value="6-12 Brick (60mm)"
-                            className="bg-[#050a08] text-emerald-100 font-normal"
+                            className="bg-[#050a08] text-white font-normal"
                           >
                             6-12 Brick (60mm)
                           </option>
                           <option
                             value="6-12 Brick (80mm)"
-                            className="bg-[#050a08] text-emerald-100 font-normal"
+                            className="bg-[#050a08] text-white font-normal"
                           >
                             6-12 Brick (80mm)
                           </option>
                           <option
                             value="6/6 Brick (60mm)"
-                            className="bg-[#050a08] text-emerald-100 font-normal"
+                            className="bg-[#050a08] text-white font-normal"
                           >
-                            6/6 Brick (60mm)
+                            6/6 Brick 60mm
                           </option>
                           <option
                             value="6/6 Brick (80mm)"
-                            className="bg-[#050a08] text-emerald-100 font-normal"
+                            className="bg-[#050a08] text-white font-normal"
                           >
                             6/6 Brick (80mm)
                           </option>
                         </optgroup>
+                        <optgroup
+                          label="Chequered Tiles"
+                          className="bg-[#020403] text-emerald-500 font-bold"
+                        >
+                          <option
+                            value="Hexagon"
+                            className="bg-[#050a08] text-white font-normal"
+                          >
+                            Hexagon
+                          </option>
+                          <option
+                            value="Brick Design (9inch)"
+                            className="bg-[#050a08] text-white font-normal"
+                          >
+                            Brick Design (9inch)
+                          </option>
+                          <option
+                            value="Curve Stone"
+                            className="bg-[#050a08] text-white font-normal"
+                          >
+                            Curve Stone
+                          </option>
+                          <option
+                            value="Cover Block"
+                            className="bg-[#050a08] text-white font-normal"
+                          >
+                            Cover Block
+                          </option>
+                        </optgroup>
                       </select>
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50">
-                        ▼
-                      </div>
+                      <ChevronDown
+                        size={16}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50"
+                      />
                     </div>
                   </div>
-                  <Input
-                    label="Quantity Produced"
-                    name="quantity"
-                    type="number"
-                    placeholder="e.g. 5000"
-                    value={formData.quantity}
-                    onChange={handleProdChange}
-                    onWheel={(e) => e.target.blur()}
-                    required
-                  />
+
+                  {/* Fixed Quantity Input */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                      Quantity Produced
+                    </label>
+                    <input
+                      type="number"
+                      name="quantity"
+                      placeholder="e.g. 5000"
+                      value={formData.quantity}
+                      onChange={handleProdChange}
+                      onWheel={(e) => e.target.blur()}
+                      required
+                      className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                    />
+                  </div>
 
                   <Button
                     type="submit"
-                    className="w-full mt-2 shadow-lg shadow-emerald-900/20"
+                    className="w-full mt-2 shadow-lg shadow-emerald-900/20 bg-emerald-500 hover:bg-emerald-400 text-[#020403]"
                     disabled={submitting}
                   >
                     <Save size={18} className="mr-2" />{" "}
@@ -369,81 +421,150 @@ const DailyProduction = () => {
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-white">
-                      Labour Payout
+                      Record Payout / Due
                     </h2>
                     <p className="text-blue-100/40 text-[10px] uppercase tracking-widest mt-0.5">
-                      Contractor Record
+                      Financial Log
                     </p>
                   </div>
                 </div>
 
                 <form onSubmit={handleLabourSubmit} className="space-y-4">
-                  <Input
-                    label="Labour Name"
-                    name="labourName"
-                    placeholder="e.g. Rajesh Kumar"
-                    value={labourData.labourName}
-                    onChange={handleLabourChange}
-                    required
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input
-                      label="Qty Produced"
-                      name="quantityProduced"
-                      type="number"
-                      placeholder="0"
-                      value={labourData.quantityProduced}
-                      onChange={handleLabourChange}
-                      onWheel={(e) => e.target.blur()}
-                      required
-                    />
-                    <Input
-                      label="Total Cost (₹)"
-                      name="cost"
-                      type="number"
-                      placeholder="0.00"
-                      value={labourData.cost}
-                      onChange={handleLabourChange}
-                      onWheel={(e) => e.target.blur()}
-                      required
-                    />
+                  <div>
+                    <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-3 ml-1">
+                      Party Category
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {categories.map((cat) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() =>
+                            setLabourData({
+                              ...labourData,
+                              payoutCategory: cat,
+                            })
+                          }
+                          className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all ${
+                            labourData.payoutCategory === cat
+                              ? "bg-[#3b82f6] text-[#020617] shadow-[0_0_15px_rgba(59,130,246,0.3)]"
+                              : "bg-black/40 border border-white/10 text-blue-100/50 hover:border-blue-500/50 hover:text-white"
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 items-end">
-                    <Input
-                      label="Amount Paid (₹)"
-                      name="amountPaid"
-                      type="number"
-                      placeholder="0.00"
-                      value={labourData.amountPaid}
-                      onChange={handleLabourChange}
-                      onWheel={(e) => e.target.blur()}
-                      required
-                    />
-                    {/* 🧠 AUTO CALCULATED AMOUNT DUE */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                    {/* Fixed Labour Date Input */}
                     <div>
-                      <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                      <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        Record Date
+                      </label>
+                      <input
+                        type="date"
+                        name="date"
+                        value={labourData.date}
+                        onChange={handleLabourChange}
+                        required
+                        className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50"
+                        style={{ colorScheme: "dark" }}
+                      />
+                    </div>
+                    {/* Fixed Name Input */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        Name (Contractor/Consumer)
+                      </label>
+                      <input
+                        type="text"
+                        name="labourName"
+                        placeholder="e.g. Rajesh Kumar"
+                        value={labourData.labourName}
+                        onChange={handleLabourChange}
+                        required
+                        className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Fixed Qty Input */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        Qty Produced (Opt)
+                      </label>
+                      <input
+                        type="number"
+                        name="quantityProduced"
+                        placeholder="0"
+                        value={labourData.quantityProduced}
+                        onChange={handleLabourChange}
+                        onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50"
+                      />
+                    </div>
+                    {/* Fixed Cost Input */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        Total Cost (Opt)
+                      </label>
+                      <input
+                        type="number"
+                        name="cost"
+                        placeholder="0.00"
+                        value={labourData.cost}
+                        onChange={handleLabourChange}
+                        onWheel={(e) => e.target.blur()}
+                        className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Fixed Paid Input */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        Amount Paid (₹)
+                      </label>
+                      <input
+                        type="number"
+                        name="amountPaid"
+                        placeholder="0.00"
+                        value={labourData.amountPaid}
+                        onChange={handleLabourChange}
+                        onWheel={(e) => e.target.blur()}
+                        required
+                        className="w-full px-4 py-3 bg-black/40 border border-emerald-500/30 rounded-xl text-emerald-400 font-bold text-lg shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 outline-none transition-all"
+                      />
+                    </div>
+                    {/* Fixed Due Input */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
                         Amount Due (₹)
                       </label>
-                      <div
-                        className={`w-full px-4 py-3 border rounded-xl outline-none font-bold text-sm tracking-wider flex items-center h-[46px] transition-colors ${
-                          amountDue > 0
-                            ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
-                            : "bg-[#020403] border-emerald-900/40 text-emerald-400"
-                        }`}
-                      >
-                        ₹ {amountDue.toLocaleString()}
-                      </div>
+                      <input
+                        type="number"
+                        name="amountDue"
+                        placeholder="0.00"
+                        value={labourData.amountDue}
+                        onChange={handleLabourChange}
+                        onWheel={(e) => e.target.blur()}
+                        required
+                        className="w-full px-4 py-3 bg-black/40 border border-rose-500/30 rounded-xl text-rose-400 font-bold tracking-wider text-lg shadow-inner focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500/50 outline-none transition-all"
+                      />
                     </div>
                   </div>
 
                   <Button
                     type="submit"
-                    className="w-full mt-2 bg-gradient-to-r from-blue-600 to-indigo-600 border-none shadow-lg shadow-blue-900/20"
+                    className="w-full mt-2 shadow-lg shadow-blue-900/20 bg-blue-500 hover:bg-blue-400 text-[#020617]"
                     disabled={submittingLabour}
                   >
-                    <IndianRupee size={16} className="mr-2" />{" "}
-                    {submittingLabour ? "Processing..." : "Record Payment"}
+                    <Save size={18} className="mr-2" />{" "}
+                    {submittingLabour ? "Processing..." : "Save Record"}
                   </Button>
                 </form>
               </div>
@@ -452,224 +573,248 @@ const DailyProduction = () => {
         </div>
       </div>
 
-      {/* 🚀 RIGHT COLUMN: PRODUCTION HISTORY TABLE */}
+      {/* 🚀 RIGHT COLUMN: TOP 10 RECENT LOGS (NO ACTIONS) */}
       <div className="lg:col-span-2 space-y-6">
-        <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 overflow-visible">
-          <div className="p-6 border-b border-emerald-900/20 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-            <h2 className="text-lg font-bold text-white flex items-center gap-3">
-              <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500">
-                <Factory size={20} />
-              </div>
-              Recent Output Log
-            </h2>
-            <Link
-              to="/enterprise/production/report"
-              className="group flex items-center gap-2 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-4 py-2 rounded-lg border border-emerald-500/20 hover:bg-emerald-500/20 transition-all w-full sm:w-auto justify-center"
+        <div
+          className={`bg-[#050a08] rounded-2xl shadow-xl border overflow-visible transition-colors duration-500 ${activeTableTab === "prod_history" ? "border-emerald-900/30" : activeTableTab === "labour_history" ? "border-emerald-900/30" : "border-rose-900/30"}`}
+        >
+          <div
+            className={`p-6 border-b flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between transition-colors duration-500 ${activeTableTab === "prod_history" ? "border-emerald-900/20 bg-[#020403]/30" : activeTableTab === "labour_history" ? "border-emerald-900/20 bg-[#020403]/30" : "border-rose-900/20 bg-[#020403]/30"}`}
+          >
+            {/* 🚀 3 TABLE TABS NAVBAR */}
+            <div
+              className={`flex gap-1 p-1 bg-black/40 rounded-lg border w-full sm:w-auto overflow-x-auto ${activeTableTab === "prod_history" ? "border-emerald-900/10" : activeTableTab === "labour_history" ? "border-emerald-900/10" : "border-rose-900/10"}`}
             >
-              View Full Report{" "}
-              <ArrowRight
-                size={14}
-                className="group-hover:translate-x-1 transition-transform"
-              />
-            </Link>
+              <button
+                onClick={() => {
+                  setActiveTableTab("prod_history");
+                  setActiveFormTab("production");
+                }}
+                className={`px-4 py-2 sm:py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-md transition-all flex items-center gap-2 whitespace-nowrap ${activeTableTab === "prod_history" ? "bg-emerald-500/10 text-emerald-400" : "text-emerald-100/20 hover:text-emerald-100/50"}`}
+              >
+                <Factory size={12} /> Output Logs
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTableTab("labour_history");
+                  setActiveFormTab("labour");
+                }}
+                className={`px-4 py-2 sm:py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-md transition-all flex items-center gap-2 whitespace-nowrap ${activeTableTab === "labour_history" ? "bg-emerald-500/10 text-emerald-400" : "text-emerald-100/20 hover:text-emerald-100/50"}`}
+              >
+                <Users size={12} /> Payouts
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTableTab("due_history");
+                  setActiveFormTab("labour");
+                }}
+                className={`px-4 py-2 sm:py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-md transition-all flex items-center gap-2 whitespace-nowrap ${activeTableTab === "due_history" ? "bg-rose-500/10 text-rose-400" : "text-rose-100/20 hover:text-rose-100/50"}`}
+              >
+                <AlertCircle size={12} /> Pending Dues
+              </button>
+            </div>
+
+            <div className="flex gap-3 items-center w-full xl:w-auto justify-between xl:justify-end">
+              <span className="text-[10px] uppercase tracking-widest text-emerald-100/40">
+                Top 10 Latest
+              </span>
+              <Link
+                to="/enterprise/production/report"
+                className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1 hover:underline whitespace-nowrap"
+              >
+                Full Report <ArrowRight size={14} />
+              </Link>
+            </div>
           </div>
 
-          <div className="overflow-x-auto pb-4 custom-scrollbar">
-            <table className="w-full text-left min-w-max">
-              <thead className="bg-[#020403] text-emerald-100/40 text-[10px] uppercase tracking-widest font-bold">
-                <tr>
-                  <th className="p-5 md:pl-6 whitespace-nowrap min-w-[200px]">
-                    Product Type & Date
-                  </th>
-                  <th className="p-5 text-right whitespace-nowrap">
-                    Output Qty
-                  </th>
-                  <th className="p-5 md:pr-6 text-right whitespace-nowrap">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-emerald-900/20 text-sm">
-                {entries.map((entry) => (
-                  <tr
-                    key={entry._id}
-                    className="hover:bg-emerald-900/10 transition-colors group"
-                  >
-                    <td className="p-5 md:pl-6 align-middle">
-                      <div className="font-bold text-emerald-100/90 group-hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap tracking-wide">
-                        <Layers size={14} className="text-emerald-500/50" />{" "}
-                        {entry.productName}
-                      </div>
-
-                      {Array.isArray(entry.editHistory) &&
-                      entry.editHistory.length > 0 ? (
-                        <div
-                          onClick={() => openHistory(entry)}
-                          className="mt-2 flex flex-col gap-0.5 cursor-pointer bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/20 p-1.5 rounded-lg transition-all w-max whitespace-nowrap"
-                          title="Click to view full edit history"
-                        >
-                          <div className="text-[10px] font-mono text-emerald-400/90 flex items-center gap-1.5 uppercase tracking-widest font-bold">
-                            <History size={10} />{" "}
-                            {entry.editHistory[entry.editHistory.length - 1]
-                              ?.role || "ADMIN"}
-                            {entry.editHistory.length > 1 && (
-                              <span className="bg-emerald-500/20 text-emerald-400 px-1 py-0.5 rounded text-[8px] ml-1">
-                                +{entry.editHistory.length - 1} MORE
-                              </span>
-                            )}
+          <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
+            {activeTableTab === "prod_history" && (
+              <table className="w-full text-left animate-in fade-in duration-300">
+                <thead className="bg-[#020403] text-emerald-100/40 text-[10px] uppercase tracking-widest font-bold">
+                  <tr>
+                    <th className="p-5 md:pl-6 whitespace-nowrap">Date</th>
+                    <th className="p-5 whitespace-nowrap">Item Name</th>
+                    <th className="p-5 whitespace-nowrap">Size</th>
+                    <th className="p-5 text-right whitespace-nowrap md:pr-6">
+                      Output
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-emerald-900/20 text-sm">
+                  {topProductionEntries.map((entry) => {
+                    const { name, size } = parseProduct(entry.productName);
+                    return (
+                      <tr
+                        key={entry._id}
+                        className="hover:bg-emerald-900/10 transition-colors group"
+                      >
+                        <td className="p-5 md:pl-6 align-middle">
+                          <div className="text-emerald-100/70 font-mono text-xs">
+                            {new Date(entry.date).toLocaleDateString("en-GB")}
                           </div>
-                          <span className="text-emerald-100/30 text-[9px] ml-4 font-medium">
-                            {entry.editHistory[entry.editHistory.length - 1]?.at
-                              ? new Date(
-                                  entry.editHistory[
-                                    entry.editHistory.length - 1
-                                  ].at,
-                                ).toLocaleString("en-GB", {
-                                  day: "2-digit",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })
-                              : ""}
+                        </td>
+                        <td className="p-5 align-middle">
+                          <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest inline-flex items-center gap-2 w-max">
+                            <Layers size={12} /> {name}
+                          </span>
+                        </td>
+                        <td className="p-5 text-emerald-100 font-medium tracking-wide">
+                          {size}
+                        </td>
+                        <td className="p-5 align-middle text-right whitespace-nowrap md:pr-6">
+                          <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold border border-emerald-500/20 tracking-wider">
+                            {Number(entry.quantity).toLocaleString()} pcs
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {topProductionEntries.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="4"
+                        className="p-10 text-center text-emerald-100/30 italic"
+                      >
+                        No production logs found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {activeTableTab === "labour_history" && (
+              <table className="w-full text-left animate-in fade-in duration-300">
+                <thead className="bg-[#020403] text-emerald-100/30 text-[10px] uppercase tracking-widest font-bold">
+                  <tr>
+                    <th className="p-5 md:pl-6 whitespace-nowrap">
+                      Name & Date
+                    </th>
+                    <th className="p-5 text-right whitespace-nowrap">Cost</th>
+                    <th className="p-5 text-right whitespace-nowrap">Paid</th>
+                    <th className="p-5 md:pr-6 text-right whitespace-nowrap">
+                      Due
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-emerald-900/10 text-sm">
+                  {topLabourEntries.map((entry) => (
+                    <tr
+                      key={entry._id}
+                      className="hover:bg-emerald-900/10 transition-colors group"
+                    >
+                      <td className="p-5 md:pl-6 align-middle">
+                        <div className="font-bold text-emerald-100/90 group-hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap tracking-wide">
+                          <Users size={14} className="text-emerald-500/50" />{" "}
+                          {entry.labourName}
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-[9px] uppercase font-bold tracking-widest">
+                            {entry.payoutCategory || "Labour"}
+                          </span>
+                          <span className="text-[10px] text-emerald-100/40 font-mono tracking-widest">
+                            {new Date(entry.date).toLocaleDateString("en-GB")}
                           </span>
                         </div>
-                      ) : entry.lastEditedRole ? (
-                        <div className="text-[10px] font-mono text-emerald-400/70 font-bold mt-1.5 uppercase tracking-widest whitespace-nowrap w-max">
-                          ✍️ {entry.lastEditedRole}
+                      </td>
+                      <td className="p-5 align-middle text-right whitespace-nowrap font-mono text-emerald-100/60">
+                        ₹ {Number(entry.cost || 0).toLocaleString()}
+                      </td>
+                      <td className="p-5 align-middle text-right whitespace-nowrap font-mono text-emerald-400 font-bold">
+                        ₹ {Number(entry.amountPaid || 0).toLocaleString()}
+                      </td>
+                      <td className="p-5 md:pr-6 align-middle text-right whitespace-nowrap font-mono font-bold text-rose-400">
+                        ₹ {Number(entry.amountDue || 0).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                  {topLabourEntries.length === 0 && (
+                    <tr>
+                      <td colSpan="4" className="p-16 text-center">
+                        <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 mx-auto mb-4 shadow-inner">
+                          <IndianRupee size={28} />
                         </div>
-                      ) : (
-                        <div className="text-[10px] text-emerald-100/40 mt-1 font-mono tracking-widest">
+                        <h3 className="text-white font-bold text-lg mb-1">
+                          No Payout Records
+                        </h3>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {activeTableTab === "due_history" && (
+              <table className="w-full text-left animate-in fade-in duration-300">
+                <thead className="bg-[#020403] text-rose-100/30 text-[10px] uppercase tracking-widest font-bold">
+                  <tr>
+                    <th className="p-5 md:pl-6 whitespace-nowrap">
+                      Party Name & Date
+                    </th>
+                    <th className="p-5 text-right whitespace-nowrap">
+                      Category
+                    </th>
+                    <th className="p-5 md:pr-6 text-right whitespace-nowrap">
+                      Pending Due
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rose-900/10 text-sm">
+                  {topDuesEntries.map((entry) => (
+                    <tr
+                      key={entry._id}
+                      className="hover:bg-rose-900/10 transition-colors group"
+                    >
+                      <td className="p-5 md:pl-6 align-middle">
+                        <div className="font-bold text-rose-100/90 group-hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap tracking-wide">
+                          <AlertCircle size={14} className="text-rose-500/50" />{" "}
+                          {entry.labourName}
+                        </div>
+                        <div className="text-[10px] text-rose-100/40 mt-1 font-mono tracking-widest">
                           {new Date(entry.date).toLocaleDateString("en-GB")}
                         </div>
-                      )}
-                    </td>
-                    <td className="p-5 align-middle text-right whitespace-nowrap">
-                      <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold border border-emerald-500/20 tracking-wider">
-                        {Number(entry.quantity).toLocaleString()} pcs
-                      </span>
-                    </td>
-                    <td className="p-5 md:pr-6 align-middle overflow-visible">
-                      <div className="flex justify-end gap-2 items-center relative overflow-visible">
-                        <Link
-                          to={`/enterprise/production/edit/${entry._id}`}
-                          className="p-2 text-emerald-100/40 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                        >
-                          <Edit size={18} />
-                        </Link>
-                        <div className="relative overflow-visible">
-                          <button
-                            onClick={() =>
-                              isManager
-                                ? handleDisabledClick(entry._id)
-                                : handleDeleteClick(entry)
-                            }
-                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-emerald-100/20 opacity-50 cursor-not-allowed hover:bg-red-500/5 hover:text-red-400/50" : "text-emerald-100/40 hover:text-red-400 hover:bg-red-500/10"}`}
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                          {warningTooltip === entry._id && (
-                            <div className="absolute bottom-full right-0 mb-2 z-[9999] animate-in fade-in zoom-in-95 duration-200">
-                              <div className="bg-[#050a08] border border-red-500/30 shadow-xl shadow-red-900/20 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
-                                <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
-                                  🚫
-                                </span>{" "}
-                                Action Denied
-                              </div>
-                              <div className="absolute -bottom-1 right-3 w-2 h-2 bg-[#050a08] border-b border-r border-red-500/30 rotate-45"></div>
-                            </div>
-                          )}
+                      </td>
+                      <td className="p-5 align-middle text-right whitespace-nowrap">
+                        <span className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest">
+                          {entry.payoutCategory || "Labour"}
+                        </span>
+                      </td>
+                      <td className="p-5 md:pr-6 align-middle text-right whitespace-nowrap font-mono font-bold text-rose-400 text-lg">
+                        ₹ {Number(entry.amountDue || 0).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                  {topDuesEntries.length === 0 && (
+                    <tr>
+                      <td colSpan="3" className="p-16 text-center">
+                        <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 mx-auto mb-4 shadow-inner">
+                          <AlertCircle size={28} />
                         </div>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {entries.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan="3"
-                      className="p-10 text-center text-emerald-100/30 italic"
-                    >
-                      No production logs found. Add your first output!
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                        <h3 className="text-white font-bold text-lg mb-1">
+                          No Pending Dues!
+                        </h3>
+                        <p className="text-emerald-100/40 text-sm max-w-sm mx-auto">
+                          All accounts are settled. Great job!
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
 
-      {/* History Modal */}
-      {historyModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#050a08] border border-emerald-900/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="p-5 border-b border-emerald-900/20 flex justify-between items-center bg-[#020403]">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <History size={18} className="text-emerald-500" /> Log History:{" "}
-                <span className="text-emerald-400 text-sm ml-1">
-                  {historyModal.itemName}
-                </span>
-              </h3>
-              <button
-                onClick={() =>
-                  setHistoryModal({ isOpen: false, data: [], itemName: "" })
-                }
-                className="text-emerald-100/40 hover:text-white p-1 hover:bg-emerald-500/10 rounded-lg transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-5 max-h-[60vh] overflow-y-auto space-y-3 custom-scrollbar">
-              {historyModal.data.map((edit, idx) => (
-                <div
-                  key={idx}
-                  className="flex justify-between items-center bg-[#020403] p-4 rounded-xl border border-emerald-900/20 relative group hover:border-emerald-500/30 transition-colors"
-                >
-                  <div className="flex items-center gap-3 relative z-10">
-                    <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 font-black text-sm uppercase shadow-inner">
-                      {edit.role ? edit.role.charAt(0) : "A"}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-emerald-100 uppercase tracking-widest">
-                        {edit.role || "Admin"}
-                      </p>
-                      <p className="text-[9px] text-emerald-100/30 font-mono mt-0.5">
-                        {edit.by}
-                      </p>
-                      <p className="text-[10px] text-emerald-400/60 font-mono mt-1">
-                        {edit.at
-                          ? new Date(edit.at).toLocaleString("en-GB", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            })
-                          : "N/A"}
-                      </p>
-                    </div>
-                  </div>
-                  {idx === 0 && (
-                    <span className="relative z-10 text-[9px] bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-md uppercase font-black tracking-widest border border-emerald-500/20">
-                      Latest
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* 🚀 CONFIRM DIALOG */}
       <ConfirmDialog
-        isOpen={isDialogOpen}
-        onClose={() => setIsDialogOpen(false)}
-        onConfirm={confirmDelete}
-        title="Delete Production Log"
-        message={`Are you sure you want to delete this log?`}
-        confirmText="Delete Log"
-        isDestructive={true}
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, type: "" })}
+        onConfirm={handleDialogConfirm}
+        title="Save Record"
+        message="Are you sure you want to log this record to the database?"
+        confirmText="Save Record"
+        isDestructive={false}
       />
     </div>
   );
