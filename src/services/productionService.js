@@ -1,4 +1,3 @@
-import { db } from "../config/firebase";
 import {
   collection,
   addDoc,
@@ -10,89 +9,164 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import { db } from "../config/firebase";
 
-const prodCollection = collection(db, "production");
+const PROD_COLLECTION = "production";
+const LABOUR_COLLECTION = "labour_payouts";
 
 const productionService = {
-  getAllProduction: async () => {
-    const q = query(prodCollection, orderBy("date", "desc"));
-    const snapshot = await getDocs(q);
+  // --- PRODUCTION LOGS ---
+  addProduction: async (data, user) => {
+    const now = new Date().toISOString();
+    const userRole = user?.role || "admin";
+    const userEmail = user?.email || "admin@system.com";
 
-    const data = snapshot.docs.map((doc) => ({
-      _id: doc.id,
-      ...doc.data(),
-    }));
-
-    return { data };
+    const prodData = {
+      ...data,
+      quantity: Number(data.quantity),
+      createdBy: userEmail,
+      createdRole: userRole,
+      createdAt: now,
+      editHistory: [], // 🚀 COMPLETELY EMPTY. NO 'CREATED' TRACKING HERE.
+    };
+    return await addDoc(collection(db, PROD_COLLECTION), prodData);
   },
 
-  addProduction: async (formData, user) => {
-    const payload = {
-      ...formData,
-      quantity: Number(formData.quantity),
-      createdAt: new Date().toISOString(),
-      createdBy: user?.email || "Unknown",
+  getAllProduction: async () => {
+    const q = query(collection(db, PROD_COLLECTION), orderBy("date", "desc"));
+    const snapshot = await getDocs(q);
+    return {
+      data: snapshot.docs.map((doc) => ({
+        _id: doc.id,
+        id: doc.id,
+        ...doc.data(),
+      })),
     };
-
-    const docRef = await addDoc(prodCollection, payload);
-    return { data: { _id: docRef.id, ...payload } };
   },
 
   getProductionById: async (id) => {
-    const docRef = doc(db, "production", id);
-    const snapshot = await getDoc(docRef);
-
-    if (snapshot.exists()) {
-      return { data: { _id: snapshot.id, ...snapshot.data() } };
-    } else {
-      throw new Error("Production log not found");
-    }
+    const docRef = doc(db, PROD_COLLECTION, id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists())
+      return { data: { _id: docSnap.id, id: docSnap.id, ...docSnap.data() } };
+    throw new Error("Not found");
   },
 
-  // 🚀 UPDATED: Role save karna aur Top 10 History Limit
-  updateProduction: async (id, updateData, user) => {
-    const docRef = doc(db, "production", id);
+  updateProduction: async (id, data, user) => {
+    const docRef = doc(db, PROD_COLLECTION, id);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) return;
+    const existingData = docSnap.data();
 
-    // 1. Purani history nikalna
-    const snapshot = await getDoc(docRef);
-    let currentHistory = [];
+    // Check if data actually changed to avoid false tracking
+    const isChanged =
+      existingData.productName !== data.productName ||
+      Number(existingData.quantity) !== Number(data.quantity) ||
+      existingData.date !== data.date;
 
-    if (snapshot.exists() && snapshot.data().editHistory) {
-      currentHistory = snapshot.data().editHistory;
-    }
+    if (!isChanged) return; // Returns nothing if user didn't change anything
 
-    // 2. Naya edit record with ROLE
-    const currentEdit = {
-      by: user?.email || "Unknown",
-      role: user?.role || "Admin", // 👈 ROLE SAVE KIYA
-      at: new Date().toISOString(),
+    const now = new Date().toISOString();
+    const userRole = user?.role || "admin";
+    const userEmail = user?.email || "admin@system.com";
+
+    let history = existingData.editHistory || [];
+
+    // 🚀 ONLY TRACKING EDITS
+    history.push({ role: userRole, email: userEmail, at: now });
+    if (history.length > 10) history = history.slice(-10); // Keep max 10
+
+    return await updateDoc(docRef, {
+      ...data,
+      quantity: Number(data.quantity),
+      editHistory: history,
+    });
+  },
+
+  deleteProduction: async (id) => await deleteDoc(doc(db, PROD_COLLECTION, id)),
+  deleteAllProduction: async () => {},
+
+  // --- LABOUR PAYOUTS ---
+  addLabourPayout: async (data, user) => {
+    const now = new Date().toISOString();
+    const userRole = user?.role || "admin";
+    const userEmail = user?.email || "admin@system.com";
+
+    const payoutData = {
+      ...data,
+      quantityProduced: Number(data.quantityProduced || 0),
+      cost: Number(data.cost || 0),
+      amountPaid: Number(data.amountPaid || 0),
+      amountDue: Number(data.amountDue || 0),
+      createdBy: userEmail,
+      createdRole: userRole,
+      createdAt: now,
+      editHistory: [], // 🚀 COMPLETELY EMPTY. NO TRACKING ON CREATION.
     };
+    return await addDoc(collection(db, LABOUR_COLLECTION), payoutData);
+  },
 
-    currentHistory.push(currentEdit);
-
-    // 3. Top 10 Limit Capping
-    if (currentHistory.length > 10) {
-      currentHistory = currentHistory.slice(currentHistory.length - 10);
-    }
-
-    const payload = {
-      ...updateData,
-      quantity: Number(updateData.quantity),
-      lastEditedBy: currentEdit.by,
-      lastEditedRole: currentEdit.role, // 👈 ROLE UPDATE KIYA
-      lastEditedAt: currentEdit.at,
-      editHistory: currentHistory,
+  getAllLabourPayouts: async () => {
+    const q = query(collection(db, LABOUR_COLLECTION), orderBy("date", "desc"));
+    const snapshot = await getDocs(q);
+    return {
+      data: snapshot.docs.map((doc) => ({
+        _id: doc.id,
+        id: doc.id,
+        ...doc.data(),
+      })),
     };
-
-    await updateDoc(docRef, payload);
-    return { message: "Record updated successfully" };
   },
 
-  deleteProduction: async (id) => {
-    const docRef = doc(db, "production", id);
-    await deleteDoc(docRef);
-    return { message: "Record deleted" };
+  getLabourPayoutById: async (id) => {
+    const docRef = doc(db, LABOUR_COLLECTION, id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists())
+      return { data: { _id: docSnap.id, id: docSnap.id, ...docSnap.data() } };
+    throw new Error("Not found");
   },
+
+  updateLabourPayout: async (id, data, user) => {
+    const docRef = doc(db, LABOUR_COLLECTION, id);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) return;
+    const existingData = docSnap.data();
+
+    // Check if data actually changed
+    const isChanged =
+      existingData.labourName !== data.labourName ||
+      existingData.payoutCategory !== data.payoutCategory ||
+      Number(existingData.quantityProduced || 0) !==
+        Number(data.quantityProduced || 0) ||
+      Number(existingData.cost || 0) !== Number(data.cost || 0) ||
+      Number(existingData.amountPaid || 0) !== Number(data.amountPaid || 0) ||
+      Number(existingData.amountDue || 0) !== Number(data.amountDue || 0) ||
+      existingData.date !== data.date;
+
+    if (!isChanged) return;
+
+    const now = new Date().toISOString();
+    const userRole = user?.role || "admin";
+    const userEmail = user?.email || "admin@system.com";
+
+    let history = existingData.editHistory || [];
+
+    // 🚀 ONLY TRACKING EDITS
+    history.push({ role: userRole, email: userEmail, at: now });
+    if (history.length > 10) history = history.slice(-10); // Keep max 10
+
+    return await updateDoc(docRef, {
+      ...data,
+      quantityProduced: Number(data.quantityProduced || 0),
+      cost: Number(data.cost || 0),
+      amountPaid: Number(data.amountPaid || 0),
+      amountDue: Number(data.amountDue || 0),
+      editHistory: history,
+    });
+  },
+
+  deleteLabourPayout: async (id) =>
+    await deleteDoc(doc(db, LABOUR_COLLECTION, id)),
 };
 
 export default productionService;
