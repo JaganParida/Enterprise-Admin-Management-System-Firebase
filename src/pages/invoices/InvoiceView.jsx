@@ -29,21 +29,19 @@ const InvoiceView = () => {
         setInvoice(data);
         setLoading(false);
       } catch (error) {
-        console.error("Error fetching invoice details:", error);
+        toast.error("Failed to load invoice data");
         setLoading(false);
       }
     };
     fetchInvoice();
-  }, [id]);
+  }, [id, toast]);
 
-  // ✅ PERFECT A4 SCALING ENGINE (Edge-to-Edge Mobile Fit)
+  // ✅ PERFECT A4 SCALING ENGINE
   useEffect(() => {
     const updateLayout = () => {
       if (containerRef.current) {
-        // Get available width from the strict parent container
-        const availableWidth = containerRef.current.clientWidth;
-
-        // Calculate the scale needed to fit 800px A4 into the available screen width
+        const paddingOffset = window.innerWidth < 640 ? 10 : 32;
+        const availableWidth = window.innerWidth - paddingOffset;
         const newScale = availableWidth < 800 ? availableWidth / 800 : 1;
         setScale(newScale);
       }
@@ -51,8 +49,6 @@ const InvoiceView = () => {
 
     updateLayout();
     window.addEventListener("resize", updateLayout);
-
-    // Minor delay to ensure fonts/DOM are fully painted
     const timeout = setTimeout(updateLayout, 100);
 
     return () => {
@@ -74,7 +70,7 @@ const InvoiceView = () => {
           <script src="https://cdn.tailwindcss.com"></script>
           <style>
             @media print {
-              @page { margin: 15mm; size: auto; }
+              @page { margin: 10mm; size: A4 portrait; }
               body { 
                 -webkit-print-color-adjust: exact; 
                 print-color-adjust: exact; 
@@ -85,7 +81,7 @@ const InvoiceView = () => {
             }
           </style>
         </head>
-        <body class="bg-white text-slate-800 font-sans p-8">
+        <body class="bg-white text-[#1e3a8a] font-sans m-0 p-0">
           ${invoiceContent}
           <script>
             setTimeout(() => {
@@ -99,19 +95,25 @@ const InvoiceView = () => {
     printWindow.document.close();
   };
 
-  // ✅ PDF DOWNLOAD
+  // ✅ PDF DOWNLOAD (Perfect Safe Rendering)
   const handleDownloadPDF = async () => {
     const element = printRef.current;
+
+    // Bring element out of hide mode but keep away from viewport
     element.style.display = "block";
-    element.style.position = "absolute";
-    element.style.top = "-9999px";
+    element.style.position = "fixed";
+    element.style.left = "200vw";
+    element.style.top = "0";
 
     try {
       toast.info("Generating high-quality PDF...");
+
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        windowWidth: 800,
+        windowWidth: 840, // Render canvas slightly larger
+        backgroundColor: "#ffffff",
+        logging: false,
       });
 
       const imgData = canvas.toDataURL("image/png");
@@ -120,24 +122,26 @@ const InvoiceView = () => {
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      // Safe Top Margin so the badge never clips
+      pdf.addImage(imgData, "PNG", 0, 5, pdfWidth, pdfHeight);
       pdf.save(`Invoice_${invoice?.invoiceNumber || id}.pdf`);
       toast.success("PDF Downloaded successfully!");
     } catch (err) {
+      console.error(err);
       toast.error("Failed to generate PDF");
     } finally {
       element.style.display = "none";
+      element.style.position = "static";
     }
   };
 
   const handleShare = async () => {
     if (!invoice) return;
-
     toast.info("Preparing WhatsApp link...");
     const phone = invoice.client.phone
       ? invoice.client.phone.replace(/\D/g, "")
       : "";
-    const message = `*INVOICE DETAILS*\n------------------------\n*Invoice No:* ${invoice.invoiceNumber}\n*Date:* ${new Date(invoice.date).toLocaleDateString("en-GB")}\n*Client:* ${invoice.client.name}\n------------------------\n*Total Amount:* ₹ ${invoice.grandTotal.toLocaleString()}\n------------------------\nPlease find your invoice document attached. Thank you for your business!`;
+    const message = `*TAX INVOICE*\n------------------------\n*Invoice No:* ${invoice.invoiceNumber}\n*Date:* ${new Date(invoice.date).toLocaleDateString("en-GB")}\n*Client:* ${invoice.client.name}\n------------------------\n*Total Amount:* ₹ ${invoice.grandTotal.toLocaleString("en-IN")}\n------------------------\nPlease find your invoice details attached. Thank you!`;
 
     const whatsappUrl = phone
       ? `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`
@@ -154,235 +158,526 @@ const InvoiceView = () => {
       <div className="text-white text-center mt-10">Invoice not found.</div>
     );
 
-  // --- Strict 800px A4 Template ---
-  // Purely desktop classes since scaling handles responsiveness
+  const toWords = (num) => {
+    const a = [
+      "",
+      "One ",
+      "Two ",
+      "Three ",
+      "Four ",
+      "Five ",
+      "Six ",
+      "Seven ",
+      "Eight ",
+      "Nine ",
+      "Ten ",
+      "Eleven ",
+      "Twelve ",
+      "Thirteen ",
+      "Fourteen ",
+      "Fifteen ",
+      "Sixteen ",
+      "Seventeen ",
+      "Eighteen ",
+      "Nineteen ",
+    ];
+    const b = [
+      "",
+      "",
+      "Twenty",
+      "Thirty",
+      "Forty",
+      "Fifty",
+      "Sixty",
+      "Seventy",
+      "Eighty",
+      "Ninety",
+    ];
+    if ((num = num.toString()).length > 9) return "overflow";
+    let n = ("000000000" + num)
+      .substr(-9)
+      .match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
+    if (!n) return;
+    let str = "";
+    str +=
+      n[1] != 0
+        ? (a[Number(n[1])] || b[n[1][0]] + " " + a[n[1][1]]) + "Crore "
+        : "";
+    str +=
+      n[2] != 0
+        ? (a[Number(n[2])] || b[n[2][0]] + " " + a[n[2][1]]) + "Lakh "
+        : "";
+    str +=
+      n[3] != 0
+        ? (a[Number(n[3])] || b[n[3][0]] + " " + a[n[3][1]]) + "Thousand "
+        : "";
+    str +=
+      n[4] != 0
+        ? (a[Number(n[4])] || b[n[4][0]] + " " + a[n[4][1]]) + "Hundred "
+        : "";
+    str +=
+      n[5] != 0
+        ? (str != "" ? "and " : "") +
+          (a[Number(n[5])] || b[n[5][0]] + " " + a[n[5][1]])
+        : "";
+    return str.trim();
+  };
+
+  const formatRsP = (amount) => {
+    const val = Number(amount).toFixed(2);
+    const [rs, p] = val.split(".");
+    return { rs: Number(rs).toLocaleString("en-IN"), p };
+  };
+
+  // Safe table stretching logic
+  const emptyRowsNeeded = Math.max(0, 10 - invoice.items.length);
+  const renderEmptyRows = (count) => {
+    const rows = [];
+    for (let i = 0; i < count; i++) {
+      rows.push(
+        <tr key={`empty-${i}`} className="h-[25px]">
+          <td className="border-r-[2px] border-[#1e3a8a]"></td>
+          <td className="border-r-[2px] border-[#1e3a8a]"></td>
+          <td className="border-r-[2px] border-[#1e3a8a]"></td>
+          <td className="border-r-[2px] border-[#1e3a8a]"></td>
+          <td className="border-r-[2px] border-[#1e3a8a]"></td>
+          <td className="border-r-[2px] border-[#1e3a8a]"></td>
+          <td></td>
+        </tr>,
+      );
+    }
+    return rows;
+  };
+
+  // 🚀 CORE INVOICE TEMPLATE
   const InvoiceTemplate = () => (
-    <>
-      {/* Header */}
-      <div className="flex justify-between items-start border-b-2 border-slate-800 pb-8 mb-8">
-        <div>
-          <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">
-            INVOICE
-          </h1>
-          <p className="text-slate-500 mt-2 font-mono text-lg">
-            #{invoice.invoiceNumber}
-          </p>
-          <div
-            className={`mt-2 inline-block px-3 py-1 rounded text-xs font-bold uppercase tracking-wide border ${invoice.status === "Paid" ? "bg-green-100 text-green-800 border-green-200" : "bg-orange-100 text-orange-800 border-orange-200"}`}
+    <div className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-8 pt-10 pb-6">
+      {/* 🚀 WATERMARK - Opacity adjusted for professional tone */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
+        <div className="relative w-[500px] h-[500px] opacity-[0.40]">
+          <svg
+            viewBox="0 0 200 200"
+            className="w-full h-full animate-[spin_60s_linear_infinite]"
           >
-            {invoice.status}
+            <path
+              id="textPath"
+              d="M 100, 100 m -70, 0 a 70,70 0 1,1 140,0 a 70,70 0 1,1 -140,0"
+              fill="none"
+            />
+            <text
+              fill="#1e3a8a"
+              fontSize="16"
+              fontWeight="bold"
+              letterSpacing="2"
+            >
+              <textPath href="#textPath" startOffset="0%">
+                M/S MAA FLYASH BRICKS • M/S MAA FLYASH BRICKS •
+              </textPath>
+            </text>
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <img
+              src="/maa.jpg"
+              alt="Watermark"
+              className="w-48 h-48 object-contain rounded-full mix-blend-multiply"
+            />
           </div>
-        </div>
-        <div className="text-right">
-          <h2 className="text-xl font-bold text-emerald-700">
-            Enterprise Admin System
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">123 Industrial Area</p>
-          <p className="text-slate-500 text-sm">Bhubaneswar, Odisha - 751024</p>
-          <p className="text-slate-500 text-sm font-semibold mt-1">
-            GSTIN: 21ABCDE1234F1Z5
-          </p>
         </div>
       </div>
 
-      {/* Client & Date */}
-      <div className="flex justify-between mb-10 gap-8">
-        <div className="w-1/2">
-          <h3 className="text-slate-400 uppercase text-xs font-bold tracking-wider mb-3">
-            Bill To:
-          </h3>
-          <p className="font-bold text-lg text-slate-900">
-            {invoice.client.name}
-          </p>
-          <p className="text-slate-600 text-sm leading-relaxed mt-1">
-            {invoice.client.address || "No Address Provided"}
-          </p>
-          <p className="text-slate-600 text-sm mt-1">
-            Ph: {invoice.client.phone}
-          </p>
-          {invoice.client.gst && (
-            <p className="text-slate-600 text-sm mt-1">
-              GST: {invoice.client.gst}
-            </p>
-          )}
+      {/* OUTER BORDER CONTAINER */}
+      <div className="border-[2px] border-[#1e3a8a] flex-1 flex flex-col relative z-10 bg-white/70 backdrop-blur-[1px]">
+        {/* Top "TAX INVOICE" Badge overlapping border */}
+        <div className="absolute -top-[14px] left-1/2 transform -translate-x-1/2 bg-white px-3">
+          <span className="bg-[#1e3a8a] text-white font-bold px-4 py-1 rounded text-xs tracking-widest uppercase border border-[#1e3a8a]">
+            Tax Invoice
+          </span>
         </div>
-        <div className="w-1/2 text-right">
-          <h3 className="text-slate-400 uppercase text-xs font-bold tracking-wider mb-3">
-            Details:
-          </h3>
-          <div className="space-y-2">
-            <p className="text-sm">
-              <span className="text-slate-500 inline-block w-24">Date:</span>
-              <span className="font-bold">
+
+        {/* --- HEADER SECTION --- */}
+        <div className="flex justify-between items-start pt-6 pb-2 px-3 border-b-[2px] border-[#1e3a8a]">
+          <div className="w-24 h-24 shrink-0 flex items-center justify-center ml-2">
+            <img
+              src="/maa.jpg"
+              alt="Logo"
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                e.target.style.display = "none";
+              }}
+            />
+          </div>
+
+          <div className="flex-1 text-center px-2 pt-1">
+            <h1 className="text-[34px] font-black tracking-wide uppercase leading-tight">
+              M/S MAA FLYASH BRICKS
+            </h1>
+            <p className="text-[13px] font-semibold mt-1">
+              At-Sundarpur, PO/PS-Chandaka, Dist-Khordha
+            </p>
+            <p className="text-[13px] font-bold mt-0.5">Mob : 8895000797</p>
+            <p className="text-[13px] font-bold">GSTIN : 21COTPP3464E1ZS</p>
+          </div>
+
+          <div className="w-52 text-right font-medium space-y-2 text-[13px] pt-3 pr-2">
+            <div className="flex justify-between items-end">
+              <span className="shrink-0">Invoice No:</span>
+              <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 text-right ml-2 pb-0.5">
+                {invoice.invoiceNumber}
+              </span>
+            </div>
+            <div className="flex justify-between items-end">
+              <span className="shrink-0">Date:</span>
+              <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 text-right ml-2 pb-0.5">
                 {new Date(invoice.date).toLocaleDateString("en-GB")}
               </span>
-            </p>
-            <p className="text-sm">
-              <span className="text-slate-500 inline-block w-24">Terms:</span>
-              <span className="font-bold">Due on Receipt</span>
-            </p>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Table */}
-      <table className="w-full mb-8 border-collapse">
-        <thead>
-          <tr className="bg-slate-100 text-slate-600 text-xs uppercase font-bold tracking-wider">
-            <th className="py-3 px-4 text-left rounded-l-md w-1/2">
-              Description
-            </th>
-            <th className="py-3 px-4 text-center">Qty</th>
-            <th className="py-3 px-4 text-right">Unit Price</th>
-            <th className="py-3 px-4 text-right rounded-r-md">Total</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {invoice.items.map((item, index) => (
-            <tr key={index}>
-              <td className="py-4 px-4 font-medium text-slate-800">
-                {item.name}
-              </td>
-              <td className="py-4 px-4 text-center text-slate-600">
-                {item.quantity}
-              </td>
-              <td className="py-4 px-4 text-right text-slate-600">
-                ₹{" "}
-                {item.price.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </td>
-              <td className="py-4 px-4 text-right font-bold text-slate-900">
-                ₹{" "}
-                {item.total.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {/* Totals */}
-      <div className="flex justify-end border-t-2 border-slate-800 pt-8">
-        <div className="w-72 space-y-3">
-          <div className="flex justify-between text-slate-600 text-sm font-medium">
-            <span>Sub Total:</span>
-            <span>
-              ₹{" "}
-              {invoice.subTotal.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+        {/* --- CLIENT DETAILS SECTION --- */}
+        <div className="px-3 py-2 text-[12px] font-semibold space-y-2 border-b-[2px] border-[#1e3a8a]">
+          <div className="flex items-end">
+            <span className="w-36 shrink-0">Name of the Purchaser:</span>
+            <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase tracking-wide px-2 pb-0.5">
+              {invoice.client.name}
             </span>
           </div>
-          <div className="flex justify-between text-slate-600 text-sm font-medium">
-            <span>GST ({invoice.gstRate}%):</span>
-            <span>
-              ₹{" "}
-              {invoice.gstAmount.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+          <div className="flex items-end">
+            <span className="w-14 shrink-0">Address:</span>
+            <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 px-2 pb-0.5">
+              {invoice.client.address || "-"}
             </span>
           </div>
-          <div className="flex justify-between text-xl font-extrabold text-emerald-700 border-t border-slate-200 pt-4 mt-2">
-            <span>Total:</span>
-            <span>
-              ₹{" "}
-              {invoice.grandTotal.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </span>
+          <div className="flex justify-between items-end">
+            <div className="flex flex-1 items-end pr-4">
+              <span className="w-12 shrink-0">Phone:</span>
+              <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 px-2 pb-0.5">
+                {invoice.client.phone}
+              </span>
+            </div>
+            <div className="flex w-[40%] items-end">
+              <span className="w-12 shrink-0">GSTIN:</span>
+              <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 text-center">
+                {invoice.client.gst || "-"}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <div className="mt-16 pt-8 border-t border-slate-100 text-center text-slate-400 text-xs flex flex-col items-center">
-        <p className="font-bold text-slate-600 mb-1">
-          Thank you for your business!
-        </p>
-        <p>This is a computer-generated invoice and needs no signature.</p>
+        {/* --- PERFECT HTML STRICT TABLE SECTION --- */}
+        {/* Enforces rigid grid layout for calculation matching */}
+        <div className="flex-1 flex flex-col">
+          <table className="w-full border-collapse text-[13px] h-full table-fixed">
+            <colgroup>
+              <col className="w-[6%]" />
+              <col className="w-[44%]" />
+              <col className="w-[10%]" />
+              <col className="w-[9%]" />
+              <col className="w-[13%]" />
+              <col className="w-[12%]" />
+              <col className="w-[6%]" />
+            </colgroup>
+
+            {/* Header */}
+            <thead className="bg-[#1e3a8a]/5 text-center font-bold">
+              <tr>
+                <th
+                  rowSpan="2"
+                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1"
+                >
+                  SL.
+                  <br />
+                  No.
+                </th>
+                <th
+                  rowSpan="2"
+                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-2"
+                >
+                  Description of Goods
+                </th>
+                <th
+                  rowSpan="2"
+                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1"
+                >
+                  HSN
+                  <br />
+                  Code
+                </th>
+                <th
+                  rowSpan="2"
+                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1"
+                >
+                  Qnty
+                </th>
+                <th
+                  rowSpan="2"
+                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1"
+                >
+                  Rate/Price
+                </th>
+                <th
+                  colSpan="2"
+                  className="border-b-[2px] border-[#1e3a8a] p-1 tracking-widest text-[12px]"
+                >
+                  AMOUNT
+                </th>
+              </tr>
+              <tr>
+                <th className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1 text-[11px]">
+                  Rs.
+                </th>
+                <th className="border-b-[2px] border-[#1e3a8a] p-1 text-[11px]">
+                  P.
+                </th>
+              </tr>
+            </thead>
+
+            {/* Body */}
+            <tbody className="align-top">
+              {invoice.items.map((item, i) => {
+                const amt = formatRsP(item.total);
+                return (
+                  <tr key={i} className="font-bold">
+                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-center">
+                      {i + 1}
+                    </td>
+                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 uppercase tracking-wide">
+                      {item.name}
+                    </td>
+                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-center font-medium">
+                      {item.hsn || "-"}
+                    </td>
+                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-center">
+                      {item.quantity}
+                    </td>
+                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-right pr-2 font-medium">
+                      {Number(item.price).toFixed(2)}
+                    </td>
+                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-right pr-2">
+                      {amt.rs}
+                    </td>
+                    <td className="p-2 pt-4 text-center">{amt.p}</td>
+                  </tr>
+                );
+              })}
+
+              {renderEmptyRows(emptyRowsNeeded)}
+
+              {/* Extra stretching row to ensure borders hit the bottom calculation seamlessly */}
+              <tr className="h-full">
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
+                <td className="border-b-[2px] border-[#1e3a8a]"></td>
+              </tr>
+            </tbody>
+
+            {/* --- CALCULATIONS --- */}
+            {/* Uses colspan to sit perfectly inside the grid */}
+            <tfoot className="font-bold text-[13px] bg-[#1e3a8a]/[0.02]">
+              <tr>
+                <td
+                  colSpan="4"
+                  rowSpan="5"
+                  className="border-r-[2px] border-[#1e3a8a] p-3 align-top"
+                >
+                  <div className="flex items-start">
+                    <span className="shrink-0 mr-1.5">(Rupees.</span>
+                    <span className="uppercase underline decoration-[#1e3a8a] decoration-dotted underline-offset-4 leading-loose tracking-wide flex-1 px-1">
+                      {toWords(Math.floor(invoice.grandTotal))} ONLY
+                    </span>
+                    <span className="shrink-0 ml-1">)</span>
+                  </div>
+                </td>
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                  G. TOTAL
+                </td>
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
+                  {formatRsP(invoice.subTotal).rs}
+                </td>
+                <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                  {formatRsP(invoice.subTotal).p}
+                </td>
+              </tr>
+
+              {invoice.gstRate > 0 ? (
+                <>
+                  <tr>
+                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                      CGST @ {invoice.gstRate / 2}%
+                    </td>
+                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
+                      {formatRsP(invoice.gstAmount / 2).rs}
+                    </td>
+                    <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                      {formatRsP(invoice.gstAmount / 2).p}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                      SGST @ {invoice.gstRate / 2}%
+                    </td>
+                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
+                      {formatRsP(invoice.gstAmount / 2).rs}
+                    </td>
+                    <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                      {formatRsP(invoice.gstAmount / 2).p}
+                    </td>
+                  </tr>
+                </>
+              ) : (
+                <>
+                  <tr>
+                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                      CGST @
+                    </td>
+                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
+                      -
+                    </td>
+                    <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                      -
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                      SGST @
+                    </td>
+                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
+                      -
+                    </td>
+                    <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                      -
+                    </td>
+                  </tr>
+                </>
+              )}
+
+              <tr className="font-black text-[13px] bg-[#1e3a8a]/[0.04]">
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 bg-[#1e3a8a]/5">
+                  N. TOTAL
+                </td>
+                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2 text-[14px]">
+                  {formatRsP(invoice.grandTotal).rs}
+                </td>
+                <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                  {formatRsP(invoice.grandTotal).p}
+                </td>
+              </tr>
+
+              <tr>
+                <td className="border-r-[2px] border-[#1e3a8a] p-1 text-[11px] bg-[#1e3a8a]/5">
+                  R/O
+                </td>
+                <td className="border-r-[2px] border-[#1e3a8a] p-1 text-right pr-2">
+                  00
+                </td>
+                <td className="p-1 text-center">00</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {/* --- BOTTOM FOOTER / SIGNATURE --- */}
+        <div className="flex justify-between items-end px-3 pt-2 pb-6 text-[10px] font-semibold leading-tight border-t-[2px] border-[#1e3a8a]">
+          <div className="space-y-0.5">
+            <p>N.B: Goods once sold is not refundable.</p>
+            <p>All the disputes are subjects to Bhubaneswar jurisdiction.</p>
+            <p>
+              This Registration Certificate is valid on the date of issue of
+              this Tax Invoice.
+            </p>
+            <p className="pt-1">Printed by Enterprise Admin System</p>
+          </div>
+          <div className="text-center w-48 flex flex-col items-center pt-8">
+            <div className="h-[1.5px] w-full bg-[#1e3a8a] mb-1"></div>
+            <p className="italic font-bold">Signature of the</p>
+            <p className="italic font-bold">Authorised Person</p>
+          </div>
+        </div>
+
+        {/* Bottom Tag */}
+        <div className="absolute bottom-1 right-3 font-bold uppercase text-[12px] tracking-wide">
+          For M/S MAA FLYASH BRICKS
+        </div>
       </div>
-    </>
+    </div>
   );
 
   return (
-    <div className="max-w-[800px] mx-auto my-4 md:my-8 animate-in fade-in slide-in-from-bottom-4 duration-500 px-2 sm:px-4">
+    <div className="max-w-[800px] mx-auto my-2 md:my-4 animate-in fade-in slide-in-from-bottom-4 duration-500 px-0 sm:px-2">
       {/* Action Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-3 md:mb-4 gap-2 md:gap-4 px-2">
         <button
           onClick={() => navigate("/enterprise/invoices")}
-          className="flex items-center text-emerald-100/60 hover:text-white transition-colors self-start sm:self-auto"
+          className="flex items-center text-emerald-100/60 hover:text-white transition-colors self-start sm:self-auto font-medium"
         >
-          <ArrowLeft size={18} className="mr-2" /> Back to List
+          <ArrowLeft size={18} className="mr-2" /> Back
         </button>
         <div className="flex gap-2 flex-wrap justify-end w-full sm:w-auto">
           <Button
             onClick={handleShare}
-            className="text-xs px-3 gap-1.5 bg-[#25D366] hover:bg-[#128C7E] text-white border-none shadow-lg shadow-emerald-900/20 flex-1 sm:flex-none justify-center"
+            className="text-xs px-3 py-1.5 gap-1.5 bg-[#25D366] hover:bg-[#128C7E] text-white border-none shadow-lg shadow-emerald-900/20 flex-1 sm:flex-none justify-center"
           >
             <Share2 size={16} /> WhatsApp
           </Button>
           <Button
             variant="secondary"
             onClick={handlePrint}
-            className="text-xs px-3 gap-1.5 flex-1 sm:flex-none justify-center"
+            className="text-xs px-3 py-1.5 gap-1.5 flex-1 sm:flex-none justify-center border-emerald-900/40 hover:bg-emerald-900/20 text-emerald-100"
           >
             <Printer size={16} /> Print
           </Button>
           <Button
             onClick={handleDownloadPDF}
-            className="text-xs px-3 gap-1.5 shadow-emerald-500/20 flex-1 sm:flex-none justify-center"
+            className="text-xs px-3 py-1.5 gap-1.5 shadow-emerald-500/20 flex-1 sm:flex-none justify-center border border-emerald-500/50"
           >
-            <Download size={16} /> PDF
+            <Download size={16} /> Save PDF
           </Button>
         </div>
       </div>
 
-      {/* --- VISIBLE INVOICE (Perfectly Scaled, No Extra Margins) --- */}
-      <div ref={containerRef} className="w-full flex justify-center mt-2">
+      {/* --- INVOICE CONTAINER (Responsive Height Fixed) --- */}
+      <div ref={containerRef} className="w-full flex justify-center pb-6">
         <div
-          className="bg-white rounded shadow-2xl overflow-hidden"
-          style={{
-            width: `${800 * scale}px`,
-            height: `${1131 * scale}px`,
-            boxShadow:
-              "0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)",
-          }}
+          className="bg-white shadow-[0_0_20px_rgba(16,185,129,0.1)] origin-top overflow-hidden"
+          style={{ width: `${800 * scale}px`, height: `${1123 * scale}px` }}
         >
           <div
             style={{
               width: "800px",
-              height: "1131px",
+              height: "1123px",
               transform: `scale(${scale})`,
               transformOrigin: "top left",
               backgroundColor: "white",
             }}
-            className="p-10 sm:p-14 text-slate-800"
           >
             <InvoiceTemplate />
           </div>
         </div>
       </div>
 
-      {/* --- HIDDEN INVOICE FOR PERFECT PDF/PRINT --- */}
+      {/* --- HIDDEN WRAPPER FOR PDF GENERATION --- */}
       <div
-        ref={printRef}
         style={{
           display: "none",
-          width: "800px",
-          padding: "56px" /* Matches p-14 closely for consistency */,
-          backgroundColor: "white",
-          color: "#1e293b",
-          fontFamily: "sans-serif",
+          position: "fixed",
+          left: "200vw",
+          top: "0",
         }}
+        ref={printRef}
       >
-        <InvoiceTemplate />
+        <div
+          style={{
+            width: "840px", // Adding buffer width so borders don't slice off
+            backgroundColor: "white",
+            padding: "20px", // Prevent top label 'Tax Invoice' from clipping
+          }}
+        >
+          <InvoiceTemplate />
+        </div>
       </div>
     </div>
   );
