@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom"; // ✅ Added useNavigate
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import {
   LayoutDashboard,
   Package,
   Factory,
-  Banknote,
+  ShoppingCart, // 🚀 Sales icon
   FileText,
   Users,
   Truck,
@@ -429,8 +429,9 @@ const Sidebar = ({
   const { logout } = useAuth();
   const [isPassModalOpen, setIsPassModalOpen] = useState(false);
   const { isTransport, colors } = useThemeColors();
-  const navigate = useNavigate(); // ✅ Initialize useNavigate
+  const navigate = useNavigate();
 
+  // 🚀 Removed Cash, Added Sales
   const enterpriseLinks = [
     {
       path: "/enterprise/dashboard",
@@ -439,7 +440,7 @@ const Sidebar = ({
     },
     { path: "/enterprise/stock", label: "Inventory", icon: Package },
     { path: "/enterprise/production", label: "Production", icon: Factory },
-    { path: "/enterprise/cash", label: "Cash Book", icon: Banknote },
+    { path: "/enterprise/sales", label: "Sales Tracking", icon: ShoppingCart }, // ✅ New Sales Link
     { path: "/enterprise/invoices", label: "Invoices", icon: FileText },
     { path: "/enterprise/employees", label: "Employees", icon: Users },
   ];
@@ -467,10 +468,9 @@ const Sidebar = ({
     ? transportationLinks
     : [...enterpriseLinks, ...sharedLinks];
 
-  // ✅ Modified Logout Handler
   const handleLogout = () => {
     logout();
-    navigate("/"); // Redirect to home page immediately
+    navigate("/");
   };
 
   return (
@@ -594,7 +594,6 @@ const Sidebar = ({
             )}
           </button>
 
-          {/* ✅ UPDATED BUTTON TO USE handleLogout */}
           <button
             onClick={handleLogout}
             className={`w-full flex items-center rounded-xl ${colors.textSubtle} hover:bg-rose-500/10 hover:text-rose-400 transition-all group ${isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3"}`}
