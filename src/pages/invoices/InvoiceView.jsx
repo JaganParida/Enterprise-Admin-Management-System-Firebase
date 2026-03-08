@@ -36,13 +36,18 @@ const InvoiceView = () => {
     fetchInvoice();
   }, [id, toast]);
 
-  // ✅ PERFECT A4 SCALING ENGINE
+  // ✅ PERFECT A4 SCALING ENGINE - Fixed Mobile Margins
   useEffect(() => {
     const updateLayout = () => {
       if (containerRef.current) {
-        const paddingOffset = window.innerWidth < 640 ? 10 : 32;
+        // 🚀 Increased offset for better left/right margins on small devices
+        const paddingOffset = window.innerWidth < 640 ? 40 : 64;
         const availableWidth = window.innerWidth - paddingOffset;
-        const newScale = availableWidth < 800 ? availableWidth / 800 : 1;
+        const targetWidth = 800; // Fixed width of the A4 template
+
+        // Calculate required scale, max scale is 1
+        const newScale =
+          availableWidth < targetWidth ? availableWidth / targetWidth : 1;
         setScale(newScale);
       }
     };
@@ -69,20 +74,29 @@ const InvoiceView = () => {
           <title>Invoice - ${invoice.invoiceNumber}</title>
           <script src="https://cdn.tailwindcss.com"></script>
           <style>
+            @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap');
             @media print {
-              @page { margin: 10mm; size: A4 portrait; }
+              @page { size: A4 portrait; margin: 10mm; } 
               body { 
-                -webkit-print-color-adjust: exact; 
-                print-color-adjust: exact; 
+                font-family: 'Roboto', Arial, sans-serif;
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
                 background: white !important;
+                margin: 0;
+                display: flex;
+                justify-content: center;
+              }
+              .print-wrapper {
                 width: 800px;
                 margin: 0 auto;
               }
             }
           </style>
         </head>
-        <body class="bg-white text-[#1e3a8a] font-sans m-0 p-0">
-          ${invoiceContent}
+        <body class="bg-white text-[#1e3a8a]">
+          <div class="print-wrapper">
+            ${invoiceContent}
+          </div>
           <script>
             setTimeout(() => {
               window.print();
@@ -95,11 +109,10 @@ const InvoiceView = () => {
     printWindow.document.close();
   };
 
-  // ✅ PDF DOWNLOAD (Perfect Safe Rendering)
+  // ✅ PDF DOWNLOAD (Fixed Badge Cropping Issue)
   const handleDownloadPDF = async () => {
     const element = printRef.current;
 
-    // Bring element out of hide mode but keep away from viewport
     element.style.display = "block";
     element.style.position = "fixed";
     element.style.left = "200vw";
@@ -111,7 +124,7 @@ const InvoiceView = () => {
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        windowWidth: 840, // Render canvas slightly larger
+        windowWidth: 860, // Slightly larger width to avoid side clipping
         backgroundColor: "#ffffff",
         logging: false,
       });
@@ -119,10 +132,9 @@ const InvoiceView = () => {
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfWidth = 210;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-      // Safe Top Margin so the badge never clips
       pdf.addImage(imgData, "PNG", 0, 5, pdfWidth, pdfHeight);
       pdf.save(`Invoice_${invoice?.invoiceNumber || id}.pdf`);
       toast.success("PDF Downloaded successfully!");
@@ -229,19 +241,18 @@ const InvoiceView = () => {
     return { rs: Number(rs).toLocaleString("en-IN"), p };
   };
 
-  // Safe table stretching logic
   const emptyRowsNeeded = Math.max(0, 10 - invoice.items.length);
   const renderEmptyRows = (count) => {
     const rows = [];
     for (let i = 0; i < count; i++) {
       rows.push(
-        <tr key={`empty-${i}`} className="h-[25px]">
-          <td className="border-r-[2px] border-[#1e3a8a]"></td>
-          <td className="border-r-[2px] border-[#1e3a8a]"></td>
-          <td className="border-r-[2px] border-[#1e3a8a]"></td>
-          <td className="border-r-[2px] border-[#1e3a8a]"></td>
-          <td className="border-r-[2px] border-[#1e3a8a]"></td>
-          <td className="border-r-[2px] border-[#1e3a8a]"></td>
+        <tr key={`empty-${i}`} className="h-[30px]">
+          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
           <td></td>
         </tr>,
       );
@@ -251,10 +262,14 @@ const InvoiceView = () => {
 
   // 🚀 CORE INVOICE TEMPLATE
   const InvoiceTemplate = () => (
-    <div className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-8 pt-10 pb-6">
-      {/* 🚀 WATERMARK - Opacity adjusted for professional tone */}
+    // 🚀 Added pt-12 to ensure top of document has enough space for the badge during PDF generation
+    <div
+      className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-8 pt-12 pb-6 mx-auto"
+      style={{ fontFamily: "Arial, sans-serif" }}
+    >
+      {/* WATERMARK */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
-        <div className="relative w-[500px] h-[500px] opacity-[0.40]">
+        <div className="relative w-[500px] h-[500px] opacity-[0.15]">
           <svg
             viewBox="0 0 200 200"
             className="w-full h-full animate-[spin_60s_linear_infinite]"
@@ -286,21 +301,22 @@ const InvoiceView = () => {
       </div>
 
       {/* OUTER BORDER CONTAINER */}
-      <div className="border-[2px] border-[#1e3a8a] flex-1 flex flex-col relative z-10 bg-white/70 backdrop-blur-[1px]">
-        {/* Top "TAX INVOICE" Badge overlapping border */}
-        <div className="absolute -top-[14px] left-1/2 transform -translate-x-1/2 bg-white px-3">
-          <span className="bg-[#1e3a8a] text-white font-bold px-4 py-1 rounded text-xs tracking-widest uppercase border border-[#1e3a8a]">
+      {/* 🚀 Increased mt-6 to push container down, protecting absolute badge from clipping */}
+      <div className="border-[2px] border-[#1e3a8a] flex-1 flex flex-col relative z-10 bg-white/60 mt-6 rounded-sm">
+        {/* ✅ TOP BADGE - Perfectly centered on the border */}
+        <div className="absolute -top-[14px] left-1/2 transform -translate-x-1/2 bg-white px-3 flex items-center justify-center">
+          <span className="bg-[#1e3a8a] text-white font-bold px-4 py-[3px] rounded text-[13px] tracking-widest uppercase border-[1.5px] border-[#1e3a8a] whitespace-nowrap shadow-sm">
             Tax Invoice
           </span>
         </div>
 
         {/* --- HEADER SECTION --- */}
-        <div className="flex justify-between items-start pt-6 pb-2 px-3 border-b-[2px] border-[#1e3a8a]">
-          <div className="w-24 h-24 shrink-0 flex items-center justify-center ml-2">
+        <div className="flex justify-between items-start pt-8 pb-3 px-4 border-b-[2px] border-[#1e3a8a]">
+          <div className="w-24 h-24 shrink-0 flex items-center justify-center">
             <img
               src="/maa.jpg"
               alt="Logo"
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain mix-blend-multiply"
               onError={(e) => {
                 e.target.style.display = "none";
               }}
@@ -308,26 +324,30 @@ const InvoiceView = () => {
           </div>
 
           <div className="flex-1 text-center px-2 pt-1">
-            <h1 className="text-[34px] font-black tracking-wide uppercase leading-tight">
+            <h1 className="text-[34px] font-black tracking-tight uppercase leading-tight text-[#1e3a8a]">
               M/S MAA FLYASH BRICKS
             </h1>
-            <p className="text-[13px] font-semibold mt-1">
+            <p className="text-[13px] font-bold mt-1 tracking-wide">
               At-Sundarpur, PO/PS-Chandaka, Dist-Khordha
             </p>
-            <p className="text-[13px] font-bold mt-0.5">Mob : 8895000797</p>
-            <p className="text-[13px] font-bold">GSTIN : 21COTPP3464E1ZS</p>
+            <p className="text-[13px] font-bold tracking-wide mt-0.5">
+              Mob : 8895000797
+            </p>
+            <p className="text-[13px] font-bold tracking-wide">
+              GSTIN : 21COTPP3464E1ZS
+            </p>
           </div>
 
-          <div className="w-52 text-right font-medium space-y-2 text-[13px] pt-3 pr-2">
+          <div className="w-56 text-right font-bold space-y-3 text-[14px] pt-4 pr-2">
             <div className="flex justify-between items-end">
-              <span className="shrink-0">Invoice No:</span>
-              <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 text-right ml-2 pb-0.5">
+              <span className="shrink-0 tracking-wide">Invoice No:</span>
+              <span className="font-mono border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 text-right ml-2 pb-0.5 text-[15px]">
                 {invoice.invoiceNumber}
               </span>
             </div>
             <div className="flex justify-between items-end">
-              <span className="shrink-0">Date:</span>
-              <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 text-right ml-2 pb-0.5">
+              <span className="shrink-0 tracking-wide">Date:</span>
+              <span className="font-mono border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 text-right ml-2 pb-0.5 text-[15px]">
                 {new Date(invoice.date).toLocaleDateString("en-GB")}
               </span>
             </div>
@@ -335,55 +355,53 @@ const InvoiceView = () => {
         </div>
 
         {/* --- CLIENT DETAILS SECTION --- */}
-        <div className="px-3 py-2 text-[12px] font-semibold space-y-2 border-b-[2px] border-[#1e3a8a]">
+        <div className="px-4 py-3 text-[13px] font-bold space-y-2.5 border-b-[2px] border-[#1e3a8a] leading-relaxed tracking-wide">
           <div className="flex items-end">
-            <span className="w-36 shrink-0">Name of the Purchaser:</span>
-            <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase tracking-wide px-2 pb-0.5">
+            <span className="w-40 shrink-0">Name of the Purchaser:</span>
+            <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 text-[#1e3a8a]">
               {invoice.client.name}
             </span>
           </div>
           <div className="flex items-end">
-            <span className="w-14 shrink-0">Address:</span>
-            <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 px-2 pb-0.5">
+            <span className="w-16 shrink-0">Address:</span>
+            <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 px-2 pb-0.5">
               {invoice.client.address || "-"}
             </span>
           </div>
           <div className="flex justify-between items-end">
-            <div className="flex flex-1 items-end pr-4">
-              <span className="w-12 shrink-0">Phone:</span>
-              <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 px-2 pb-0.5">
+            <div className="flex flex-1 items-end pr-6">
+              <span className="w-14 shrink-0">Phone:</span>
+              <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 px-2 pb-0.5 font-mono">
                 {invoice.client.phone}
               </span>
             </div>
-            <div className="flex w-[40%] items-end">
-              <span className="w-12 shrink-0">GSTIN:</span>
-              <span className="font-bold border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 text-center">
+            <div className="flex w-[45%] items-end">
+              <span className="w-14 shrink-0 text-right pr-2">GSTIN:</span>
+              <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 text-center font-mono">
                 {invoice.client.gst || "-"}
               </span>
             </div>
           </div>
         </div>
 
-        {/* --- PERFECT HTML STRICT TABLE SECTION --- */}
-        {/* Enforces rigid grid layout for calculation matching */}
+        {/* --- TABLE SECTION --- */}
         <div className="flex-1 flex flex-col">
-          <table className="w-full border-collapse text-[13px] h-full table-fixed">
+          <table className="w-full border-collapse text-[13px] h-full table-fixed font-bold tracking-wide">
             <colgroup>
-              <col className="w-[6%]" />
-              <col className="w-[44%]" />
+              <col className="w-[5%]" />
+              <col className="w-[45%]" />
               <col className="w-[10%]" />
-              <col className="w-[9%]" />
-              <col className="w-[13%]" />
+              <col className="w-[8%]" />
               <col className="w-[12%]" />
-              <col className="w-[6%]" />
+              <col className="w-[15%]" />
+              <col className="w-[5%]" />
             </colgroup>
 
-            {/* Header */}
-            <thead className="bg-[#1e3a8a]/5 text-center font-bold">
+            <thead className="text-center border-b-[2px] border-[#1e3a8a] bg-[#1e3a8a]/[0.03]">
               <tr>
                 <th
                   rowSpan="2"
-                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1"
+                  className="border-r-[1.5px] border-[#1e3a8a] p-1 font-bold"
                 >
                   SL.
                   <br />
@@ -391,13 +409,13 @@ const InvoiceView = () => {
                 </th>
                 <th
                   rowSpan="2"
-                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-2"
+                  className="border-r-[1.5px] border-[#1e3a8a] p-2 font-bold text-[14px]"
                 >
                   Description of Goods
                 </th>
                 <th
                   rowSpan="2"
-                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1"
+                  className="border-r-[1.5px] border-[#1e3a8a] p-1 font-bold"
                 >
                   HSN
                   <br />
@@ -405,100 +423,96 @@ const InvoiceView = () => {
                 </th>
                 <th
                   rowSpan="2"
-                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1"
+                  className="border-r-[1.5px] border-[#1e3a8a] p-1 font-bold"
                 >
                   Qnty
                 </th>
                 <th
                   rowSpan="2"
-                  className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1"
+                  className="border-r-[1.5px] border-[#1e3a8a] p-1 font-bold"
                 >
                   Rate/Price
                 </th>
                 <th
                   colSpan="2"
-                  className="border-b-[2px] border-[#1e3a8a] p-1 tracking-widest text-[12px]"
+                  className="border-b-[1.5px] border-[#1e3a8a] p-1 tracking-widest font-black text-[13px]"
                 >
                   AMOUNT
                 </th>
               </tr>
               <tr>
-                <th className="border-b-[2px] border-r-[2px] border-[#1e3a8a] p-1 text-[11px]">
+                <th className="border-r-[1.5px] border-[#1e3a8a] p-1 text-[11px] font-bold">
                   Rs.
                 </th>
-                <th className="border-b-[2px] border-[#1e3a8a] p-1 text-[11px]">
-                  P.
-                </th>
+                <th className="p-1 text-[11px] font-bold">P.</th>
               </tr>
             </thead>
 
-            {/* Body */}
-            <tbody className="align-top">
+            <tbody className="align-top font-bold text-[14px]">
               {invoice.items.map((item, i) => {
                 const amt = formatRsP(item.total);
                 return (
-                  <tr key={i} className="font-bold">
-                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-center">
+                  <tr key={i}>
+                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-center font-mono">
                       {i + 1}
                     </td>
-                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 uppercase tracking-wide">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 pl-4 uppercase">
                       {item.name}
                     </td>
-                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-center font-medium">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-center font-mono">
                       {item.hsn || "-"}
                     </td>
-                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-center">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-center font-mono">
                       {item.quantity}
                     </td>
-                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-right pr-2 font-medium">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-right pr-3 font-mono">
                       {Number(item.price).toFixed(2)}
                     </td>
-                    <td className="border-r-[2px] border-[#1e3a8a] p-2 pt-4 text-right pr-2">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-right pr-3 font-mono">
                       {amt.rs}
                     </td>
-                    <td className="p-2 pt-4 text-center">{amt.p}</td>
+                    <td className="p-2 pt-4 text-center font-mono">{amt.p}</td>
                   </tr>
                 );
               })}
 
               {renderEmptyRows(emptyRowsNeeded)}
 
-              {/* Extra stretching row to ensure borders hit the bottom calculation seamlessly */}
+              {/* Stretching row to cover remaining space */}
               <tr className="h-full">
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a]"></td>
-                <td className="border-b-[2px] border-[#1e3a8a]"></td>
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
+                <td className="border-b-[1.5px] border-[#1e3a8a]"></td>
               </tr>
             </tbody>
 
             {/* --- CALCULATIONS --- */}
-            {/* Uses colspan to sit perfectly inside the grid */}
-            <tfoot className="font-bold text-[13px] bg-[#1e3a8a]/[0.02]">
+            <tfoot className="font-bold text-[13px] tracking-wide bg-[#1e3a8a]/[0.02]">
               <tr>
                 <td
                   colSpan="4"
                   rowSpan="5"
-                  className="border-r-[2px] border-[#1e3a8a] p-3 align-top"
+                  className="border-r-[1.5px] border-[#1e3a8a] p-3 pl-4 align-top bg-white/50"
                 >
-                  <div className="flex items-start">
-                    <span className="shrink-0 mr-1.5">(Rupees.</span>
-                    <span className="uppercase underline decoration-[#1e3a8a] decoration-dotted underline-offset-4 leading-loose tracking-wide flex-1 px-1">
-                      {toWords(Math.floor(invoice.grandTotal))} ONLY
+                  <div className="flex items-start text-[14px]">
+                    <span className="shrink-0 mr-2">(Rupees</span>
+                    <span className="uppercase border-b-[1.5px] border-[#1e3a8a] border-dotted leading-loose flex-1 px-2 pb-1">
+                      {toWords(Math.floor(invoice.grandTotal))}
                     </span>
-                    <span className="shrink-0 ml-1">)</span>
+                    <span className="shrink-0 ml-1">only)</span>
                   </div>
                 </td>
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
                   G. TOTAL
                 </td>
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 font-mono">
                   {formatRsP(invoice.subTotal).rs}
                 </td>
-                <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center font-mono">
                   {formatRsP(invoice.subTotal).p}
                 </td>
               </tr>
@@ -506,24 +520,24 @@ const InvoiceView = () => {
               {invoice.gstRate > 0 ? (
                 <>
                   <tr>
-                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
                       CGST @ {invoice.gstRate / 2}%
                     </td>
-                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 font-mono">
                       {formatRsP(invoice.gstAmount / 2).rs}
                     </td>
-                    <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                    <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center font-mono">
                       {formatRsP(invoice.gstAmount / 2).p}
                     </td>
                   </tr>
                   <tr>
-                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
                       SGST @ {invoice.gstRate / 2}%
                     </td>
-                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 font-mono">
                       {formatRsP(invoice.gstAmount / 2).rs}
                     </td>
-                    <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                    <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center font-mono">
                       {formatRsP(invoice.gstAmount / 2).p}
                     </td>
                   </tr>
@@ -531,57 +545,49 @@ const InvoiceView = () => {
               ) : (
                 <>
                   <tr>
-                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
                       CGST @
                     </td>
-                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
-                      -
-                    </td>
-                    <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
-                      -
-                    </td>
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3"></td>
+                    <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center"></td>
                   </tr>
                   <tr>
-                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-[11px] bg-[#1e3a8a]/5">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
                       SGST @
                     </td>
-                    <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2">
-                      -
-                    </td>
-                    <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
-                      -
-                    </td>
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3"></td>
+                    <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center"></td>
                   </tr>
                 </>
               )}
 
-              <tr className="font-black text-[13px] bg-[#1e3a8a]/[0.04]">
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 bg-[#1e3a8a]/5">
+              <tr className="bg-[#1e3a8a]/[0.06]">
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
                   N. TOTAL
                 </td>
-                <td className="border-r-[2px] border-b-[2px] border-[#1e3a8a] p-1.5 text-right pr-2 text-[14px]">
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 text-[15px] font-black font-mono">
                   {formatRsP(invoice.grandTotal).rs}
                 </td>
-                <td className="border-b-[2px] border-[#1e3a8a] p-1.5 text-center">
+                <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center font-black font-mono">
                   {formatRsP(invoice.grandTotal).p}
                 </td>
               </tr>
 
               <tr>
-                <td className="border-r-[2px] border-[#1e3a8a] p-1 text-[11px] bg-[#1e3a8a]/5">
+                <td className="border-r-[1.5px] border-[#1e3a8a] p-1.5 pl-3">
                   R/O
                 </td>
-                <td className="border-r-[2px] border-[#1e3a8a] p-1 text-right pr-2">
+                <td className="border-r-[1.5px] border-[#1e3a8a] p-1.5 text-right pr-3 font-mono">
                   00
                 </td>
-                <td className="p-1 text-center">00</td>
+                <td className="p-1.5 text-center font-mono">00</td>
               </tr>
             </tfoot>
           </table>
         </div>
 
         {/* --- BOTTOM FOOTER / SIGNATURE --- */}
-        <div className="flex justify-between items-end px-3 pt-2 pb-6 text-[10px] font-semibold leading-tight border-t-[2px] border-[#1e3a8a]">
+        <div className="flex justify-between items-end px-4 pt-3 pb-8 text-[11px] font-bold leading-relaxed border-t-[1.5px] border-[#1e3a8a] tracking-wide bg-white/50">
           <div className="space-y-0.5">
             <p>N.B: Goods once sold is not refundable.</p>
             <p>All the disputes are subjects to Bhubaneswar jurisdiction.</p>
@@ -589,17 +595,18 @@ const InvoiceView = () => {
               This Registration Certificate is valid on the date of issue of
               this Tax Invoice.
             </p>
-            <p className="pt-1">Printed by Enterprise Admin System</p>
+            <p className="pt-2 text-[#1e3a8a]/70 font-medium">
+              Printed at Enterprise Admin System
+            </p>
           </div>
-          <div className="text-center w-48 flex flex-col items-center pt-8">
-            <div className="h-[1.5px] w-full bg-[#1e3a8a] mb-1"></div>
+          <div className="text-center w-56 flex flex-col items-center pt-10">
             <p className="italic font-bold">Signature of the</p>
             <p className="italic font-bold">Authorised Person</p>
           </div>
         </div>
 
-        {/* Bottom Tag */}
-        <div className="absolute bottom-1 right-3 font-bold uppercase text-[12px] tracking-wide">
+        {/* Bottom Right Tag */}
+        <div className="absolute bottom-2 right-4 font-black uppercase text-[13px] tracking-widest">
           For M/S MAA FLYASH BRICKS
         </div>
       </div>
@@ -607,9 +614,9 @@ const InvoiceView = () => {
   );
 
   return (
-    <div className="max-w-[800px] mx-auto my-2 md:my-4 animate-in fade-in slide-in-from-bottom-4 duration-500 px-0 sm:px-2">
+    <div className="max-w-full lg:max-w-[900px] mx-auto my-2 md:my-4 animate-in fade-in slide-in-from-bottom-4 duration-500 overflow-x-hidden">
       {/* Action Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-3 md:mb-4 gap-2 md:gap-4 px-2">
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 px-4">
         <button
           onClick={() => navigate("/enterprise/invoices")}
           className="flex items-center text-emerald-100/60 hover:text-white transition-colors self-start sm:self-auto font-medium"
@@ -639,14 +646,24 @@ const InvoiceView = () => {
         </div>
       </div>
 
-      {/* --- INVOICE CONTAINER (Responsive Height Fixed) --- */}
-      <div ref={containerRef} className="w-full flex justify-center pb-6">
+      {/* --- INVOICE CONTAINER (Responsive & Centered) --- */}
+      <div
+        ref={containerRef}
+        className="w-full flex justify-center pb-6 overflow-hidden"
+      >
         <div
-          className="bg-white shadow-[0_0_20px_rgba(16,185,129,0.1)] origin-top overflow-hidden"
-          style={{ width: `${800 * scale}px`, height: `${1123 * scale}px` }}
+          className="bg-white shadow-[0_0_20px_rgba(16,185,129,0.15)] origin-top rounded-sm"
+          style={{
+            width: `${800 * scale}px`,
+            height: `${1123 * scale}px`,
+            position: "relative",
+          }}
         >
           <div
             style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
               width: "800px",
               height: "1123px",
               transform: `scale(${scale})`,
@@ -660,6 +677,7 @@ const InvoiceView = () => {
       </div>
 
       {/* --- HIDDEN WRAPPER FOR PDF GENERATION --- */}
+      {/* 🚀 Increased Padding Top prevents html2canvas clipping the badge */}
       <div
         style={{
           display: "none",
@@ -671,9 +689,9 @@ const InvoiceView = () => {
       >
         <div
           style={{
-            width: "840px", // Adding buffer width so borders don't slice off
+            width: "860px",
             backgroundColor: "white",
-            padding: "20px", // Prevent top label 'Tax Invoice' from clipping
+            padding: "30px", // Provides breathing room for rendering
           }}
         >
           <InvoiceTemplate />
