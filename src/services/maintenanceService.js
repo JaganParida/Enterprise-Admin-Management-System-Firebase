@@ -1,4 +1,4 @@
-import { db } from "../config/firebase";
+import { db, auth } from "../config/firebase";
 import {
   collection,
   addDoc,
@@ -10,6 +10,7 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 const maintCollection = collection(db, "maintenances");
 
@@ -23,7 +24,7 @@ const maintenanceService = {
       };
     } catch (error) {
       console.error("Fetch Error:", error);
-      return { data: [] }; // 🚀 Always return array
+      return { data: [] };
     }
   },
 
@@ -31,9 +32,11 @@ const maintenanceService = {
     const dataToSave = {
       ...payload,
       cost: Number(payload.cost) || 0,
+      meterKm: Number(payload.meterKm) || 0,
       createdAt: new Date().toISOString(),
       createdBy: user?.email || "Unknown",
       createdRole: user?.role || "Admin",
+      editHistory: [],
     };
     const docRef = await addDoc(maintCollection, dataToSave);
     return { data: { _id: docRef.id, ...dataToSave } };
@@ -60,6 +63,7 @@ const maintenanceService = {
     const dataToUpdate = {
       ...payload,
       cost: Number(payload.cost) || 0,
+      meterKm: Number(payload.meterKm) || 0,
       lastEditedRole: currentEdit.role,
       lastEditedAt: currentEdit.at,
       editHistory: currentHistory,
@@ -72,6 +76,25 @@ const maintenanceService = {
   deleteLog: async (id) => {
     await deleteDoc(doc(db, "maintenances", id));
     return { message: "Deleted" };
+  },
+
+  // 🚀 SECURE WIPE DATABASE FEATURE
+  deleteAllLogs: async ({ password }) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Admin not logged in.");
+
+    try {
+      await signInWithEmailAndPassword(auth, currentUser.email, password);
+      const snapshot = await getDocs(maintCollection);
+      const deletePromises = [];
+      snapshot.forEach((document) => {
+        deletePromises.push(deleteDoc(doc(db, "maintenances", document.id)));
+      });
+      await Promise.all(deletePromises);
+      return { success: true };
+    } catch (error) {
+      throw new Error("Incorrect Admin Password or Wipe Failed.");
+    }
   },
 };
 
