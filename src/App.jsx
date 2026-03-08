@@ -44,8 +44,13 @@ import SalaryManagement from "./pages/employees/SalaryManagement";
 
 import TransportationDashboard from "./pages/dashboard/TransportationDashboard";
 import VehicleLog from "./pages/vehicles/VehicleLog";
+import VehicleReport from "./pages/vehicles/VehicleReport";
 import FuelTracker from "./pages/vehicles/FuelTracker";
+import FuelReport from "./pages/vehicles/FuelReport"; // 🚀 NEW FUEL REPORT IMPORT
 import Maintenance from "./pages/vehicles/Maintenance";
+import MaintenanceReport from "./pages/vehicles/MaintenanceReport";
+import JcbTracker from "./pages/vehicles/JcbTracker";
+import JcbReport from "./pages/vehicles/JcbReport";
 import ElectricBill from "./pages/electricity/ElectricBill";
 
 function App() {
@@ -68,14 +73,12 @@ function App() {
                   path="/enterprise/dashboard"
                   element={<EnterpriseDashboard />}
                 />
-
                 <Route path="/enterprise/stock" element={<StockList />} />
                 <Route path="/enterprise/stock/add" element={<AddStock />} />
                 <Route
                   path="/enterprise/stock/edit/:id"
                   element={<EditStock />}
                 />
-
                 <Route
                   path="/enterprise/production"
                   element={<DailyProduction />}
@@ -92,7 +95,6 @@ function App() {
                   path="/enterprise/labour/edit/:id"
                   element={<EditPayout />}
                 />
-
                 {/* 🚀 SALES ROUTES ORDER MATTERS */}
                 <Route path="/enterprise/sales" element={<Sales />} />
                 <Route
@@ -103,7 +105,6 @@ function App() {
                   path="/enterprise/sales/edit/:id"
                   element={<EditSale />}
                 />
-
                 <Route path="/enterprise/invoices" element={<InvoiceList />} />
                 <Route
                   path="/enterprise/invoices/create"
@@ -117,7 +118,6 @@ function App() {
                   path="/enterprise/invoices/edit/:id"
                   element={<EditInvoice />}
                 />
-
                 <Route
                   path="/enterprise/employees"
                   element={<EmployeeList />}
@@ -134,18 +134,35 @@ function App() {
                   path="/enterprise/salary-history"
                   element={<SalaryManagement />}
                 />
-
+                {/* 🚀 TRANSPORTATION ROUTES */}
                 <Route
                   path="/transportation/dashboard"
                   element={<TransportationDashboard />}
                 />
                 <Route path="/transportation/logs" element={<VehicleLog />} />
+                <Route
+                  path="/transportation/logs/report"
+                  element={<VehicleReport />}
+                />
                 <Route path="/transportation/fuel" element={<FuelTracker />} />
+                <Route
+                  path="/transportation/fuel/report"
+                  element={<FuelReport />}
+                />{" "}
+                {/* 🚀 ADDED FUEL REPORT ROUTE */}
                 <Route
                   path="/transportation/maintenance"
                   element={<Maintenance />}
                 />
-
+                <Route
+                  path="/transportation/maintenance/report"
+                  element={<MaintenanceReport />}
+                />
+                <Route path="/transportation/jcb" element={<JcbTracker />} />
+                <Route
+                  path="/transportation/jcb/report"
+                  element={<JcbReport />}
+                />
                 <Route path="/electricity" element={<ElectricBill />} />
               </Route>
             </Route>
