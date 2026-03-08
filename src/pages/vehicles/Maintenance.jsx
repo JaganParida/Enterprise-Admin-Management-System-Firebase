@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Link, useLocation } from "react-router-dom";
 import maintenanceService from "../../services/maintenanceService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -8,51 +9,81 @@ import {
   Calendar,
   IndianRupee,
   Save,
-  Trash2,
-  Edit2,
   X,
   History,
   Settings,
+  Map,
+  ArrowRight,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Input from "../../components/common/Input";
 import Loader from "../../components/common/Loader";
-import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+const GlassInput = ({
+  label,
+  icon: Icon,
+  type = "text",
+  required,
+  className = "",
+  labelClass = "text-amber-100/50",
+  ...props
+}) => (
+  <div className="flex flex-col gap-1.5 w-full">
+    {label && (
+      <label
+        className={`text-[10px] font-bold tracking-widest uppercase ml-1 ${labelClass}`}
+      >
+        {label} {required && <span className="text-rose-500">*</span>}
+      </label>
+    )}
+    <div className="relative group">
+      {Icon && (
+        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-gray-300 transition-colors pointer-events-none z-10">
+          <Icon size={16} />
+        </div>
+      )}
+      <input
+        type={type}
+        autoComplete="new-password"
+        onWheel={(e) => e.target.blur()}
+        className={`w-full bg-[#060d1f] border border-gray-800 rounded-xl ${Icon ? "pl-10" : "pl-4"} pr-4 py-2.5 text-sm text-gray-50 outline-none transition-all placeholder:text-gray-700 shadow-inner [color-scheme:dark] ${className}`}
+        required={required}
+        {...props}
+      />
+    </div>
+  </div>
+);
 
 const Maintenance = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
+  const location = useLocation();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
 
-  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
-  const [warningTooltip, setWarningTooltip] = useState(null);
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
     data: [],
     itemName: "",
   });
 
-  const isManager = admin?.data?.role === "manager";
-
-  const [formData, setFormData] = useState({
+  const initialForm = {
     date: new Date().toISOString().split("T")[0],
     vehicleNo: "",
+    meterKm: "",
     serviceType: "Routine Service",
-    garage: "",
     cost: "",
     description: "",
-  });
+  };
+
+  const [formData, setFormData] = useState(initialForm);
 
   const fetchLogs = async () => {
     try {
       const { data } = await maintenanceService.getLogs();
-      // 🚀 CRASH PROOF 1: Data null ya undefined ho toh empty array set karein
       setLogs(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Fetch error:", err);
       toast.error("Failed to load maintenance records.");
     } finally {
       setLoading(false);
@@ -63,8 +94,27 @@ const Maintenance = () => {
     fetchLogs();
   }, []);
 
+  // 🚀 Catch edit triggers from the Report page
+  useEffect(() => {
+    if (location.state && location.state.editLog) {
+      const log = location.state.editLog;
+      setEditId(log._id);
+      setFormData({
+        date: log.date
+          ? new Date(log.date).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0],
+        vehicleNo: log.vehicleNo || "",
+        meterKm: log.meterKm || "",
+        serviceType: log.serviceType || "Routine Service",
+        cost: log.cost || "",
+        description: log.description || "",
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
+
   const stats = useMemo(() => {
-    // 🚀 CRASH PROOF 2: Logs exist karte hain ya nahi, uska check
     const currentLogs = Array.isArray(logs) ? logs : [];
     return {
       totalCost: currentLogs.reduce(
@@ -75,13 +125,46 @@ const Maintenance = () => {
     };
   }, [logs]);
 
+  const handleVehicleNoChange = (e) => {
+    let rawValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    let state = rawValue.slice(0, 2).replace(/[^A-Z]/g, "");
+    let rto = rawValue.slice(2, 4).replace(/[^0-9]/g, "");
+    let remainder = rawValue.slice(4);
+    let middleChars = remainder.replace(/[^A-Z]/g, "").slice(0, 2);
+    let lastDigits = remainder.replace(/[^0-9]/g, "").slice(0, 4);
+
+    let formatted = state;
+    if (state.length === 2 && rawValue.length > 2) {
+      formatted += "-" + rto;
+      if (rto.length === 2 && rawValue.length > 4) {
+        formatted += "-";
+        if (middleChars.length > 0) {
+          formatted += middleChars;
+          if (lastDigits.length > 0) {
+            formatted += "-" + lastDigits;
+          }
+        } else {
+          formatted += lastDigits;
+        }
+      }
+    }
+    setFormData((prev) => ({ ...prev, vehicleNo: formatted }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const vehicleRegex = /^[A-Z]{2}-[0-9]{2}-([A-Z]{1,2}-)?[0-9]{4}$/;
+    if (!vehicleRegex.test(formData.vehicleNo))
+      return toast.error("Invalid Vehicle No. Format (e.g., OD-02-AX-1234)");
+    if (Number(formData.cost) <= 0)
+      return toast.error("Cost must be greater than 0");
+
     setSubmitting(true);
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
       const payload = { ...formData, cost: Number(formData.cost) || 0 };
+
       if (editId) {
         await maintenanceService.updateLog(editId, payload, currentUser);
         toast.success("Updated successfully!");
@@ -98,62 +181,20 @@ const Maintenance = () => {
     }
   };
 
-  const handleEdit = (log) => {
-    if (!log) return;
-    setEditId(log._id);
-    setFormData({
-      date: log.date
-        ? new Date(log.date).toISOString().split("T")[0]
-        : new Date().toISOString().split("T")[0],
-      vehicleNo: log.vehicleNo || "",
-      serviceType: log.serviceType || "Routine Service",
-      garage: log.garage || "",
-      cost: log.cost || "",
-      description: log.description || "",
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleDisabledClick = (id) => {
-    setWarningTooltip(id);
-    setTimeout(() => setWarningTooltip(null), 2500);
-  };
-
   const openHistory = (log) => {
-    // 🚀 CRASH PROOF 3: Array spread se pehle type check
     const historyData = Array.isArray(log?.editHistory)
       ? [...log.editHistory].reverse()
       : [];
     setHistoryModal({
       isOpen: true,
       data: historyData,
-      itemName: `${log?.vehicleNo || "Unknown Vehicle"} Service`,
+      itemName: `Maintenance for ${log?.vehicleNo || "Unknown"}`,
     });
   };
 
   const resetForm = () => {
     setEditId(null);
-    setFormData({
-      date: new Date().toISOString().split("T")[0],
-      vehicleNo: "",
-      serviceType: "Routine Service",
-      garage: "",
-      cost: "",
-      description: "",
-    });
-  };
-
-  const executeDelete = async () => {
-    if (!deleteModal.id) return;
-    try {
-      await maintenanceService.deleteLog(deleteModal.id);
-      toast.info("Log removed.");
-      fetchLogs();
-    } catch (err) {
-      toast.error("Delete failed.");
-    } finally {
-      setDeleteModal({ isOpen: false, id: null });
-    }
+    setFormData(initialForm);
   };
 
   if (loading)
@@ -164,123 +205,183 @@ const Maintenance = () => {
     );
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-        <div className="p-2 bg-amber-500/10 rounded-lg">
-          <Wrench className="text-amber-400" />
-        </div>{" "}
-        Maintenance Logs
-      </h1>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-2 sm:px-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20">
+              <Wrench className="text-amber-400" size={24} />
+            </div>
+            Maintenance Logs
+          </h1>
+          <p className="text-amber-100/40 text-sm mt-1 ml-1">
+            Track vehicle repairs and servicing costs.
+          </p>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* --- FORM SECTION --- */}
-        <div
-          className={`bg-[#050a08] border p-6 rounded-2xl shadow-xl relative transition-colors ${editId ? "border-amber-500/40 bg-amber-950/10" : "border-amber-900/30"}`}
-        >
-          <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
-            <div className="absolute -top-10 -right-10 w-32 h-32 bg-amber-500/5 blur-3xl rounded-full" />
-          </div>
-          <h3 className="text-lg font-semibold text-white mb-6 flex items-center gap-2 relative z-10">
-            {editId ? (
-              <Edit2 size={18} className="text-amber-400" />
-            ) : (
-              <Settings size={18} className="text-amber-400" />
-            )}{" "}
-            {editId ? "Update Entry" : "Log Service"}
-          </h3>
-          <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
-            <Input
-              label="Date"
-              type="date"
-              value={formData.date}
-              onChange={(e) =>
-                setFormData({ ...formData, date: e.target.value })
-              }
-              icon={Calendar}
-              required
-            />
-            <Input
-              label="Vehicle No."
-              placeholder="OD-02..."
-              value={formData.vehicleNo}
-              onChange={(e) =>
-                setFormData({ ...formData, vehicleNo: e.target.value })
-              }
-              icon={Truck}
-              required
-            />
-            <Input
-              label="Cost (₹)"
-              type="number"
-              value={formData.cost}
-              onChange={(e) =>
-                setFormData({ ...formData, cost: e.target.value })
-              }
-              icon={IndianRupee}
-              required
-            />
-            <div className="flex gap-2 pt-2">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+        <div className="xl:col-span-5">
+          <div
+            className={`bg-[#030816] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? "border-amber-500/50 ring-1 ring-amber-500/20 shadow-amber-500/10" : "border-amber-900/30"}`}
+          >
+            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 blur-[80px] rounded-full pointer-events-none"></div>
+
+            <div className="flex justify-between items-center mb-6 relative z-10">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Settings size={18} className="text-amber-400" />
+                {editId ? "Update Entry" : "Log Service"}
+              </h3>
               {editId && (
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="p-3 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors"
+                  className="text-xs text-rose-400 hover:text-rose-300 font-bold tracking-widest uppercase"
                 >
-                  <X size={18} />
+                  Cancel Edit
                 </button>
               )}
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
+              <div className="grid grid-cols-2 gap-4">
+                <GlassInput
+                  label="Date"
+                  type="date"
+                  name="date"
+                  value={formData.date}
+                  onChange={(e) =>
+                    setFormData({ ...formData, date: e.target.value })
+                  }
+                  icon={Calendar}
+                  required
+                  className="focus:border-amber-500/50 focus:ring-amber-500/20"
+                />
+                <GlassInput
+                  label="Vehicle No."
+                  placeholder="OD-02-AX-1234"
+                  value={formData.vehicleNo}
+                  onChange={handleVehicleNoChange}
+                  icon={Truck}
+                  required
+                  className="focus:border-amber-500/50 focus:ring-amber-500/20 uppercase"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <GlassInput
+                  label="Meter / Km Reading"
+                  type="number"
+                  placeholder="e.g. 45000"
+                  value={formData.meterKm}
+                  onChange={(e) =>
+                    setFormData({ ...formData, meterKm: e.target.value })
+                  }
+                  icon={Map}
+                  required
+                  className="focus:border-amber-500/50 focus:ring-amber-500/20"
+                />
+                <GlassInput
+                  label="Total Cost (₹)"
+                  type="number"
+                  name="cost"
+                  placeholder="0.00"
+                  value={formData.cost}
+                  onChange={(e) =>
+                    setFormData({ ...formData, cost: e.target.value })
+                  }
+                  icon={IndianRupee}
+                  required
+                  className="text-amber-400 font-bold focus:border-amber-500/50 focus:ring-amber-500/20"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5 w-full">
+                <label className="text-[10px] font-bold tracking-widest uppercase ml-1 text-amber-100/50">
+                  Description (Optional)
+                </label>
+                <textarea
+                  placeholder="Details of work done..."
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                  className="w-full bg-[#060d1f] border border-gray-800 rounded-xl px-4 py-3 text-sm text-gray-50 outline-none transition-all placeholder:text-gray-700 shadow-inner focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 resize-none h-24 custom-scrollbar"
+                />
+              </div>
+
               <Button
                 type="submit"
-                className="flex-1 bg-gradient-to-r from-amber-600 to-orange-600 rounded-lg shadow-md"
                 disabled={submitting}
+                className="w-full h-12 shadow-xl shadow-amber-900/20 text-sm tracking-widest uppercase font-black bg-amber-600 hover:bg-amber-500 border-none mt-2 text-[#020403]"
               >
-                <Save size={16} className="mr-2" /> {editId ? "Update" : "Save"}
+                {submitting
+                  ? "Processing..."
+                  : editId
+                    ? "Update Entry"
+                    : "Save Record"}
               </Button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
 
-        {/* --- LIST SECTION --- */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 bg-amber-900/10 border border-amber-500/10 rounded-2xl text-center">
-              <p className="text-[10px] text-amber-200/30 uppercase font-bold mb-1 tracking-widest">
-                Total Spent
+        <div className="xl:col-span-7 space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-[#030816] border border-amber-900/30 p-5 rounded-2xl relative overflow-hidden group">
+              <div className="absolute -right-4 -bottom-4 opacity-5 text-amber-500 group-hover:opacity-10 transition-opacity">
+                <IndianRupee size={80} />
+              </div>
+              <p className="text-amber-100/50 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">
+                Total Maintenance Cost
               </p>
-              <h4 className="text-xl font-bold text-white">
-                ₹ {(stats.totalCost || 0).toLocaleString()}
-              </h4>
+              <h3 className="text-2xl font-black text-amber-400 font-mono relative z-10">
+                ₹ {(stats.totalCost || 0).toLocaleString("en-IN")}
+              </h3>
             </div>
-            <div className="p-4 bg-amber-900/10 border border-amber-500/10 rounded-2xl text-center">
-              <p className="text-[10px] text-amber-200/30 uppercase font-bold mb-1 tracking-widest">
-                Trips Logged
+            <div className="bg-[#030816] border border-emerald-900/30 p-5 rounded-2xl relative overflow-hidden group">
+              <div className="absolute -right-4 -bottom-4 opacity-5 text-emerald-500 group-hover:opacity-10 transition-opacity">
+                <Wrench size={80} />
+              </div>
+              <p className="text-emerald-100/50 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">
+                Total Services Logged
               </p>
-              <h4 className="text-xl font-bold text-white">
+              <h3 className="text-2xl font-black text-white font-mono relative z-10">
                 {stats.serviceCount || 0}
-              </h4>
+              </h3>
             </div>
           </div>
 
-          <div className="bg-[#050a08] border border-emerald-900/20 rounded-2xl shadow-xl overflow-visible relative">
-            <div className="p-5 border-b border-emerald-900/20 bg-white/[0.01]">
-              <h3 className="text-lg font-semibold text-white">
-                Service History
+          <div className="bg-[#030816] border border-amber-900/30 rounded-3xl overflow-hidden shadow-xl">
+            <div className="p-6 border-b border-amber-900/20 flex justify-between items-center bg-amber-950/10">
+              <h3 className="font-bold text-white">
+                Recent Maintenance{" "}
+                <span className="text-xs font-normal text-amber-100/40 ml-2">
+                  (Latest)
+                </span>
               </h3>
+              <Link
+                to="/transportation/maintenance/report"
+                className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 hover:underline whitespace-nowrap text-amber-400"
+              >
+                View All <ArrowRight size={14} />
+              </Link>
             </div>
-            <div className="overflow-x-auto p-1">
-              <table className="w-full text-left min-w-[750px]">
-                <thead className="bg-[#020403] text-amber-100/40 text-[10px] uppercase font-bold tracking-wider">
+
+            <div className="overflow-x-auto max-h-[600px] custom-scrollbar p-2">
+              <table className="w-full text-left min-w-[550px]">
+                <thead className="sticky top-0 bg-[#060d1f] text-[10px] uppercase font-bold text-amber-100/40 tracking-[0.15em] z-10 shadow-sm border-b border-amber-900/20">
                   <tr>
-                    <th className="p-4">Date</th>
-                    <th className="p-4">Vehicle & Role</th>
-                    <th className="p-4">Service Type</th>
-                    <th className="p-4 text-right">Cost</th>
-                    <th className="p-4 text-right">Actions</th>
+                    <th className="py-4 px-4 rounded-tl-xl w-[35%]">
+                      Vehicle Details
+                    </th>
+                    <th className="py-4 px-4 w-[40%]">Service Info</th>
+                    <th className="py-4 px-4 text-right rounded-tr-xl w-[25%]">
+                      Cost
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="text-sm text-amber-50/70 divide-y divide-emerald-900/10">
-                  {logs.map((log) => {
-                    // 🚀 CRASH PROOF 4: Optional chaining for array indexing
+                <tbody className="text-sm text-amber-100/70 divide-y divide-amber-900/10">
+                  {logs.slice(0, 10).map((log) => {
                     const historyArray = Array.isArray(log?.editHistory)
                       ? log.editHistory
                       : [];
@@ -292,116 +393,66 @@ const Maintenance = () => {
                     return (
                       <tr
                         key={log._id}
-                        className="hover:bg-amber-400/[0.02] transition-colors group"
+                        className="hover:bg-amber-400/[0.03] transition-colors group"
                       >
-                        <td className="p-4 font-mono text-xs align-middle">
-                          {log.date
-                            ? new Date(log.date).toLocaleDateString("en-GB")
-                            : "N/A"}
-                        </td>
-                        <td className="p-4 align-middle">
-                          <div className="font-medium text-white whitespace-nowrap">
+                        <td className="p-4 align-top">
+                          <p className="text-[11px] font-mono text-amber-400 mb-1">
+                            {new Date(log.date).toLocaleDateString("en-GB")}
+                          </p>
+                          <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
+                            <Truck size={14} className="text-amber-500/50" />{" "}
                             {log.vehicleNo || "N/A"}
-                          </div>
-                          {historyArray.length > 0 ? (
+                          </p>
+                          {log.meterKm && (
+                            <p className="text-[10px] text-amber-100/40 mt-1 uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                              <Map size={10} className="text-emerald-500/50" />{" "}
+                              {log.meterKm} KM
+                            </p>
+                          )}
+
+                          {historyArray.length > 0 && (
                             <div
                               onClick={() => openHistory(log)}
-                              className="mt-2 flex flex-col gap-0.5 cursor-pointer bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 p-1.5 rounded-lg transition-all w-max whitespace-nowrap"
+                              className="mt-3 flex items-center gap-1.5 bg-[#020403] border border-amber-900/30 px-2 py-1 rounded-lg cursor-pointer hover:border-amber-500/50 transition-colors w-max"
                             >
-                              <div className="text-[10px] font-mono text-amber-400/90 flex items-center gap-1 uppercase tracking-widest font-bold leading-none">
-                                <History size={10} />{" "}
-                                {latestEdit?.role || "ADMIN"}
-                                {historyArray.length > 1 && (
-                                  <span className="text-[8px] opacity-60 ml-1">
-                                    +{historyArray.length - 1} MORE
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[8px] text-amber-200/30 ml-4">
-                                {latestEdit?.at
-                                  ? new Date(latestEdit.at).toLocaleString(
-                                      "en-GB",
-                                      {
-                                        day: "2-digit",
-                                        month: "short",
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      },
-                                    )
-                                  : ""}
+                              <History size={10} className="text-amber-500" />
+                              <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest">
+                                {latestEdit.role || "ADMIN"}
                               </span>
-                            </div>
-                          ) : log.lastEditedRole ? (
-                            <div className="text-[9px] font-mono text-amber-400/50 font-bold mt-1.5 uppercase tracking-widest flex flex-col gap-0.5">
-                              <span>✍️ {log.lastEditedRole}</span>
-                              {log.lastEditedAt && (
-                                <span className="text-amber-200/20 font-medium ml-4">
-                                  {new Date(log.lastEditedAt).toLocaleString(
-                                    "en-GB",
-                                    {
-                                      day: "2-digit",
-                                      month: "short",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    },
-                                  )}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="text-[9px] text-amber-200/30 mt-1 uppercase font-bold tracking-widest">
-                              {log.createdRole || "ADMIN"}
                             </div>
                           )}
                         </td>
-                        <td className="p-4 align-middle">
-                          <div className="text-amber-400/80 font-bold text-xs uppercase tracking-wide">
+
+                        <td className="p-4 align-top">
+                          <div className="text-xs text-emerald-200 mb-2 flex items-center gap-1.5 bg-emerald-900/20 w-max px-2.5 py-1 rounded-md font-medium border border-emerald-900/30 uppercase tracking-wide">
+                            <Wrench size={12} className="text-emerald-400" />{" "}
                             {log.serviceType || "Routine"}
                           </div>
-                          <div className="text-[10px] opacity-40 line-clamp-1">
-                            {log.description || log.garage || "-"}
-                          </div>
-                        </td>
-                        <td className="p-4 text-right font-bold text-white align-middle">
-                          ₹{(Number(log.cost) || 0).toLocaleString()}
-                        </td>
-                        <td className="p-4 align-middle">
-                          <div className="flex justify-end gap-2 items-center relative">
-                            <button
-                              onClick={() => handleEdit(log)}
-                              className="p-2 text-amber-100/40 hover:text-amber-400 transition-colors"
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                            <div className="relative">
-                              <button
-                                onClick={() =>
-                                  isManager
-                                    ? handleDisabledClick(log._id)
-                                    : setDeleteModal({
-                                        isOpen: true,
-                                        id: log._id,
-                                      })
-                                }
-                                className={`p-2 rounded-lg transition-colors ${isManager ? "opacity-30 cursor-not-allowed" : "hover:text-rose-500"}`}
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                              {/* 🔥 TOOLTIP FIX: High Z-Index & Container escape */}
-                              {warningTooltip === log._id && (
-                                <div className="absolute bottom-full right-0 mb-2 z-[9999] animate-in fade-in zoom-in-95 duration-200">
-                                  <div className="bg-[#050a08] border border-red-500/30 text-red-400 text-[10px] uppercase font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-2xl">
-                                    🚫 Action Denied
-                                  </div>
-                                  <div className="absolute -bottom-1 right-3 w-2 h-2 bg-[#050a08] border-b border-r border-red-500/30 rotate-45" />
-                                </div>
-                              )}
+                          {log.description && (
+                            <div className="text-[10px] text-amber-100/40 font-mono mt-1.5 line-clamp-2 pr-4">
+                              {log.description}
                             </div>
-                          </div>
+                          )}
+                        </td>
+
+                        <td className="p-4 text-right align-top">
+                          <p className="text-lg font-black text-amber-400 font-mono drop-shadow-sm mb-2">
+                            ₹{(Number(log.cost) || 0).toLocaleString("en-IN")}
+                          </p>
                         </td>
                       </tr>
                     );
                   })}
+                  {logs.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="3"
+                        className="p-10 text-center text-amber-100/30 italic"
+                      >
+                        No maintenance records found.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -409,71 +460,83 @@ const Maintenance = () => {
         </div>
       </div>
 
-      {/* --- HISTORY MODAL --- */}
-      {historyModal.isOpen && (
+      {/* 🚀 MULTIPLE LOG HISTORY MODAL UI */}
+      {historyModal.isOpen && historyModal.data && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#050a08] border border-amber-900/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-amber-900/20 flex justify-between items-center bg-[#020403]">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <History size={18} className="text-amber-500" /> Log History
-              </h3>
+          <div
+            className="absolute inset-0 cursor-pointer"
+            onClick={() =>
+              setHistoryModal({ isOpen: false, data: null, itemName: "" })
+            }
+          />
+          <div className="bg-[#030816] border border-amber-900/30 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-amber-900/20 bg-[#060d1f]/50 shrink-0">
+              <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
+                <History size={16} className="text-amber-500" />
+                Log History:{" "}
+                <span className="text-amber-400 font-normal">
+                  {historyModal.itemName}
+                </span>
+              </div>
               <button
                 onClick={() =>
-                  setHistoryModal({ isOpen: false, data: [], itemName: "" })
+                  setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-emerald-100/40 hover:text-white p-1 transition-colors"
+                className="text-gray-400 hover:text-white transition-colors"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
-            <div className="p-5 max-h-[60vh] overflow-y-auto space-y-3">
-              {historyModal.data.map((edit, idx) => (
+
+            <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
+              {historyModal.data.map((log, index) => (
                 <div
-                  key={idx}
-                  className="flex justify-between items-center bg-[#020403] p-4 rounded-xl border border-amber-900/20 group hover:border-emerald-500/30 transition-colors"
+                  key={index}
+                  className={`bg-[#060d1f] border ${index === 0 ? "border-amber-500/30" : "border-gray-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
-                  <div className="flex items-center gap-3 relative z-10">
-                    <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 font-black text-sm uppercase shadow-inner">
-                      {edit.role ? edit.role.charAt(0) : "A"}
+                  {index === 0 && (
+                    <div className="absolute left-0 top-0 w-1 h-full bg-amber-500"></div>
+                  )}
+                  <div className="flex items-center gap-4 pl-1">
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-amber-500/10 text-amber-400" : "bg-gray-800 text-gray-500"}`}
+                    >
+                      {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-emerald-100 uppercase tracking-widest">
-                        {edit.role || "Admin"}
+                      <h4
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-gray-500"}`}
+                      >
+                        {log.role || "ADMIN"}
+                      </h4>
+                      <p className="text-gray-500 text-[10px] mt-0.5 font-mono">
+                        {log.by || "admin@system.com"}
                       </p>
-                      <p className="text-[9px] text-emerald-100/30 font-mono mt-0.5">
-                        {edit.by}
-                      </p>
-                      <p className="text-[10px] text-amber-400/60 font-mono mt-1">
-                        {new Date(edit.at).toLocaleString("en-GB")}
+                      <p
+                        className={`text-[10px] font-mono mt-1 ${index === 0 ? "text-amber-400" : "text-gray-600"}`}
+                      >
+                        {new Date(log.at).toLocaleString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
                       </p>
                     </div>
                   </div>
-                  {idx === 0 && (
-                    <span className="relative z-10 text-[9px] bg-amber-500/20 text-emerald-400 px-2 py-1 rounded-md uppercase font-black border border-emerald-500/20">
-                      Latest
-                    </span>
+                  {index === 0 && (
+                    <div className="bg-amber-500/10 border-amber-500/20 text-amber-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
+                      LATEST
+                    </div>
                   )}
                 </div>
               ))}
-              {historyModal.data.length === 0 && (
-                <p className="text-center py-10 text-white/20 italic">
-                  No edit history available.
-                </p>
-              )}
             </div>
           </div>
         </div>
       )}
-
-      <ConfirmDialog
-        isOpen={deleteModal.isOpen}
-        onClose={() => setDeleteModal({ isOpen: false, id: null })}
-        onConfirm={executeDelete}
-        title="Delete Record?"
-        message="Are you sure you want to delete this maintenance record?"
-        confirmText="Delete"
-        isDestructive={true}
-      />
     </div>
   );
 };
