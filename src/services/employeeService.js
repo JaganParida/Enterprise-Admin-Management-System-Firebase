@@ -1,4 +1,4 @@
-import { db } from "../config/firebase";
+import { db, auth } from "../config/firebase";
 import {
   collection,
   addDoc,
@@ -10,6 +10,7 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 const empCollection = collection(db, "employees");
 const salaryCollection = collection(db, "salaryPayments");
@@ -25,14 +26,17 @@ const employeeService = {
     return { data };
   },
 
-  // 2. Add new employee (Tracking Creator)
+  // 2. Add new employee
   addEmployee: async (employeeData, user) => {
     const payload = {
       ...employeeData,
+      initialSalary: Number(employeeData.initialSalary || 0),
+      salaryTaken: Number(employeeData.salaryTaken || 0),
       status: "Active",
       createdAt: new Date().toISOString(),
       createdBy: user?.email || "Unknown",
       createdRole: user?.role || "Admin",
+      editHistory: [],
     };
     const docRef = await addDoc(empCollection, payload);
     return { data: { _id: docRef.id, ...payload } };
@@ -67,11 +71,13 @@ const employeeService = {
     currentHistory.push(currentEdit);
 
     if (currentHistory.length > 10) {
-      currentHistory = currentHistory.slice(currentHistory.length - 10);
+      currentHistory = currentHistory.slice(-10);
     }
 
     const payload = {
       ...updateData,
+      initialSalary: Number(updateData.initialSalary || 0),
+      salaryTaken: Number(updateData.salaryTaken || 0),
       lastEditedBy: currentEdit.by,
       lastEditedRole: currentEdit.role,
       lastEditedAt: currentEdit.at,
@@ -89,22 +95,38 @@ const employeeService = {
     return { message: "Removed successfully" };
   },
 
-  // --- SALARY SECTION ---
+  // 🚀 WIPE ALL SECURE FUNCTION
+  deleteAllEmployees: async ({ password }) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Admin not logged in.");
 
-  // 6. Record Salary/Advance Payment (Tracking who paid)
+    try {
+      await signInWithEmailAndPassword(auth, currentUser.email, password);
+      const snapshot = await getDocs(empCollection);
+      const deletePromises = [];
+      snapshot.forEach((document) => {
+        deletePromises.push(deleteDoc(doc(db, "employees", document.id)));
+      });
+      await Promise.all(deletePromises);
+      return { success: true };
+    } catch (error) {
+      throw new Error("Incorrect Admin Password or Wipe Failed.");
+    }
+  },
+
+  // --- SALARY SECTION ---
   addSalaryPayment: async (paymentData, user) => {
     const payload = {
       ...paymentData,
       amount: Number(paymentData.amount),
       createdAt: new Date().toISOString(),
       recordedBy: user?.email || "Unknown",
-      recordedRole: user?.role || "Admin", // 👈 Kaun payment de raha hai (Admin/Manager)
+      recordedRole: user?.role || "Admin",
     };
     const docRef = await addDoc(salaryCollection, payload);
     return { data: { _id: docRef.id, ...payload } };
   },
 
-  // 7. Get Salary History
   getSalaryHistory: async () => {
     const q = query(salaryCollection, orderBy("date", "desc"));
     const salarySnap = await getDocs(q);
