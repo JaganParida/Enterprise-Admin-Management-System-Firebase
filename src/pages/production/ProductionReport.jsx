@@ -405,43 +405,86 @@ const ProductionReport = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-        <h1 className="text-2xl font-bold text-white tracking-tight">
-          Production Ledger
-        </h1>
-        <div className="flex gap-3">
-          <div className="relative">
+      {/* 🚀 HEADER SECTION (Tabs Moved Here) */}
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            Production Ledger
+          </h1>
+        </div>
+
+        <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
+          {/* 🚀 NO SCROLLBAR PILL TABS */}
+          <div className="w-full md:w-auto bg-[#020403] p-1.5 rounded-2xl md:rounded-full border border-emerald-900/30 shadow-inner grid grid-cols-3 md:flex md:items-center gap-1">
             <button
-              onClick={() =>
-                isManager
-                  ? handleDisabledClick("wipe-all")
-                  : setIsDeleteAllOpen(true)
-              }
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all text-xs font-bold shadow-lg ${
-                isManager
-                  ? "bg-red-500/5 text-red-500/50 border border-red-500/10 opacity-50 cursor-not-allowed"
-                  : "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white hover:shadow-[0_0_20px_rgba(220,38,38,0.4)]"
+              onClick={() => setActiveTab("production")}
+              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
+                activeTab === "production"
+                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
+                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
               }`}
             >
-              <AlertOctagon size={16} /> Wipe Database
+              Output
             </button>
-            {warningTooltip === "wipe-all" && (
-              <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
-                <div className="bg-[#050a08] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
-                  <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
-                    🚫
-                  </span>{" "}
-                  Admin Access Required
-                </div>
-              </div>
-            )}
+            <button
+              onClick={() => setActiveTab("labour")}
+              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
+                activeTab === "labour"
+                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
+                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+              }`}
+            >
+              Payouts
+            </button>
+            <button
+              onClick={() => setActiveTab("dues")}
+              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
+                activeTab === "dues"
+                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
+                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+              }`}
+            >
+              Dues
+            </button>
           </div>
-          <Link to="/enterprise/production">
-            <Button variant="primary" className="text-xs px-6 py-2.5 shadow-lg">
-              + Log New Entry
-            </Button>
-          </Link>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 w-full md:w-auto ml-auto md:ml-0">
+            <div className="relative w-full md:w-auto">
+              <button
+                onClick={() =>
+                  isManager
+                    ? handleDisabledClick("wipe-all")
+                    : setIsDeleteAllOpen(true)
+                }
+                className={`flex w-full md:w-auto items-center justify-center gap-2 px-4 py-2.5 rounded-xl transition-all text-xs font-bold shadow-lg ${
+                  isManager
+                    ? "bg-red-500/5 text-red-500/50 border border-red-500/10 opacity-50 cursor-not-allowed"
+                    : "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white hover:shadow-[0_0_20px_rgba(220,38,38,0.4)]"
+                }`}
+              >
+                <AlertOctagon size={16} /> Wipe DB
+              </button>
+              {warningTooltip === "wipe-all" && (
+                <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
+                  <div className="bg-[#050a08] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                    <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
+                      🚫
+                    </span>{" "}
+                    Admin Access Required
+                  </div>
+                </div>
+              )}
+            </div>
+            <Link to="/enterprise/production" className="w-full md:w-auto">
+              <Button
+                variant="primary"
+                className="w-full md:w-auto text-xs px-6 py-2.5 shadow-lg flex items-center justify-center bg-emerald-600 hover:bg-emerald-500 text-white"
+              >
+                + Log New Entry
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -512,49 +555,28 @@ const ProductionReport = () => {
 
       {/* MAIN DATA SECTION */}
       <div className="bg-[#050a08] rounded-2xl border border-white/5 overflow-visible shadow-2xl transition-colors duration-500">
-        {/* TABS & SEARCH BAR */}
-        <div className="p-5 border-b border-white/5 bg-[#020403]/80 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5 rounded-t-2xl">
-          <div className="flex gap-2 p-1.5 bg-black/60 rounded-xl border border-white/5 w-full sm:w-auto overflow-x-auto shadow-inner">
-            <button
-              onClick={() => setActiveTab("production")}
-              className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${activeTab === "production" ? "bg-emerald-500/15 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.1)]" : "text-gray-500 hover:text-emerald-200 hover:bg-white/5"}`}
-            >
-              <Factory size={14} /> Output
-            </button>
-            <button
-              onClick={() => setActiveTab("labour")}
-              className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${activeTab === "labour" ? "bg-blue-500/15 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.1)]" : "text-gray-500 hover:text-blue-200 hover:bg-white/5"}`}
-            >
-              <IndianRupee size={14} /> Payouts
-            </button>
-            <button
-              onClick={() => setActiveTab("dues")}
-              className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${activeTab === "dues" ? "bg-rose-500/15 text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.1)]" : "text-gray-500 hover:text-rose-200 hover:bg-white/5"}`}
-            >
-              <AlertCircle size={14} /> Dues
-            </button>
+        {/* SEARCH & EXPORT BAR */}
+        <div className="p-5 border-b border-white/5 bg-[#020403]/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-2xl">
+          <div className="relative w-full sm:max-w-md group">
+            <Search
+              size={16}
+              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${searchTerm ? theme.textClass : "text-gray-500 group-hover:text-gray-400"}`}
+            />
+            <input
+              type="text"
+              placeholder={`Search ${activeTab === "production" ? "product" : "name or category"}...`}
+              className={`w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none transition-all shadow-inner focus:ring-2 ${theme.focusRing} ${theme.borderClass}`}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-
-          <div className="flex items-center gap-3 w-full xl:w-auto justify-between xl:justify-end">
-            <div className="relative flex-1 sm:w-72 group">
-              <Search
-                size={16}
-                className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${searchTerm ? theme.textClass : "text-gray-500 group-hover:text-gray-400"}`}
-              />
-              <input
-                type="text"
-                placeholder={`Search ${activeTab === "production" ? "product" : "name or category"}...`}
-                className={`w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none transition-all shadow-inner focus:ring-2 ${theme.focusRing} ${theme.borderClass}`}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
+          <div className="w-full sm:w-auto">
             <Button
               variant="outline"
-              className="gap-2 text-xs font-bold tracking-widest border-white/10 py-2.5 bg-black/40 hover:bg-white/5"
+              className="gap-2 w-full sm:w-auto text-xs font-bold tracking-widest border-white/10 py-2.5 bg-black/40 hover:bg-white/5 flex items-center justify-center"
               onClick={handleExport}
             >
-              <Download size={16} /> Export
+              <Download size={16} /> Export View
             </Button>
           </div>
         </div>
