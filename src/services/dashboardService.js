@@ -4,39 +4,36 @@ import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 const dashboardService = {
   getStats: async () => {
     try {
-      // 1. Fetch data from all relevant collections
-      const cashSnap = await getDocs(collection(db, "cashTransactions"));
       const stockSnap = await getDocs(collection(db, "stocks"));
       const empSnap = await getDocs(collection(db, "employees"));
       const invSnap = await getDocs(collection(db, "invoices"));
+      const electricSnap = await getDocs(collection(db, "electricity_bills"));
 
-      // Fetch only last 7 days of production for the chart
+      // Fetch ample records to safely cover the last 7 days
       const prodQuery = query(
         collection(db, "production"),
         orderBy("date", "desc"),
-        limit(7),
+        limit(100),
       );
       const prodSnap = await getDocs(prodQuery);
 
-      // 2. Calculate Cash Flow
-      let income = 0,
-        expense = 0;
-      cashSnap.forEach((doc) => {
-        const d = doc.data();
-        if (d.type === "Income") income += Number(d.amount) || 0;
-        if (d.type === "Expense") expense += Number(d.amount) || 0;
-      });
+      const salesQuery = query(
+        collection(db, "sales"),
+        orderBy("date", "desc"),
+        limit(100),
+      );
+      const salesSnap = await getDocs(salesQuery);
 
-      // 3. Calculate Stock Status
+      // 1. Calculate Stock Status
       let stockValue = 0,
         lowStock = 0;
       stockSnap.forEach((doc) => {
         const d = doc.data();
         stockValue += (Number(d.quantity) || 0) * (Number(d.price) || 0);
-        if (Number(d.quantity) < 10) lowStock++; // Assuming < 10 is low stock
+        if (Number(d.quantity) < 10) lowStock++;
       });
 
-      // 4. Calculate Invoice Revenue
+      // 2. Calculate Invoice Revenue
       let revenue = 0,
         pendingInvoices = 0;
       invSnap.forEach((doc) => {
@@ -45,33 +42,74 @@ const dashboardService = {
         if (d.status === "Pending") pendingInvoices++;
       });
 
-      // 5. Format Production Data for Chart
-      const productionData = prodSnap.docs
-        .map((doc) => {
-          const d = doc.data();
-          return {
-            date: d.date,
-            quantity: Number(d.quantity) || Number(d.output) || 0,
-          };
-        })
-        .reverse(); // Reverse to show oldest to newest left-to-right
+      // 3. 🚀 ELECTRICITY LOGIC: Overdue decreases when Paid
+      let totalElectricPaid = 0,
+        totalElectricOverdue = 0;
+      electricSnap.forEach((doc) => {
+        const d = doc.data();
+        if (d.status === "Paid") totalElectricPaid += Number(d.amount) || 0;
+        // Map both Pending and Overdue into the Overdue chart calculation
+        if (d.status === "Pending" || d.status === "Overdue")
+          totalElectricOverdue += Number(d.amount) || 0;
+      });
 
-      // 6. Return exact format the UI expects
+      // 🚀 DATE LOGIC FOR "LAST 7 DAYS" (Not just 7 records)
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      // 4. 🚀 Format Sales Data for Line Chart (Only within last 7 Days)
+      let totalSalesRevenue = 0;
+      const salesData = [];
+      salesSnap.forEach((doc) => {
+        const d = doc.data();
+        totalSalesRevenue += Number(d.amount) || 0; // Total of fetched records
+
+        const saleDate = new Date(d.date);
+        if (saleDate >= sevenDaysAgo) {
+          salesData.push({
+            date: saleDate.toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+            }),
+            amount: Number(d.amount) || 0,
+            productName: d.productName || "Various Items",
+          });
+        }
+      });
+      // Reverse to plot chronologically (Oldest to Newest left-to-right)
+      const formattedSalesData = salesData.reverse();
+
+      // 5. 🚀 Format Production Data for Bar Chart (Only within last 7 Days)
+      const productionData = prodSnap.docs
+        .map((doc) => doc.data())
+        .filter((d) => new Date(d.date) >= sevenDaysAgo)
+        .map((d) => ({
+          date: new Date(d.date).toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+          }),
+          quantity: Number(d.quantity) || Number(d.output) || 0,
+          productName: d.productName || "Unknown Product",
+        }))
+        .reverse();
+
       return {
         data: {
           cards: {
-            balance: income - expense,
+            balance: totalSalesRevenue,
             revenue: revenue,
-            activeEmployees: empSnap.size, // Total number of employees
+            activeEmployees: empSnap.size,
             stockValue: stockValue,
             lowStock: lowStock,
             pendingInvoices: pendingInvoices,
           },
           charts: {
             production: productionData,
-            finance: [
-              { name: "Income", value: income },
-              { name: "Expense", value: expense },
+            sales: formattedSalesData,
+            electricity: [
+              { name: "Paid", value: totalElectricPaid },
+              { name: "Overdue", value: totalElectricOverdue },
             ],
           },
           recentActivity: [],
