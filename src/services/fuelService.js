@@ -31,6 +31,7 @@ const fuelService = {
       createdAt: new Date().toISOString(),
       createdBy: user?.email || "Unknown",
       createdRole: user?.role || "Admin",
+      editHistory: [],
     };
     const docRef = await addDoc(fuelCollection, dataToSave);
     return { data: { _id: docRef.id, ...dataToSave } };
@@ -50,8 +51,11 @@ const fuelService = {
       at: new Date().toISOString(),
     };
     currentHistory.push(currentEdit);
-    if (currentHistory.length > 10)
+
+    // Keep last 10 edits to prevent oversized documents
+    if (currentHistory.length > 10) {
       currentHistory = currentHistory.slice(currentHistory.length - 10);
+    }
 
     const dataToUpdate = {
       ...payload,
