@@ -3,7 +3,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import employeeService from "../../services/employeeService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
-import { UserCheck, ArrowLeft, Save, RefreshCcw } from "lucide-react";
+import {
+  UserCheck,
+  ArrowLeft,
+  Save,
+  RefreshCcw,
+  ChevronDown,
+} from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -25,7 +31,10 @@ const EditEmployee = () => {
     position: "",
     phone: "",
     address: "",
-    baseSalary: "",
+    initialSalary: "",
+    salaryTaken: "", // Strictly Optional
+    idType: "Aadhar",
+    idNumber: "",
     status: "Active",
     joinDate: "",
   });
@@ -39,7 +48,10 @@ const EditEmployee = () => {
           position: data.position || "",
           phone: data.phone || "",
           address: data.address || "",
-          baseSalary: data.baseSalary || "",
+          initialSalary: data.initialSalary || data.baseSalary || "",
+          salaryTaken: data.salaryTaken || "",
+          idType: data.idType || "Aadhar",
+          idNumber: data.idNumber || "",
           status: data.status || "Active",
           joinDate: data.joinDate
             ? new Date(data.joinDate).toISOString().split("T")[0]
@@ -65,8 +77,51 @@ const EditEmployee = () => {
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
+  // 🚀 SMART ID VALIDATION
+  const handleIdChange = (e) => {
+    let val = e.target.value.toUpperCase();
+    if (formData.idType === "Aadhar") {
+      val = val.replace(/\D/g, "").slice(0, 12);
+    } else if (formData.idType === "PAN") {
+      val = val.replace(/[^A-Z0-9]/g, "").slice(0, 10);
+    } else if (formData.idType === "Voter ID") {
+      val = val.replace(/[^A-Z0-9]/g, "").slice(0, 10);
+    } else if (formData.idType === "Driving License") {
+      val = val.replace(/[^A-Z0-9-]/g, "").slice(0, 16);
+    }
+    setFormData({ ...formData, idNumber: val });
+  };
+
+  const handleIdTypeChange = (e) => {
+    setFormData({ ...formData, idType: e.target.value, idNumber: "" });
+  };
+
+  const getIdPlaceholder = () => {
+    switch (formData.idType) {
+      case "Aadhar":
+        return "e.g. 123456789012";
+      case "PAN":
+        return "e.g. ABCDE1234F";
+      case "Voter ID":
+        return "e.g. ABC1234567";
+      case "Driving License":
+        return "e.g. DL-1420110012345";
+      default:
+        return "Enter ID number...";
+    }
+  };
+
   const handleFormSubmitClick = (e) => {
     e.preventDefault();
+    if (formData.phone.length !== 10) {
+      return toast.error("Phone number must be exactly 10 digits");
+    }
+    if (formData.idType === "Aadhar" && formData.idNumber.length !== 12) {
+      return toast.error("Aadhar Card must be exactly 12 digits");
+    }
+    if (formData.idType === "PAN" && formData.idNumber.length !== 10) {
+      return toast.error("PAN Card must be exactly 10 characters");
+    }
     setIsDialogOpen(true);
   };
 
@@ -87,18 +142,10 @@ const EditEmployee = () => {
     }
   };
 
-  if (loading)
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <Loader />
-        <span className="text-emerald-500/40 text-[10px] font-mono uppercase tracking-widest animate-pulse">
-          Loading Profile...
-        </span>
-      </div>
-    );
+  if (loading) return <Loader />;
 
   return (
-    <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
       <button
         onClick={() => navigate("/enterprise/employees")}
         className="group flex items-center text-emerald-100/50 hover:text-white mb-6 transition-colors"
@@ -110,7 +157,7 @@ const EditEmployee = () => {
         Return to Directory
       </button>
 
-      <div className="bg-[#050a08] rounded-2xl shadow-2xl border border-emerald-900/30 p-8 relative overflow-hidden">
+      <div className="bg-[#050a08] rounded-2xl shadow-2xl border border-emerald-900/30 p-6 md:p-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-3xl rounded-full pointer-events-none"></div>
         <div className="flex items-center gap-4 mb-8 border-b border-emerald-900/10 pb-6 relative z-10">
           <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shadow-inner">
@@ -148,15 +195,21 @@ const EditEmployee = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* 🚀 INDIAN PHONE VALIDATION */}
             <Input
               label="Phone Number"
               name="phone"
               value={formData.phone}
-              onChange={handleChange}
+              onChange={(e) => {
+                let val = e.target.value.replace(/\D/g, "");
+                if (val.length > 0 && !["6", "7", "8", "9"].includes(val[0]))
+                  val = "";
+                if (val.length <= 10) setFormData({ ...formData, phone: val });
+              }}
               required
             />
             <div>
-              <label className="block text-xs font-bold text-emerald-100/60 uppercase tracking-wider mb-2 ml-1">
+              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
                 Status
               </label>
               <div className="relative">
@@ -164,16 +217,53 @@ const EditEmployee = () => {
                   name="status"
                   value={formData.status}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 appearance-none transition-all"
+                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 appearance-none transition-all"
                 >
                   <option value="Active">Active</option>
                   <option value="On Leave">On Leave</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50">
-                  ▼
-                </div>
+                <ChevronDown
+                  size={16}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50"
+                />
               </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-emerald-950/20 p-5 rounded-2xl border border-emerald-900/30">
+            <div className="md:col-span-1">
+              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                Govt ID Type
+              </label>
+              <div className="relative">
+                <select
+                  name="idType"
+                  value={formData.idType}
+                  onChange={handleIdTypeChange}
+                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 appearance-none cursor-pointer"
+                >
+                  <option value="Aadhar">Aadhar Card</option>
+                  <option value="PAN">PAN Card</option>
+                  <option value="Voter ID">Voter ID</option>
+                  <option value="Driving License">Driving License</option>
+                </select>
+                <ChevronDown
+                  size={16}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500/50 pointer-events-none"
+                />
+              </div>
+            </div>
+            <div className="md:col-span-2">
+              <Input
+                label={`${formData.idType} Number`}
+                name="idNumber"
+                value={formData.idNumber}
+                onChange={handleIdChange}
+                placeholder={getIdPlaceholder()}
+                required
+                className="font-mono uppercase tracking-wider"
+              />
             </div>
           </div>
 
@@ -184,14 +274,24 @@ const EditEmployee = () => {
             onChange={handleChange}
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-[#020403]/50 p-5 rounded-2xl border border-emerald-900/20">
             <Input
-              label="Base Salary (₹)"
-              name="baseSalary"
+              label="Initial Salary (₹)"
+              name="initialSalary"
               type="number"
-              value={formData.baseSalary}
+              value={formData.initialSalary}
               onChange={handleChange}
               required
+              className="text-emerald-400 font-bold"
+            />
+            <Input
+              label="Salary Taken (₹) - Opt"
+              name="salaryTaken"
+              type="number"
+              placeholder="0.00 (Optional)"
+              value={formData.salaryTaken}
+              onChange={handleChange}
+              className="text-rose-400 font-bold"
             />
             <Input
               label="Joining Date"
@@ -201,6 +301,7 @@ const EditEmployee = () => {
               onChange={handleChange}
               required
               className="text-emerald-100"
+              style={{ colorScheme: "dark" }}
             />
           </div>
 
@@ -214,7 +315,7 @@ const EditEmployee = () => {
             </div>
           )}
 
-          <div className="pt-8 flex justify-end gap-4 border-t border-emerald-900/10 mt-2">
+          <div className="pt-6 flex justify-end gap-4 border-t border-emerald-900/10 mt-2">
             <Button
               type="button"
               variant="secondary"
@@ -232,8 +333,8 @@ const EditEmployee = () => {
                 <RefreshCcw size={18} className="animate-spin" />
               ) : (
                 <Save size={18} />
-              )}
-              {saving ? "Updating..." : "Update Profile"}
+              )}{" "}
+              Update Profile
             </Button>
           </div>
         </form>
