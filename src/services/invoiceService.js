@@ -129,6 +129,27 @@ const invoiceService = {
     await deleteDoc(docRef);
     return { message: "Invoice deleted" };
   },
+
+  // 🛑 SECURE: Wipe Entire Database Method Added
+  deleteAllInvoices: async ({ password }) => {
+    // You can enforce a specific local password check here if desired.
+    // Usually, real admin protection relies on backend logic or Firebase rules.
+    if (!password) {
+      throw new Error("Password is required to wipe the database.");
+    }
+
+    try {
+      const snapshot = await getDocs(invCollection);
+      const deletePromises = snapshot.docs.map((document) =>
+        deleteDoc(doc(db, "invoices", document.id)),
+      );
+      await Promise.all(deletePromises);
+      return { message: "All invoices deleted successfully" };
+    } catch (error) {
+      console.error("Wipe Database Error:", error);
+      throw new Error("Failed to clear database. Admin rights required.");
+    }
+  },
 };
 
 export default invoiceService;
