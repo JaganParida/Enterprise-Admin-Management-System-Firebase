@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Link, useLocation } from "react-router-dom";
 import fuelService from "../../services/fuelService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -6,47 +7,74 @@ import {
   Fuel,
   Truck,
   Calendar,
-  MapPin,
   IndianRupee,
   Save,
-  Download,
   Droplet,
-  Trash2,
-  Edit2,
   X,
   History,
+  ArrowRight,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Input from "../../components/common/Input";
 import Loader from "../../components/common/Loader";
-import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+const GlassInput = ({
+  label,
+  icon: Icon,
+  type = "text",
+  required,
+  className = "",
+  labelClass = "text-cyan-100/50",
+  ...props
+}) => (
+  <div className="flex flex-col gap-1.5 w-full">
+    {label && (
+      <label
+        className={`text-[10px] font-bold tracking-widest uppercase ml-1 ${labelClass}`}
+      >
+        {label} {required && <span className="text-rose-500">*</span>}
+      </label>
+    )}
+    <div className="relative group">
+      {Icon && (
+        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-gray-300 transition-colors pointer-events-none z-10">
+          <Icon size={16} />
+        </div>
+      )}
+      <input
+        type={type}
+        autoComplete="new-password"
+        onWheel={(e) => e.target.blur()}
+        className={`w-full bg-[#060d1f] border border-gray-800 rounded-xl ${Icon ? "pl-10" : "pl-4"} pr-4 py-2.5 text-sm text-gray-50 outline-none transition-all placeholder:text-gray-700 shadow-inner [color-scheme:dark] ${className}`}
+        required={required}
+        {...props}
+      />
+    </div>
+  </div>
+);
 
 const FuelTracker = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
+  const location = useLocation();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
 
-  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
-  const [warningTooltip, setWarningTooltip] = useState(null);
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
     data: [],
     itemName: "",
   });
 
-  const isManager = admin?.data?.role === "manager";
-
-  const [formData, setFormData] = useState({
+  const initialForm = {
     date: new Date().toISOString().split("T")[0],
     vehicleNo: "",
-    stationName: "",
     liters: "",
     pricePerLiter: "",
-    invoiceNo: "",
-  });
+  };
+
+  const [formData, setFormData] = useState(initialForm);
 
   const calculatedTotal =
     (parseFloat(formData.liters) || 0) *
@@ -67,9 +95,26 @@ const FuelTracker = () => {
     fetchLogs();
   }, []);
 
+  // 🚀 Catch edit triggers from the Report page
+  useEffect(() => {
+    if (location.state && location.state.editLog) {
+      const log = location.state.editLog;
+      setEditId(log._id);
+      setFormData({
+        date: log.date
+          ? new Date(log.date).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0],
+        vehicleNo: log.vehicleNo || "",
+        liters: log.liters || "",
+        pricePerLiter: log.pricePerLiter || "",
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
+
   const stats = useMemo(
     () => ({
-      // 🚀 SAFETY: Number checks to prevent white screen
       totalLiters: logs.reduce(
         (acc, log) => acc + (Number(log.liters) || 0),
         0,
@@ -83,13 +128,48 @@ const FuelTracker = () => {
     [logs],
   );
 
+  const handleVehicleNoChange = (e) => {
+    let rawValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    let state = rawValue.slice(0, 2).replace(/[^A-Z]/g, "");
+    let rto = rawValue.slice(2, 4).replace(/[^0-9]/g, "");
+    let remainder = rawValue.slice(4);
+    let middleChars = remainder.replace(/[^A-Z]/g, "").slice(0, 2);
+    let lastDigits = remainder.replace(/[^0-9]/g, "").slice(0, 4);
+
+    let formatted = state;
+    if (state.length === 2 && rawValue.length > 2) {
+      formatted += "-" + rto;
+      if (rto.length === 2 && rawValue.length > 4) {
+        formatted += "-";
+        if (middleChars.length > 0) {
+          formatted += middleChars;
+          if (lastDigits.length > 0) {
+            formatted += "-" + lastDigits;
+          }
+        } else {
+          formatted += lastDigits;
+        }
+      }
+    }
+    setFormData((prev) => ({ ...prev, vehicleNo: formatted }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const vehicleRegex = /^[A-Z]{2}-[0-9]{2}-([A-Z]{1,2}-)?[0-9]{4}$/;
+    if (!vehicleRegex.test(formData.vehicleNo))
+      return toast.error("Invalid Vehicle No. Format (e.g., OD-02-AX-1234)");
+    if (Number(formData.liters) <= 0)
+      return toast.error("Liters must be greater than 0");
+    if (Number(formData.pricePerLiter) <= 0)
+      return toast.error("Price per liter must be greater than 0");
+
     setSubmitting(true);
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
       const payload = { ...formData, totalCost: calculatedTotal };
+
       if (editId) {
         await fuelService.updateLog(editId, payload, currentUser);
         toast.success("Fuel log updated!");
@@ -106,24 +186,6 @@ const FuelTracker = () => {
     }
   };
 
-  const handleEdit = (log) => {
-    setEditId(log._id);
-    setFormData({
-      date: new Date(log.date).toISOString().split("T")[0],
-      vehicleNo: log.vehicleNo,
-      stationName: log.stationName || "",
-      liters: log.liters,
-      pricePerLiter: log.pricePerLiter,
-      invoiceNo: log.invoiceNo || "",
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleDisabledClick = (id) => {
-    setWarningTooltip(id);
-    setTimeout(() => setWarningTooltip(null), 2500);
-  };
-
   const openHistory = (log) => {
     const sortedHistory = log.editHistory ? [...log.editHistory].reverse() : [];
     setHistoryModal({
@@ -133,29 +195,9 @@ const FuelTracker = () => {
     });
   };
 
-  const executeDelete = async () => {
-    if (!deleteModal.id) return;
-    try {
-      await fuelService.deleteLog(deleteModal.id);
-      toast.info("Log deleted");
-      fetchLogs();
-    } catch (err) {
-      toast.error("Delete failed");
-    } finally {
-      setDeleteModal({ isOpen: false, id: null });
-    }
-  };
-
   const resetForm = () => {
     setEditId(null);
-    setFormData({
-      date: new Date().toISOString().split("T")[0],
-      vehicleNo: "",
-      stationName: "",
-      liters: "",
-      pricePerLiter: "",
-      invoiceNo: "",
-    });
+    setFormData(initialForm);
   };
 
   if (loading)
@@ -166,14 +208,14 @@ const FuelTracker = () => {
     );
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-2 sm:px-4">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="p-2 bg-cyan-500/10 rounded-lg text-cyan-400">
-              <Droplet />
-            </div>{" "}
-            Fuel Tracker
+            <div className="p-2.5 bg-cyan-500/10 rounded-xl border border-cyan-500/20">
+              <Droplet className="text-cyan-400" size={24} />
+            </div>
+            Fuel Management
           </h1>
           <p className="text-cyan-100/40 text-sm mt-1 ml-1">
             Monitor vehicle refueling and fuel expenses.
@@ -181,244 +223,252 @@ const FuelTracker = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* --- FORM SECTION --- */}
-        <div
-          className={`bg-[#020617]/40 backdrop-blur-md border p-6 rounded-2xl shadow-xl relative transition-colors ${editId ? "border-cyan-500/40 bg-cyan-950/20" : "border-cyan-500/10"}`}
-        >
-          {/* 🚀 UI FIX: Background Blur in separate container */}
-          <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
-            <div className="absolute -top-24 -right-24 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl" />
-          </div>
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+        <div className="xl:col-span-5">
+          <div
+            className={`bg-[#030816] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? "border-cyan-500/50 ring-1 ring-cyan-500/20 shadow-cyan-500/10" : "border-cyan-900/30"}`}
+          >
+            <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 blur-[80px] rounded-full pointer-events-none"></div>
 
-          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-cyan-500/5 relative z-10">
-            <div className="p-2 bg-cyan-600/20 rounded-lg text-cyan-400 border border-cyan-400/20 shadow-sm">
-              {editId ? <Edit2 size={18} /> : <Fuel size={18} />}
-            </div>
-            <h3 className="text-lg font-semibold text-white tracking-tight">
-              {editId ? "Update Fuel Log" : "Log Refuel"}
-            </h3>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
-            <Input
-              label="Date"
-              type="date"
-              value={formData.date}
-              onChange={(e) =>
-                setFormData({ ...formData, date: e.target.value })
-              }
-              icon={Calendar}
-              required
-            />
-            <Input
-              label="Vehicle No."
-              placeholder="OD-02-A-1234"
-              value={formData.vehicleNo}
-              onChange={(e) =>
-                setFormData({ ...formData, vehicleNo: e.target.value })
-              }
-              icon={Truck}
-              required
-            />
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Liters"
-                type="number"
-                value={formData.liters}
-                onChange={(e) =>
-                  setFormData({ ...formData, liters: e.target.value })
-                }
-                required
-              />
-              <Input
-                label="Rate"
-                type="number"
-                value={formData.pricePerLiter}
-                onChange={(e) =>
-                  setFormData({ ...formData, pricePerLiter: e.target.value })
-                }
-                icon={IndianRupee}
-                required
-              />
-            </div>
-            <div className="p-4 rounded-xl bg-cyan-950/30 border border-cyan-500/20 flex justify-between items-center">
-              <span className="text-xs uppercase font-bold text-cyan-200/50 tracking-wider">
-                Total Cost
-              </span>
-              <span className="text-xl font-bold text-cyan-400">
-                ₹ {calculatedTotal.toLocaleString()}
-              </span>
-            </div>
-            <div className="flex gap-2">
+            <div className="flex justify-between items-center mb-6 relative z-10">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Fuel size={18} className="text-cyan-400" />
+                {editId ? "Update Fuel Log" : "Log Refuel"}
+              </h3>
               {editId && (
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="p-3 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors"
+                  className="text-xs text-rose-400 hover:text-rose-300 font-bold tracking-widest uppercase"
                 >
-                  <X size={18} />
+                  Cancel Edit
                 </button>
               )}
-              <Button
-                type="submit"
-                className="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-lg shadow-md"
-                disabled={submitting}
-              >
-                <Save size={16} className="mr-2" />{" "}
-                {editId ? "Update" : "Save Log"}
-              </Button>
             </div>
-          </form>
+
+            <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
+              <div className="grid grid-cols-2 gap-4">
+                <GlassInput
+                  label="Date"
+                  type="date"
+                  name="date"
+                  value={formData.date}
+                  onChange={(e) =>
+                    setFormData({ ...formData, date: e.target.value })
+                  }
+                  icon={Calendar}
+                  required
+                  className="focus:border-cyan-500/50 focus:ring-cyan-500/20"
+                />
+                <GlassInput
+                  label="Vehicle No."
+                  placeholder="OD-02-AX-1234"
+                  value={formData.vehicleNo}
+                  onChange={handleVehicleNoChange}
+                  icon={Truck}
+                  required
+                  className="focus:border-cyan-500/50 focus:ring-cyan-500/20 uppercase"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <GlassInput
+                  label="Fuel (Liters)"
+                  type="number"
+                  step="any"
+                  placeholder="0"
+                  value={formData.liters}
+                  onChange={(e) =>
+                    setFormData({ ...formData, liters: e.target.value })
+                  }
+                  icon={Droplet}
+                  required
+                  className="focus:border-cyan-500/50 focus:ring-cyan-500/20 text-cyan-50"
+                />
+                <GlassInput
+                  label="Cost Per Liter (₹)"
+                  type="number"
+                  step="any"
+                  placeholder="0.00"
+                  value={formData.pricePerLiter}
+                  onChange={(e) =>
+                    setFormData({ ...formData, pricePerLiter: e.target.value })
+                  }
+                  icon={IndianRupee}
+                  required
+                  className="focus:border-cyan-500/50 focus:ring-cyan-500/20 text-cyan-50"
+                />
+              </div>
+
+              <div className="flex items-center gap-4 bg-[#0a1222] p-4 rounded-xl border border-cyan-900/30 mt-2">
+                <div className="flex-1">
+                  <p className="text-cyan-100/40 uppercase tracking-widest text-[10px] font-bold mb-1">
+                    Calculated Total
+                  </p>
+                  <p className="text-2xl font-black text-cyan-400 font-mono">
+                    <span className="text-sm mr-1 text-cyan-600">₹</span>
+                    {calculatedTotal.toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full h-12 shadow-xl shadow-cyan-900/20 text-sm tracking-widest uppercase font-black bg-cyan-600 hover:bg-cyan-500 border-none mt-2 text-[#020403]"
+                >
+                  {submitting
+                    ? "Processing..."
+                    : editId
+                      ? "Update Fuel Log"
+                      : "Confirm & Save Log"}
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
 
-        <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-3 gap-4">
-            <StatCard
-              title="Total Liters"
-              value={stats.totalLiters}
-              icon={Droplet}
-              color="cyan"
-            />
-            <StatCard
-              title="Total Spent"
-              value={`₹ ${stats.totalCost.toLocaleString()}`}
-              icon={IndianRupee}
-              color="blue"
-            />
-            <StatCard
-              title="Refuel Count"
-              value={stats.refuelCount}
-              icon={Fuel}
-              color="cyan"
-            />
-          </div>
-
-          <div className="bg-[#020617]/40 backdrop-blur-md border border-cyan-500/10 rounded-2xl shadow-xl overflow-hidden flex flex-col w-full">
-            <div className="p-5 border-b border-cyan-500/5">
-              <h3 className="text-lg font-semibold text-white">
-                Recent Refuels
+        <div className="xl:col-span-7 space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-[#030816] border border-cyan-900/30 p-5 rounded-2xl relative overflow-hidden group">
+              <div className="absolute -right-4 -bottom-4 opacity-5 text-cyan-500 group-hover:opacity-10 transition-opacity">
+                <Droplet size={80} />
+              </div>
+              <p className="text-cyan-100/50 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">
+                Total Fuel Logged
+              </p>
+              <h3 className="text-2xl font-black text-white font-mono relative z-10">
+                {stats.totalLiters.toFixed(1)}{" "}
+                <span className="text-sm font-normal text-cyan-100/40">L</span>
               </h3>
             </div>
-            <div className="overflow-x-auto w-full pb-4 p-1">
-              <table className="w-full text-left min-w-[700px]">
-                <thead className="bg-[#020617] text-cyan-200/30 text-[10px] uppercase font-bold tracking-wider border-b border-cyan-500/10">
+            <div className="bg-[#030816] border border-blue-900/30 p-5 rounded-2xl relative overflow-hidden group">
+              <div className="absolute -right-4 -bottom-4 opacity-5 text-blue-500 group-hover:opacity-10 transition-opacity">
+                <IndianRupee size={80} />
+              </div>
+              <p className="text-blue-100/50 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">
+                Total Spent
+              </p>
+              <h3 className="text-2xl font-black text-blue-400 font-mono relative z-10">
+                ₹ {stats.totalCost.toLocaleString("en-IN")}
+              </h3>
+            </div>
+            <div className="bg-[#030816] border border-emerald-900/30 p-5 rounded-2xl relative overflow-hidden group">
+              <div className="absolute -right-4 -bottom-4 opacity-5 text-emerald-500 group-hover:opacity-10 transition-opacity">
+                <Fuel size={80} />
+              </div>
+              <p className="text-emerald-100/50 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">
+                Refuel Count
+              </p>
+              <h3 className="text-2xl font-black text-white font-mono relative z-10">
+                {stats.refuelCount}
+              </h3>
+            </div>
+          </div>
+
+          <div className="bg-[#030816] border border-cyan-900/30 rounded-3xl overflow-hidden shadow-xl">
+            <div className="p-6 border-b border-cyan-900/20 flex justify-between items-center bg-cyan-950/10">
+              <h3 className="font-bold text-white">
+                Recent Refuels{" "}
+                <span className="text-xs font-normal text-cyan-100/40 ml-2">
+                  (Latest)
+                </span>
+              </h3>
+              <Link
+                to="/transportation/fuel/report"
+                className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 hover:underline whitespace-nowrap text-cyan-400"
+              >
+                View All <ArrowRight size={14} />
+              </Link>
+            </div>
+
+            <div className="overflow-x-auto max-h-[600px] custom-scrollbar p-2">
+              <table className="w-full text-left min-w-[500px]">
+                <thead className="sticky top-0 bg-[#060d1f] text-[10px] uppercase font-bold text-cyan-100/40 tracking-[0.15em] z-10 shadow-sm border-b border-cyan-900/20">
                   <tr>
-                    <th className="py-4 px-5">Date</th>
-                    <th className="py-4 px-5">Vehicle & Role</th>
-                    <th className="py-4 px-5 text-right">Fuel & Cost</th>
-                    <th className="py-4 px-5 text-right">Actions</th>
+                    <th className="py-4 px-4 rounded-tl-xl w-[40%]">
+                      Vehicle Details
+                    </th>
+                    <th className="py-4 px-4 w-[30%]">Fuel & Cost</th>
+                    <th className="py-4 px-4 text-right rounded-tr-xl w-[30%]">
+                      Total Spent
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="text-sm text-cyan-100/70 divide-y divide-cyan-500/5">
-                  {logs.map((log) => (
-                    <tr
-                      key={log._id}
-                      className="hover:bg-cyan-400/[0.03] group transition-colors"
-                    >
-                      <td className="p-4 font-mono text-xs whitespace-nowrap align-middle">
-                        {new Date(log.date).toLocaleDateString("en-GB")}
-                      </td>
-                      <td className="p-4 align-middle">
-                        <div className="font-medium text-white whitespace-nowrap">
-                          {log.vehicleNo}
-                        </div>
+                <tbody className="text-sm text-cyan-100/70 divide-y divide-cyan-900/10">
+                  {logs.slice(0, 10).map((log) => {
+                    const hasEdits =
+                      log.editHistory && log.editHistory.length > 0;
+                    const latestLog = hasEdits
+                      ? log.editHistory[log.editHistory.length - 1]
+                      : null;
 
-                        {/* 🛡️ UPDATED HISTORY BADGE WITH DATE/TIME */}
-                        {log.editHistory && log.editHistory.length > 0 ? (
-                          <div
-                            onClick={() => openHistory(log)}
-                            className="mt-2 flex flex-col gap-0.5 cursor-pointer bg-cyan-500/5 hover:bg-cyan-500/10 border border-cyan-500/20 p-1.5 rounded-lg transition-all w-max whitespace-nowrap"
-                          >
-                            <div className="text-[10px] font-mono text-cyan-400/90 flex items-center gap-1.5 uppercase tracking-widest font-bold">
-                              <History size={10} />{" "}
-                              {log.editHistory[log.editHistory.length - 1]
-                                .role || "ADMIN"}
-                              {log.editHistory.length > 1 && (
-                                <span className="text-[8px] opacity-60">
-                                  +{log.editHistory.length - 1} MORE
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[9px] text-cyan-200/30 ml-4 font-medium">
-                              {new Date(
-                                log.editHistory[log.editHistory.length - 1].at,
-                              ).toLocaleString("en-GB", {
-                                day: "2-digit",
-                                month: "short",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                          </div>
-                        ) : log.lastEditedRole ? (
-                          <div className="text-[9px] font-mono text-cyan-400/50 font-bold mt-1.5 uppercase tracking-widest flex flex-col gap-0.5">
-                            <span>✍️ {log.lastEditedRole}</span>
-                            {log.lastEditedAt && (
-                              <span className="text-cyan-200/20 font-medium normal-case tracking-normal ml-4">
-                                {new Date(log.lastEditedAt).toLocaleString(
-                                  "en-GB",
-                                  {
-                                    day: "2-digit",
-                                    month: "short",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  },
-                                )}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-[9px] text-cyan-200/30 mt-1 uppercase font-bold tracking-widest">
-                            {log.createdRole || "ADMIN"}
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-4 text-right align-middle whitespace-nowrap">
-                        <div className="font-mono text-cyan-400 font-bold">
-                          ₹{(Number(log.totalCost) || 0).toLocaleString()}
-                        </div>
-                        <div className="text-[10px] opacity-40">
-                          {Number(log.liters) || 0}L @ ₹
-                          {Number(log.pricePerLiter) || 0}
-                        </div>
-                      </td>
-                      <td className="p-4 align-middle">
-                        <div className="flex justify-end gap-2 items-center">
-                          <button
-                            onClick={() => handleEdit(log)}
-                            className="p-2 text-cyan-200/40 hover:text-cyan-400 transition-colors"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <div className="relative flex items-center">
-                            <button
-                              onClick={() =>
-                                isManager
-                                  ? handleDisabledClick(log._id)
-                                  : setDeleteModal({
-                                      isOpen: true,
-                                      id: log._id,
-                                    })
-                              }
-                              className={`p-2 rounded-lg transition-colors ${isManager ? "text-red-100/20 opacity-40 cursor-not-allowed" : "text-rose-200/40 hover:text-rose-500"}`}
+                    return (
+                      <tr
+                        key={log._id}
+                        className="hover:bg-cyan-400/[0.03] group transition-colors"
+                      >
+                        <td className="p-4 align-top">
+                          <p className="text-[11px] font-mono text-cyan-400 mb-1">
+                            {new Date(log.date).toLocaleDateString("en-GB")}
+                          </p>
+                          <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
+                            <Truck size={14} className="text-cyan-500/50" />{" "}
+                            {log.vehicleNo}
+                          </p>
+
+                          {hasEdits && (
+                            <div
+                              onClick={() => openHistory(log)}
+                              className="mt-3 flex items-center gap-1.5 bg-[#020403] border border-cyan-900/30 px-2 py-1 rounded-lg cursor-pointer w-max hover:border-cyan-500/50 transition-colors"
                             >
-                              <Trash2 size={16} />
-                            </button>
-                            {/* 🔥 TOOLTIP FIX: Added z-index to stay on top */}
-                            {warningTooltip === log._id && (
-                              <div className="absolute bottom-full right-0 mb-2 z-[999] animate-in fade-in zoom-in-95 duration-200">
-                                <div className="bg-[#050a08] border border-red-500/30 text-red-400 text-[10px] uppercase font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-2xl">
-                                  🚫 Action Denied
-                                </div>
-                                <div className="absolute -bottom-1 right-3 w-2 h-2 bg-[#050a08] border-b border-r border-red-500/30 rotate-45"></div>
-                              </div>
-                            )}
+                              <History size={10} className="text-cyan-500" />
+                              <span className="text-[9px] font-bold text-cyan-400 uppercase tracking-widest">
+                                {latestLog.role || "ADMIN"}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="p-4 align-top">
+                          <div className="text-xs text-cyan-200 mb-2 flex items-center gap-1.5 bg-cyan-900/20 w-max px-2.5 py-1 rounded-md font-medium border border-cyan-900/30 uppercase tracking-wide">
+                            <Droplet size={12} className="text-cyan-400" />{" "}
+                            {log.liters} Liters
                           </div>
-                        </div>
+                          <div className="text-[11px] text-cyan-100/60 font-medium mt-1 flex items-center gap-1">
+                            <IndianRupee size={10} /> Rate:{" "}
+                            <span className="font-bold text-cyan-400 font-mono ml-0.5">
+                              ₹{log.pricePerLiter}
+                            </span>{" "}
+                            /L
+                          </div>
+                        </td>
+
+                        <td className="p-4 text-right align-top">
+                          <p className="text-lg font-black text-white font-mono drop-shadow-sm mb-2">
+                            ₹
+                            {(Number(log.totalCost) || 0).toLocaleString(
+                              "en-IN",
+                            )}
+                          </p>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {logs.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="3"
+                        className="p-10 text-center text-cyan-100/30 italic"
+                      >
+                        No fuel records found.
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
@@ -426,36 +476,85 @@ const FuelTracker = () => {
         </div>
       </div>
 
-      <ConfirmDialog
-        isOpen={deleteModal.isOpen}
-        onClose={() => setDeleteModal({ isOpen: false, id: null })}
-        onConfirm={executeDelete}
-        title="Delete Fuel Log?"
-        message="Delete this fuel record?"
-        confirmText="Delete"
-        isDestructive={true}
-      />
+      {/* 🚀 HISTORY MODAL REFINED UI */}
+      {historyModal.isOpen && historyModal.data && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div
+            className="absolute inset-0 cursor-pointer"
+            onClick={() =>
+              setHistoryModal({ isOpen: false, data: null, itemName: "" })
+            }
+          />
+          <div className="bg-[#030816] border border-cyan-900/30 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-cyan-900/20 bg-[#060d1f]/50 shrink-0">
+              <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
+                <History size={16} className="text-cyan-500" />
+                Log History:{" "}
+                <span className="text-cyan-400 font-normal">
+                  {historyModal.itemName}
+                </span>
+              </div>
+              <button
+                onClick={() =>
+                  setHistoryModal({ isOpen: false, data: null, itemName: "" })
+                }
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
+              {historyModal.data.map((log, index) => (
+                <div
+                  key={index}
+                  className={`bg-[#060d1f] border ${index === 0 ? "border-cyan-500/30" : "border-gray-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                >
+                  {index === 0 && (
+                    <div className="absolute left-0 top-0 w-1 h-full bg-cyan-500"></div>
+                  )}
+                  <div className="flex items-center gap-4 pl-1">
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-cyan-500/10 text-cyan-400" : "bg-gray-800 text-gray-500"}`}
+                    >
+                      {(log.role || "A")[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <h4
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-gray-500"}`}
+                      >
+                        {log.role || "ADMIN"}
+                      </h4>
+                      <p className="text-gray-500 text-[10px] mt-0.5 font-mono">
+                        {log.by || "admin@system.com"}
+                      </p>
+                      <p
+                        className={`text-[10px] font-mono mt-1 ${index === 0 ? "text-cyan-400" : "text-gray-600"}`}
+                      >
+                        {new Date(log.at).toLocaleString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                  {index === 0 && (
+                    <div className="bg-cyan-500/10 border-cyan-500/20 text-cyan-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
+                      LATEST
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-
-const StatCard = ({ title, value, icon: Icon, color }) => (
-  <div className="p-4 bg-[#020617]/40 border border-cyan-500/10 rounded-2xl flex flex-col items-center group relative overflow-hidden transition-all hover:bg-cyan-900/10">
-    <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
-      <div
-        className={`absolute -right-5 -top-5 w-16 h-16 bg-${color}-500/5 blur-xl rounded-full group-hover:bg-${color}-500/10 transition-all`}
-      />
-    </div>
-    <div
-      className={`p-2 rounded-xl mb-2 text-${color}-400 bg-${color}-500/10 relative z-10`}
-    >
-      <Icon size={18} />
-    </div>
-    <p className="text-[9px] text-cyan-200/30 uppercase font-bold mb-1 relative z-10">
-      {title}
-    </p>
-    <h4 className="text-lg font-bold text-white relative z-10">{value}</h4>
-  </div>
-);
 
 export default FuelTracker;
