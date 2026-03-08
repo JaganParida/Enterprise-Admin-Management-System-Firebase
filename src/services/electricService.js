@@ -1,4 +1,4 @@
-import { db } from "../config/firebase";
+import { db, auth } from "../config/firebase";
 import {
   collection,
   addDoc,
@@ -10,11 +10,11 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 const billsCollection = collection(db, "electricBills");
 
 const electricService = {
-  // 1. Get all bill records
   getBills: async () => {
     const q = query(billsCollection, orderBy("billDate", "desc"));
     const snapshot = await getDocs(q);
@@ -25,36 +25,48 @@ const electricService = {
     return { data };
   },
 
-  // 2. Record a new bill (Tracking Creator)
   addBill: async (billData, user) => {
-    const totalAmount =
-      (parseFloat(billData.unitsConsumed) || 0) *
-      (parseFloat(billData.ratePerUnit) || 0);
+    const billAmt = parseFloat(billData.billAmount) || 0;
+    const fineAmt = parseFloat(billData.fineAmount) || 0;
+    const totalAmount = billAmt + fineAmt;
 
     const payload = {
       ...billData,
+      billAmount: billAmt,
+      fineAmount: fineAmt,
       totalAmount,
       createdAt: new Date().toISOString(),
-      createdBy: user?.email || "Unknown",
+      createdBy: user?.email || "admin@system.com",
       createdRole: user?.role || "Admin",
+      editHistory: [], // 🚀 COMPLETELY EMPTY ON CREATION
     };
 
     const docRef = await addDoc(billsCollection, payload);
     return { data: { _id: docRef.id, ...payload } };
   },
 
-  // 3. Update existing bill (With Top 10 History Limit)
   updateBill: async (id, updateData, user) => {
     const docRef = doc(db, "electricBills", id);
     const snapshot = await getDoc(docRef);
+    if (!snapshot.exists()) return;
+    const existingData = snapshot.data();
 
-    let currentHistory = [];
-    if (snapshot.exists() && snapshot.data().editHistory) {
-      currentHistory = snapshot.data().editHistory;
-    }
+    // 🚀 Smart Check: Ensure data actually changed before logging history
+    const isChanged =
+      existingData.caNumber !== updateData.caNumber ||
+      existingData.month !== updateData.month ||
+      existingData.billDate !== updateData.billDate ||
+      Number(existingData.billAmount) !== Number(updateData.billAmount) ||
+      Number(existingData.fineAmount) !== Number(updateData.fineAmount) ||
+      existingData.status !== updateData.status;
 
+    if (!isChanged) return { message: "No changes made" };
+
+    let currentHistory = existingData.editHistory || [];
+
+    // 🚀 ONLY TRACKING ACTUAL EDITS
     const currentEdit = {
-      by: user?.email || "Unknown",
+      email: user?.email || "admin@system.com",
       role: user?.role || "Admin",
       at: new Date().toISOString(),
     };
@@ -62,17 +74,19 @@ const electricService = {
     currentHistory.push(currentEdit);
 
     if (currentHistory.length > 10) {
-      currentHistory = currentHistory.slice(currentHistory.length - 10);
+      currentHistory = currentHistory.slice(-10);
     }
 
-    const totalAmount =
-      (parseFloat(updateData.unitsConsumed) || 0) *
-      (parseFloat(updateData.ratePerUnit) || 0);
+    const billAmt = parseFloat(updateData.billAmount) || 0;
+    const fineAmt = parseFloat(updateData.fineAmount) || 0;
+    const totalAmount = billAmt + fineAmt;
 
     const payload = {
       ...updateData,
+      billAmount: billAmt,
+      fineAmount: fineAmt,
       totalAmount,
-      lastEditedBy: currentEdit.by,
+      lastEditedBy: currentEdit.email,
       lastEditedRole: currentEdit.role,
       lastEditedAt: currentEdit.at,
       editHistory: currentHistory,
@@ -82,11 +96,28 @@ const electricService = {
     return { message: "Bill updated successfully" };
   },
 
-  // 4. Delete a bill record
   deleteBill: async (id) => {
     const docRef = doc(db, "electricBills", id);
     await deleteDoc(docRef);
     return { message: "Bill deleted successfully" };
+  },
+
+  deleteAllBills: async ({ password }) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Admin not logged in.");
+
+    try {
+      await signInWithEmailAndPassword(auth, currentUser.email, password);
+      const snapshot = await getDocs(billsCollection);
+      const deletePromises = [];
+      snapshot.forEach((document) => {
+        deletePromises.push(deleteDoc(doc(db, "electricBills", document.id)));
+      });
+      await Promise.all(deletePromises);
+      return { success: true };
+    } catch (error) {
+      throw new Error("Incorrect Admin Password or Wipe Failed.");
+    }
   },
 };
 
