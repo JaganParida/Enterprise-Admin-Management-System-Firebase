@@ -225,7 +225,7 @@ const EditInvoice = () => {
     );
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4">
       <button
         onClick={() => navigate("/enterprise/invoices")}
         className="flex items-center text-emerald-100/50 hover:text-white mb-2 transition-colors"
@@ -337,13 +337,7 @@ const EditInvoice = () => {
                         <div className="relative">
                           <select
                             className={`w-full bg-[#020403] border ${errors[`item_${item.id}_name`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm cursor-pointer appearance-none`}
-                            value={
-                              products.some((p) => p.name === item.name)
-                                ? item.name
-                                : item.name
-                                  ? "Custom"
-                                  : ""
-                            }
+                            value={item.isCustom ? "Custom" : item.name || ""}
                             onChange={(e) =>
                               handleItemChange(
                                 item.id,
@@ -365,19 +359,19 @@ const EditInvoice = () => {
                             >
                               <option
                                 value="Bricks (10 inch)"
-                                className="bg-[#050a08] text-emerald-100 font-normal"
+                                className="bg-[#050a08] text-white font-normal"
                               >
                                 Bricks (10 inch)
                               </option>
                               <option
                                 value="Bricks (9 inch)"
-                                className="bg-[#050a08] text-emerald-100 font-normal"
+                                className="bg-[#050a08] text-white font-normal"
                               >
                                 Bricks (9 inch)
                               </option>
                               <option
                                 value="Bricks (8 inch)"
-                                className="bg-[#050a08] text-emerald-100 font-normal"
+                                className="bg-[#050a08] text-white font-normal"
                               >
                                 Bricks (8 inch)
                               </option>
@@ -387,40 +381,69 @@ const EditInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Paver Blocks (Zig Zag 60mm)"
-                                className="bg-[#050a08] text-emerald-100 font-normal"
+                                value="Zig Zag (60mm)"
+                                className="bg-[#050a08] text-white font-normal"
                               >
-                                Paver Blocks (Zig Zag 60mm)
+                                Zig Zag (60mm)
                               </option>
                               <option
-                                value="Paver Blocks (Zig Zag 80mm)"
-                                className="bg-[#050a08] text-emerald-100 font-normal"
+                                value="Zig Zag (80mm)"
+                                className="bg-[#050a08] text-white font-normal"
                               >
-                                Paver Blocks (Zig Zag 80mm)
+                                Zig Zag (80mm)
                               </option>
                               <option
-                                value="Paver Blocks (6-12 Brick 60mm)"
-                                className="bg-[#050a08] text-emerald-100 font-normal"
+                                value="6-12 Brick (60mm)"
+                                className="bg-[#050a08] text-white font-normal"
                               >
-                                Paver Blocks (6-12 Brick 60mm)
+                                6-12 Brick (60mm)
                               </option>
                               <option
-                                value="Paver Blocks (6-12 Brick 80mm)"
-                                className="bg-[#050a08] text-emerald-100 font-normal"
+                                value="6-12 Brick (80mm)"
+                                className="bg-[#050a08] text-white font-normal"
                               >
-                                Paver Blocks (6-12 Brick 80mm)
+                                6-12 Brick (80mm)
                               </option>
                               <option
-                                value="Paver Blocks (6/6 Brick 60mm)"
-                                className="bg-[#050a08] text-emerald-100 font-normal"
+                                value="6/6 Brick (60mm)"
+                                className="bg-[#050a08] text-white font-normal"
                               >
-                                Paver Blocks (6/6 Brick 60mm)
+                                6/6 Brick 60mm
                               </option>
                               <option
-                                value="Paver Blocks (6/6 Brick 80mm)"
-                                className="bg-[#050a08] text-emerald-100 font-normal"
+                                value="6/6 Brick (80mm)"
+                                className="bg-[#050a08] text-white font-normal"
                               >
-                                Paver Blocks (6/6 Brick 80mm)
+                                6/6 Brick (80mm)
+                              </option>
+                            </optgroup>
+                            <optgroup
+                              label="Chequered Tiles"
+                              className="bg-[#020403] text-emerald-500 font-bold"
+                            >
+                              <option
+                                value="Hexagon"
+                                className="bg-[#050a08] text-white font-normal"
+                              >
+                                Hexagon
+                              </option>
+                              <option
+                                value="Brick Design (9inch)"
+                                className="bg-[#050a08] text-white font-normal"
+                              >
+                                Brick Design (9inch)
+                              </option>
+                              <option
+                                value="Curve Stone"
+                                className="bg-[#050a08] text-white font-normal"
+                              >
+                                Curve Stone
+                              </option>
+                              <option
+                                value="Cover Block"
+                                className="bg-[#050a08] text-white font-normal"
+                              >
+                                Cover Block
                               </option>
                             </optgroup>
                             <option
@@ -580,7 +603,7 @@ const EditInvoice = () => {
           </div>
         </div>
 
-        <div className="flex flex-col-reverse sm:flex-row justify-end gap-4 pb-4">
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-4 pb-4 px-4">
           <Button
             type="button"
             variant="secondary"
@@ -604,7 +627,7 @@ const EditInvoice = () => {
         </div>
 
         {auditInfo && (
-          <div className="text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-[0.1em] opacity-80 pt-2 border-t border-emerald-900/10">
+          <div className="text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-[0.1em] opacity-80 pt-2 border-t border-emerald-900/10 px-4">
             LAST UPDATED BY{" "}
             <span className="text-emerald-400 font-bold mx-1">
               {auditInfo.role}
