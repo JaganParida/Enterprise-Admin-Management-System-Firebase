@@ -15,6 +15,8 @@ import {
   X,
   Filter,
   AlertOctagon,
+  ShieldAlert,
+  EyeOff,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -40,7 +42,14 @@ const InvoiceList = () => {
     itemName: "",
   });
 
-  const isManager = admin?.data?.role === "manager";
+  // Wipe Data States
+  const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [wiping, setWiping] = useState(false);
+
+  const isManager =
+    admin?.data?.role === "manager" || admin?.role === "manager";
 
   const fetchInvoices = async () => {
     try {
@@ -157,6 +166,53 @@ const InvoiceList = () => {
     }
   };
 
+  const handleFullBackup = () => {
+    try {
+      if (invoices.length === 0) return toast.info("Database is empty.");
+      const headers = [
+        "Date,Invoice No,Client Name,Client Phone,SubTotal,GST Rate,Grand Total,Status",
+      ];
+      const rows = invoices.map((inv) => {
+        const dateStr = inv.date
+          ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
+          : "-";
+        return `${dateStr},"${inv.invoiceNumber || ""}","${inv.client?.name || ""}","${inv.client?.phone || ""}",${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0},"${inv.status || ""}"`;
+      });
+      const csvContent = [headers.join(","), ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute(
+        "download",
+        `Full_Invoices_Database_Backup_${new Date().toISOString().split("T")[0]}.csv`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Secure full backup generated!");
+    } catch (e) {
+      toast.error("Backup failed.");
+    }
+  };
+
+  const handleWipeAll = async () => {
+    if (isManager || !deletePassword)
+      return toast.error("Verification failed.");
+    setWiping(true);
+    try {
+      await invoiceService.deleteAllInvoices({ password: deletePassword });
+      toast.success("Invoices database cleared successfully.");
+      setIsDeleteAllOpen(false);
+      setDeletePassword("");
+      setShowPassword(false);
+      fetchInvoices();
+    } catch (error) {
+      toast.error(error.message || "Incorrect Admin Password.");
+    } finally {
+      setWiping(false);
+    }
+  };
+
   const handleStatusChange = async (id, newStatus) => {
     try {
       setInvoices(
@@ -208,7 +264,7 @@ const InvoiceList = () => {
   if (loading) return <Loader />;
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20">
@@ -217,6 +273,35 @@ const InvoiceList = () => {
           Invoice Ledger
         </h1>
         <div className="flex gap-3">
+          <div className="relative">
+            <button
+              onClick={() =>
+                isManager
+                  ? (() => {
+                      setWarningTooltip("wipe-all");
+                      setTimeout(() => setWarningTooltip(null), 2500);
+                    })()
+                  : setIsDeleteAllOpen(true)
+              }
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all text-xs font-bold shadow-lg ${
+                isManager
+                  ? "bg-red-500/5 text-red-500/50 border border-red-500/10 opacity-50 cursor-not-allowed"
+                  : "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white hover:shadow-[0_0_20px_rgba(220,38,38,0.4)]"
+              }`}
+            >
+              <AlertOctagon size={16} /> Wipe Database
+            </button>
+            {warningTooltip === "wipe-all" && (
+              <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
+                <div className="bg-[#050a08] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                  <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
+                    🚫
+                  </span>{" "}
+                  Admin Access Required
+                </div>
+              </div>
+            )}
+          </div>
           <Button
             variant="outline"
             className="gap-2 text-xs border-emerald-900/30 hover:bg-emerald-900/10"
@@ -225,7 +310,7 @@ const InvoiceList = () => {
             <Download size={16} /> Export
           </Button>
           <Link to="/enterprise/invoices/create">
-            <Button className="gap-2 shadow-lg shadow-emerald-900/20">
+            <Button className="gap-2 shadow-lg shadow-emerald-900/20 h-full">
               <Plus size={18} /> Create Bill
             </Button>
           </Link>
@@ -379,7 +464,6 @@ const InvoiceList = () => {
                     <div className="font-medium text-emerald-50 whitespace-nowrap">
                       {inv.client?.name || "Unknown"}
                     </div>
-                    {/* 🚀 SMART HISTORY BADGE */}
                     {Array.isArray(inv.editHistory) &&
                       inv.editHistory.length > 0 && (
                         <div
@@ -485,10 +569,10 @@ const InvoiceList = () => {
         </div>
       </div>
 
-      {/* 🚀 MODAL UI MATCHED EXACTLY WITH IMAGE */}
+      {/* History Modal */}
       {historyModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#050a08] border border-emerald-900/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          <div className="bg-[#050a08] border border-emerald-900/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative Z-50">
             <div className="p-5 border-b border-emerald-900/20 flex justify-between items-center bg-[#020403]">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <History size={18} className="text-emerald-500" /> Log History:{" "}
@@ -534,6 +618,92 @@ const InvoiceList = () => {
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECURE WIPE DATA MODAL */}
+      {isDeleteAllOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div
+            className="absolute inset-0"
+            onClick={() => !wiping && setIsDeleteAllOpen(false)}
+          />
+          <div className="bg-[#050a08] border border-red-900/50 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
+            <div className="flex items-center gap-3 text-red-500 mb-6">
+              <AlertOctagon size={28} />
+              <h2 className="text-xl font-bold tracking-wide">
+                Wipe Invoice Database
+              </h2>
+            </div>
+
+            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-5 mb-6">
+              <div className="flex items-start gap-3">
+                <ShieldAlert
+                  size={20}
+                  className="text-yellow-500 shrink-0 mt-0.5"
+                />
+                <div>
+                  <h3 className="text-yellow-500 font-bold text-sm mb-1">
+                    Recommended: Safe Backup
+                  </h3>
+                  <p className="text-yellow-100/60 text-xs mb-4 leading-relaxed">
+                    Before wiping the database, we highly recommend downloading
+                    a complete CSV backup of all your current invoice records.
+                  </p>
+                  <button
+                    onClick={handleFullBackup}
+                    className="w-full sm:w-auto px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Download size={14} /> Download Full Database Backup
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-red-100/70 text-sm mb-4">
+              This action will{" "}
+              <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
+              invoice records. Please enter your Admin password to confirm.
+            </p>
+
+            <div className="relative mb-8">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="Enter your admin password..."
+                className="w-full bg-[#020403] border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-red-100/30 hover:text-red-100/60 transition-colors"
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setIsDeleteAllOpen(false);
+                  setDeletePassword("");
+                }}
+                disabled={wiping}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-red-100/50 hover:text-red-100 hover:bg-red-900/20 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleWipeAll}
+                disabled={wiping || !deletePassword}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {wiping ? <Loader className="w-4 h-4" /> : null}
+                {wiping ? "Wiping..." : "Confirm Wipe"}
+              </button>
             </div>
           </div>
         </div>
