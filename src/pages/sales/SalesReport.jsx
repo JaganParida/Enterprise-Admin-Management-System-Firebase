@@ -26,7 +26,7 @@ import {
   ShieldAlert,
   Eye,
   EyeOff,
-  ArrowRight, // 🚀 Missing import fixed!
+  ArrowRight,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
@@ -356,15 +356,15 @@ const SalesReport = () => {
 
   if (loading)
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex items-center justify-center min-h-[60vh]">
         <Loader />
       </div>
     );
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8">
-      {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* 🚀 HEADER SECTION WITH PILL TABS */}
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
         <div>
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl border border-emerald-500/20">
@@ -381,44 +381,74 @@ const SalesReport = () => {
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <div className="relative">
+        <div className="flex flex-col lg:flex-row items-center gap-4 w-full xl:w-auto">
+          {/* 🚀 NO SCROLLBAR PILL TABS */}
+          <div className="w-full lg:w-auto bg-[#020403] p-1.5 rounded-2xl md:rounded-full border border-emerald-900/30 shadow-inner grid grid-cols-2 md:flex md:items-center gap-1">
             <button
-              onClick={() =>
-                isManager
-                  ? (() => {
-                      setWarningTooltip("wipe-all");
-                      setTimeout(() => setWarningTooltip(null), 2500);
-                    })()
-                  : setIsDeleteAllOpen(true)
-              }
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all text-xs font-bold shadow-lg ${
-                isManager
-                  ? "bg-red-500/5 text-red-500/50 border border-red-500/10 opacity-50 cursor-not-allowed"
-                  : "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white hover:shadow-[0_0_20px_rgba(220,38,38,0.4)]"
+              onClick={() => {
+                setActiveTab("all_sales");
+                setExpandedCustomer(null);
+              }}
+              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
+                activeTab === "all_sales"
+                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
+                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
               }`}
             >
-              <AlertOctagon size={16} /> Wipe Database
+              All Sales
             </button>
-            {warningTooltip === "wipe-all" && (
-              <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
-                <div className="bg-[#050a08] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
-                  <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
-                    🚫
-                  </span>{" "}
-                  Admin Access Required
-                </div>
-              </div>
-            )}
-          </div>
-          <Link to="/enterprise/sales">
-            <Button
-              variant="primary"
-              className="text-xs px-6 py-2.5 shadow-lg bg-emerald-500 hover:bg-emerald-400 text-[#020403]"
+            <button
+              onClick={() => setActiveTab("dues")}
+              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
+                activeTab === "dues"
+                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
+                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+              }`}
             >
-              + Record Sale
-            </Button>
-          </Link>
+              Customer Dues
+            </button>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 w-full lg:w-auto ml-auto lg:ml-0">
+            <div className="relative w-full lg:w-auto">
+              <button
+                onClick={() =>
+                  isManager
+                    ? (() => {
+                        setWarningTooltip("wipe-all");
+                        setTimeout(() => setWarningTooltip(null), 2500);
+                      })()
+                    : setIsDeleteAllOpen(true)
+                }
+                className={`flex w-full lg:w-auto items-center justify-center gap-2 px-4 py-2.5 rounded-xl transition-all text-xs font-bold shadow-lg ${
+                  isManager
+                    ? "bg-red-500/5 text-red-500/50 border border-red-500/10 opacity-50 cursor-not-allowed"
+                    : "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white hover:shadow-[0_0_20px_rgba(220,38,38,0.4)]"
+                }`}
+              >
+                <AlertOctagon size={16} /> Wipe DB
+              </button>
+              {warningTooltip === "wipe-all" && (
+                <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
+                  <div className="bg-[#050a08] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                    <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
+                      🚫
+                    </span>{" "}
+                    Admin Access Required
+                  </div>
+                </div>
+              )}
+            </div>
+            <Link to="/enterprise/sales" className="w-full lg:w-auto">
+              <Button
+                variant="primary"
+                className="w-full lg:w-auto text-xs px-6 py-2.5 shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center"
+              >
+                + Record Sale
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -472,52 +502,34 @@ const SalesReport = () => {
 
       {/* MAIN DATA SECTION */}
       <div className="bg-[#050a08] rounded-2xl border border-white/5 overflow-visible shadow-2xl transition-colors duration-500">
-        {/* TABS & SEARCH BAR */}
-        <div className="p-5 border-b border-white/5 bg-[#020403]/80 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5 rounded-t-2xl">
-          <div className="flex gap-2 p-1.5 bg-black/60 rounded-xl border border-white/5 w-full sm:w-auto overflow-x-auto shadow-inner">
-            <button
-              onClick={() => {
-                setActiveTab("all_sales");
-                setExpandedCustomer(null);
-              }}
-              className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${activeTab === "all_sales" ? "bg-emerald-500/15 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.1)]" : "text-gray-500 hover:text-emerald-200 hover:bg-white/5"}`}
-            >
-              <FileText size={14} /> All Sales
-            </button>
-            <button
-              onClick={() => setActiveTab("dues")}
-              className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${activeTab === "dues" ? "bg-rose-500/15 text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.1)]" : "text-gray-500 hover:text-rose-200 hover:bg-white/5"}`}
-            >
-              <AlertCircle size={14} /> Customer Dues
-            </button>
+        {/* SEARCH & EXPORT BAR */}
+        <div className="p-5 border-b border-white/5 bg-[#020403]/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-2xl">
+          <div className="relative w-full sm:max-w-md group">
+            <Search
+              size={16}
+              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? "text-emerald-500" : "text-gray-500 group-hover:text-gray-400"}`}
+            />
+            <input
+              type="text"
+              placeholder={
+                activeTab === "all_sales"
+                  ? "Search buyer, challan or vehicle..."
+                  : "Search customer name..."
+              }
+              className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+              value={filters.search}
+              onChange={(e) =>
+                setFilters({ ...filters, search: e.target.value })
+              }
+            />
           </div>
-
-          <div className="flex items-center gap-3 w-full xl:w-auto justify-between xl:justify-end">
-            <div className="relative flex-1 sm:w-80 group">
-              <Search
-                size={16}
-                className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? "text-emerald-500" : "text-gray-500 group-hover:text-gray-400"}`}
-              />
-              <input
-                type="text"
-                placeholder={
-                  activeTab === "all_sales"
-                    ? "Search buyer, challan or vehicle..."
-                    : "Search customer name..."
-                }
-                className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
-                value={filters.search}
-                onChange={(e) =>
-                  setFilters({ ...filters, search: e.target.value })
-                }
-              />
-            </div>
+          <div className="w-full sm:w-auto">
             <Button
               variant="outline"
-              className="gap-2 text-xs font-bold tracking-widest border-white/10 py-2.5 bg-black/40 hover:bg-white/5"
+              className="gap-2 w-full sm:w-auto text-xs font-bold tracking-widest border-white/10 py-2.5 bg-black/40 hover:bg-white/5 flex items-center justify-center"
               onClick={handleExport}
             >
-              <Download size={16} /> Export
+              <Download size={16} /> Export View
             </Button>
           </div>
         </div>
@@ -774,7 +786,7 @@ const SalesReport = () => {
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-emerald-500"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-white transition-colors"
             />
           </div>
 
