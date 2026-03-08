@@ -6,7 +6,7 @@ import {
   LayoutDashboard,
   Package,
   Factory,
-  ShoppingCart, // 🚀 Sales icon
+  ShoppingCart,
   FileText,
   Users,
   Truck,
@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   Home,
   ShieldCheck,
+  Timer, // 🚀 Added for JCB Icon
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useUI } from "../../context/UIProvider";
@@ -431,16 +432,15 @@ const Sidebar = ({
   const { isTransport, colors } = useThemeColors();
   const navigate = useNavigate();
 
-  // 🚀 Removed Cash, Added Sales
   const enterpriseLinks = [
     {
       path: "/enterprise/dashboard",
       label: "Dashboard",
       icon: LayoutDashboard,
     },
-    { path: "/enterprise/stock", label: "Inventory", icon: Package },
+    { path: "/enterprise/stock", label: "Purchasing Items", icon: Package },
     { path: "/enterprise/production", label: "Production", icon: Factory },
-    { path: "/enterprise/sales", label: "Sales Tracking", icon: ShoppingCart }, // ✅ New Sales Link
+    { path: "/enterprise/sales", label: "Sales Tracking", icon: ShoppingCart },
     { path: "/enterprise/invoices", label: "Invoices", icon: FileText },
     { path: "/enterprise/employees", label: "Employees", icon: Users },
   ];
@@ -458,6 +458,7 @@ const Sidebar = ({
       label: "Maintenance",
       icon: AlertTriangle,
     },
+    { path: "/transportation/jcb", label: "JCB Tracking", icon: Timer }, // 🚀 NEW JCB SIDEBAR LINK
   ];
 
   const sharedLinks = [
