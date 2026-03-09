@@ -23,6 +23,7 @@ import {
   Phone,
   MapPin,
   Timer,
+  RefreshCcw,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -222,7 +223,11 @@ const JcbReport = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      await jcbService.deleteAllLogs({ password: deletePassword });
+      const adminEmail = admin?.data?.email || admin?.email;
+      await jcbService.deleteAllLogs({
+        password: deletePassword,
+        email: adminEmail,
+      });
       toast.success("JCB database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
@@ -485,7 +490,7 @@ const JcbReport = () => {
                       </div>
                     </td>
                     <td className="p-5 px-6 text-right align-top">
-                      <div className="flex justify-end gap-2 items-center relative">
+                      <div className="flex justify-end gap-2 items-center relative mt-1">
                         <button
                           onClick={() =>
                             navigate("/transportation/jcb", {
@@ -502,7 +507,7 @@ const JcbReport = () => {
                               ? handleDisabledClick(log._id)
                               : setDeleteModal({ isOpen: true, id: log._id })
                           }
-                          className={`p-2 rounded-lg transition-colors ${isManager ? "text-amber-100/20 opacity-50 cursor-not-allowed" : "text-amber-100/40 hover:text-red-400 hover:bg-red-900/30"}`}
+                          className={`p-2 rounded-lg transition-colors ${isManager ? "text-amber-100/10 opacity-50 cursor-not-allowed" : "text-amber-100/40 hover:text-rose-400 hover:bg-rose-900/30"}`}
                         >
                           <Trash2 size={16} />
                         </button>
@@ -613,7 +618,10 @@ const JcbReport = () => {
                 disabled={wiping || !deletePassword}
                 className="px-6 py-2.5 rounded-xl text-sm font-bold bg-[#110505] text-red-500 border border-red-900/50 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2"
               >
-                {wiping ? <Loader className="w-4 h-4" /> : "Confirm Wipe"}
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}
+                {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
           </div>
@@ -647,6 +655,7 @@ const JcbReport = () => {
                 <X size={18} />
               </button>
             </div>
+
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
               {historyModal.data.map((log, index) => (
                 <div
