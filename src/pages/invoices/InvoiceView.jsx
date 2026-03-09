@@ -15,11 +15,8 @@ const InvoiceView = () => {
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Refs for printing and scaling
   const printRef = useRef(null);
   const containerRef = useRef(null);
-
-  // States for dynamic A4 scaling on mobile
   const [scale, setScale] = useState(1);
 
   useEffect(() => {
@@ -36,35 +33,25 @@ const InvoiceView = () => {
     fetchInvoice();
   }, [id, toast]);
 
-  // PERFECT A4 SCALING ENGINE (For on-screen view only)
   useEffect(() => {
     const updateLayout = () => {
       if (containerRef.current) {
         const paddingOffset = window.innerWidth < 640 ? 40 : 64;
         const availableWidth = window.innerWidth - paddingOffset;
-        const targetWidth = 800; // Fixed width of the A4 template
-
+        const targetWidth = 800;
         const newScale =
           availableWidth < targetWidth ? availableWidth / targetWidth : 1;
         setScale(newScale);
       }
     };
-
     updateLayout();
     window.addEventListener("resize", updateLayout);
-    const timeout = setTimeout(updateLayout, 100);
-
-    return () => {
-      window.removeEventListener("resize", updateLayout);
-      clearTimeout(timeout);
-    };
+    return () => window.removeEventListener("resize", updateLayout);
   }, [invoice]);
 
-  // PRINT FUNCTION - 100% full scale edge to edge, removing side margins
   const handlePrint = () => {
     const invoiceContent = printRef.current.innerHTML;
     const printWindow = window.open("", "_blank");
-
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
@@ -74,85 +61,40 @@ const InvoiceView = () => {
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap');
             @media print {
-              @page { 
-                size: A4 portrait; 
-                margin: 0mm; /* Absolutely no page margins */
-              } 
-              body { 
-                font-family: 'Roboto', Arial, sans-serif;
-                -webkit-print-color-adjust: exact !important; 
-                print-color-adjust: exact !important; 
-                background: white !important;
-                margin: 0;
-                padding: 0;
-                display: block;
-              }
-              .print-wrapper {
-                width: 210mm; /* Exact A4 width */
-                height: 297mm; /* Exact A4 height */
-                margin: 0;
-                padding: 0;
-                overflow: hidden;
-              }
-              /* Override tailwind constraints to stretch across the physical page entirely */
-              .print-wrapper > div {
-                width: 100% !important;
-                height: 100% !important;
-                max-width: none !important;
-                margin: 0 !important;
-                border: none !important;
-              }
+              @page { size: A4 portrait; margin: 0mm; } 
+              body { font-family: 'Roboto', sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; margin: 0; padding: 0; }
+              .print-wrapper { width: 210mm; height: 297mm; margin: 0; padding: 0; overflow: hidden; }
+              .print-wrapper > div { width: 100% !important; height: 100% !important; max-width: none !important; margin: 0 !important; border: none !important; }
             }
           </style>
         </head>
-        <body class="bg-white text-[#1e3a8a]">
-          <div class="print-wrapper">
-            ${invoiceContent}
-          </div>
-          <script>
-            setTimeout(() => {
-              window.print();
-              window.close();
-            }, 1000);
-          </script>
+        <body><div class="print-wrapper">${invoiceContent}</div>
+        <script>setTimeout(() => { window.print(); window.close(); }, 1000);</script>
         </body>
       </html>
     `);
     printWindow.document.close();
   };
 
-  // PDF DOWNLOAD - Stretched accurately to A4 metrics
   const handleDownloadPDF = async () => {
     const element = printRef.current;
-
     element.style.display = "block";
     element.style.position = "fixed";
     element.style.left = "200vw";
-    element.style.top = "0";
-
     try {
       toast.info("Generating high-quality PDF...");
-
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        windowWidth: 800, // Match the container perfectly to strip outer whitespace
+        windowWidth: 800,
         backgroundColor: "#ffffff",
-        logging: false,
       });
-
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
-
-      const pdfWidth = 210; // Exactly A4 width
-      const pdfHeight = 297; // Exactly A4 height
-
-      // Render image at exactly X:0, Y:0 to strip all bounds
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, "PNG", 0, 0, 210, 297);
       pdf.save(`Invoice_${invoice?.invoiceNumber || id}.pdf`);
-      toast.success("PDF Downloaded successfully!");
+      toast.success("PDF Downloaded!");
     } catch (err) {
-      console.error(err);
       toast.error("Failed to generate PDF");
     } finally {
       element.style.display = "none";
@@ -160,23 +102,18 @@ const InvoiceView = () => {
     }
   };
 
-  const handleShare = async () => {
-    if (!invoice) return;
-    toast.info("Preparing WhatsApp link...");
-    const message = `*TAX INVOICE*\n------------------------\n*Invoice No:* ${invoice.invoiceNumber}\n*Date:* ${new Date(invoice.date).toLocaleDateString("en-GB")}\n*Client:* ${invoice.client.name}\n------------------------\n*Total Amount:* ₹ ${invoice.grandTotal.toLocaleString("en-IN")}\n------------------------\nPlease find your invoice details attached. Thank you!`;
-
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-
-    setTimeout(() => {
-      window.open(whatsappUrl, "_blank");
-    }, 500);
+  const handleShare = () => {
+    const message = `*TAX INVOICE*\n*No:* ${invoice.invoiceNumber}\n*Amount:* ₹${invoice.grandTotal.toLocaleString("en-IN")}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
   };
 
   if (loading) return <Loader />;
-  if (!invoice)
-    return (
-      <div className="text-white text-center mt-10">Invoice not found.</div>
-    );
+
+  const formatRsP = (amount) => {
+    const val = Number(amount).toFixed(2);
+    const [rs, p] = val.split(".");
+    return { rs: Number(rs).toLocaleString("en-IN"), p };
+  };
 
   const toWords = (num) => {
     const a = [
@@ -213,11 +150,10 @@ const InvoiceView = () => {
       "Eighty",
       "Ninety",
     ];
-    if ((num = num.toString()).length > 9) return "overflow";
     let n = ("000000000" + num)
       .substr(-9)
       .match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
-    if (!n) return;
+    if (!n) return "";
     let str = "";
     str +=
       n[1] != 0
@@ -243,40 +179,15 @@ const InvoiceView = () => {
     return str.trim();
   };
 
-  const formatRsP = (amount) => {
-    const val = Number(amount).toFixed(2);
-    const [rs, p] = val.split(".");
-    return { rs: Number(rs).toLocaleString("en-IN"), p };
-  };
-
-  const emptyRowsNeeded = Math.max(0, 10 - invoice.items.length);
-  const renderEmptyRows = (count) => {
-    const rows = [];
-    for (let i = 0; i < count; i++) {
-      rows.push(
-        <tr key={`empty-${i}`} className="h-[30px]">
-          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
-          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
-          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
-          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
-          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
-          <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
-          <td></td>
-        </tr>,
-      );
-    }
-    return rows;
-  };
-
-  // CORE INVOICE TEMPLATE
   const InvoiceTemplate = () => (
     <div
-      className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-3 pt-6 pb-3 mx-auto"
+      // 🚀 p-10 ensures uniform margin on all sides
+      className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-10 mx-auto"
       style={{ fontFamily: "Arial, sans-serif" }}
     >
-      {/* WATERMARK */}
+      {/* WATERMARK - Increased opacity to 0.35 */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
-        <div className="relative w-[500px] h-[500px] opacity-[0.15]">
+        <div className="relative w-[500px] h-[500px] opacity-[0.35]">
           <svg
             viewBox="0 0 200 200"
             className="w-full h-full animate-[spin_60s_linear_infinite]"
@@ -307,28 +218,21 @@ const InvoiceView = () => {
         </div>
       </div>
 
-      {/* OUTER BORDER CONTAINER */}
-      <div className="border-[2px] border-[#1e3a8a] flex-1 flex flex-col relative z-10 bg-white/60 mt-4 rounded-sm">
-        {/* TOP BADGE */}
+      <div className="border-[2px] border-[#1e3a8a] flex-1 flex flex-col relative z-10 bg-white/60 mt-2 rounded-sm">
         <div className="absolute -top-[14px] left-1/2 transform -translate-x-1/2 bg-white px-3 flex items-center justify-center">
           <span className="bg-[#1e3a8a] text-white font-bold px-4 py-[3px] rounded text-[13px] tracking-widest uppercase border-[1.5px] border-[#1e3a8a] whitespace-nowrap shadow-sm">
             Tax Invoice
           </span>
         </div>
 
-        {/* HEADER SECTION */}
         <div className="flex justify-between items-start pt-8 pb-4 px-4 border-b-[2px] border-[#1e3a8a]">
           <div className="w-24 h-24 shrink-0 flex items-center justify-center">
             <img
               src="/maa.jpg"
               alt="Logo"
               className="w-full h-full object-contain mix-blend-multiply"
-              onError={(e) => {
-                e.target.style.display = "none";
-              }}
             />
           </div>
-
           <div className="flex-1 text-center px-2 pt-1">
             <h1 className="text-[34px] font-black tracking-tight uppercase leading-tight text-[#1e3a8a]">
               M/S MAA FLYASH BRICKS
@@ -343,11 +247,9 @@ const InvoiceView = () => {
               GSTIN : 21COTPP3464E1ZS
             </p>
           </div>
-
           <div className="w-56 text-right font-bold space-y-4 text-[14px] pt-4 pr-2">
             <div className="flex justify-between items-end">
               <span className="shrink-0 tracking-wide">Invoice No:</span>
-              {/* Only rendering the number directly by stripping out the 'INV-' string */}
               <span className="font-mono border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 text-right ml-2 pb-0.5 text-[15px]">
                 {invoice.invoiceNumber.replace(/^INV-/, "")}
               </span>
@@ -361,7 +263,6 @@ const InvoiceView = () => {
           </div>
         </div>
 
-        {/* CLIENT DETAILS SECTION (Updated Text Sizes) */}
         <div className="px-4 py-3 text-[14px] font-bold space-y-3 border-b-[2px] border-[#1e3a8a] leading-relaxed tracking-wide">
           <div className="flex items-end">
             <span className="w-48 shrink-0">Name of the Purchaser:</span>
@@ -383,7 +284,6 @@ const InvoiceView = () => {
           </div>
         </div>
 
-        {/* TABLE SECTION */}
         <div className="flex-1 flex flex-col">
           <table className="w-full border-collapse text-[13px] h-full table-fixed font-bold tracking-wide">
             <colgroup>
@@ -395,7 +295,6 @@ const InvoiceView = () => {
               <col className="w-[15%]" />
               <col className="w-[5%]" />
             </colgroup>
-
             <thead className="text-center border-b-[2px] border-[#1e3a8a] bg-[#1e3a8a]/[0.03]">
               <tr>
                 <th
@@ -446,37 +345,47 @@ const InvoiceView = () => {
                 <th className="p-1 text-[11px] font-bold">P.</th>
               </tr>
             </thead>
-
             <tbody className="align-top font-bold text-[14px]">
-              {invoice.items.map((item, i) => {
-                const amt = formatRsP(item.total);
-                return (
-                  <tr key={i}>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-2 text-center font-mono">
-                      {i + 1}
-                    </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-4 uppercase">
-                      {item.name}
-                    </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-2 text-center font-mono">
-                      {item.hsn || "-"}
-                    </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-2 text-center font-mono">
-                      {item.quantity}
-                    </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-3 text-right font-mono">
-                      {Number(item.price).toFixed(2)}
-                    </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-3 text-right font-mono">
-                      {amt.rs}
-                    </td>
-                    <td className="py-4 px-2 text-center font-mono">{amt.p}</td>
-                  </tr>
-                );
-              })}
-
-              {renderEmptyRows(emptyRowsNeeded)}
-
+              {invoice.items.map((item, i) => (
+                <tr key={i}>
+                  {/* 🚀 Reduced py-4 to py-2 to decrease table height */}
+                  <td className="border-r-[1.5px] border-[#1e3a8a] py-2 px-2 text-center font-mono">
+                    {i + 1}
+                  </td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a] py-2 px-4 uppercase">
+                    {item.name}
+                  </td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a] py-2 px-2 text-center font-mono">
+                    {item.hsn || "-"}
+                  </td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a] py-2 px-2 text-center font-mono">
+                    {item.quantity}
+                  </td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a] py-2 px-3 text-right font-mono">
+                    {Number(item.price).toFixed(2)}
+                  </td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a] py-2 px-3 text-right font-mono">
+                    {formatRsP(item.total).rs}
+                  </td>
+                  <td className="py-2 px-2 text-center font-mono">
+                    {formatRsP(item.total).p}
+                  </td>
+                </tr>
+              ))}
+              {/* 🚀 Empty rows reduced in size to save height */}
+              {Array.from({
+                length: Math.max(0, 8 - invoice.items.length),
+              }).map((_, i) => (
+                <tr key={i} className="h-[25px]">
+                  <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+                  <td className="border-r-[1.5px] border-[#1e3a8a]"></td>
+                  <td></td>
+                </tr>
+              ))}
               <tr className="h-full">
                 <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
                 <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
@@ -487,8 +396,6 @@ const InvoiceView = () => {
                 <td className="border-b-[1.5px] border-[#1e3a8a]"></td>
               </tr>
             </tbody>
-
-            {/* CALCULATIONS */}
             <tfoot className="font-bold text-[13px] tracking-wide bg-[#1e3a8a]/[0.02]">
               <tr>
                 <td
@@ -513,7 +420,6 @@ const InvoiceView = () => {
                   {formatRsP(invoice.subTotal).p}
                 </td>
               </tr>
-
               {invoice.gstRate > 0 ? (
                 <>
                   <tr>
@@ -545,19 +451,18 @@ const InvoiceView = () => {
                     <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                       CGST @
                     </td>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3 text-right"></td>
-                    <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center"></td>
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3"></td>
+                    <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2"></td>
                   </tr>
                   <tr>
                     <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                       SGST @
                     </td>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3 text-right"></td>
-                    <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center"></td>
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3"></td>
+                    <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2"></td>
                   </tr>
                 </>
               )}
-
               <tr className="bg-[#1e3a8a]/[0.06]">
                 <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                   N. TOTAL
@@ -569,7 +474,6 @@ const InvoiceView = () => {
                   {formatRsP(invoice.grandTotal).p}
                 </td>
               </tr>
-
               <tr>
                 <td className="border-r-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                   R/O
@@ -583,7 +487,6 @@ const InvoiceView = () => {
           </table>
         </div>
 
-        {/* BOTTOM FOOTER / SIGNATURE */}
         <div className="flex justify-between items-end px-4 pt-3 pb-8 text-[11px] font-bold leading-relaxed border-t-[1.5px] border-[#1e3a8a] tracking-wide bg-white/50">
           <div className="space-y-0.5">
             <p>N.B: Goods once sold is not refundable.</p>
@@ -610,7 +513,6 @@ const InvoiceView = () => {
 
   return (
     <div className="max-w-full lg:max-w-[900px] mx-auto my-2 md:my-4 animate-in fade-in slide-in-from-bottom-4 duration-500 overflow-x-hidden">
-      {/* Action Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 px-4">
         <button
           onClick={() => navigate("/enterprise/invoices")}
@@ -641,7 +543,6 @@ const InvoiceView = () => {
         </div>
       </div>
 
-      {/* INVOICE CONTAINER (Responsive & Centered) */}
       <div
         ref={containerRef}
         className="w-full flex justify-center pb-6 overflow-hidden"
@@ -671,22 +572,12 @@ const InvoiceView = () => {
         </div>
       </div>
 
-      {/* HIDDEN WRAPPER FOR PDF GENERATION */}
       <div
-        style={{
-          display: "none",
-          position: "fixed",
-          left: "200vw",
-          top: "0",
-        }}
+        style={{ display: "none", position: "fixed", left: "200vw", top: "0" }}
         ref={printRef}
       >
         <div
-          style={{
-            width: "800px",
-            backgroundColor: "white",
-            padding: "0px",
-          }}
+          style={{ width: "800px", backgroundColor: "white", padding: "0px" }}
         >
           <InvoiceTemplate />
         </div>
