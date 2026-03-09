@@ -23,6 +23,7 @@ import {
   EyeOff,
   Download,
   ChevronDown,
+  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -162,8 +163,9 @@ const EmployeeList = () => {
       });
       const csvContent = [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
+      link.href = url;
       link.setAttribute(
         "download",
         `Employees_Export_${new Date().toISOString().split("T")[0]}.csv`,
@@ -221,7 +223,11 @@ const EmployeeList = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      await employeeService.deleteAllEmployees({ password: deletePassword });
+      const adminEmail = admin?.data?.email || admin?.email;
+      await employeeService.deleteAllEmployees({
+        password: deletePassword,
+        email: adminEmail,
+      });
       toast.success("Employee database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
@@ -805,12 +811,16 @@ const EmployeeList = () => {
               >
                 Cancel
               </button>
+
+              {/* Changed Loader to RefreshCcw to avoid UI height explosion bug */}
               <button
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
                 className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {wiping ? <Loader className="w-4 h-4" /> : null}
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
