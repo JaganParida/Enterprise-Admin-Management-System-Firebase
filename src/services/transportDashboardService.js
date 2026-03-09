@@ -8,6 +8,7 @@ const transportDashboardService = {
       const tripsSnap = await getDocs(collection(db, "trips"));
       const fuelSnap = await getDocs(collection(db, "fuels"));
       const maintSnap = await getDocs(collection(db, "maintenances"));
+      const jcbSnap = await getDocs(collection(db, "jcb_logs"));
 
       let totalDistance = 0,
         totalTrips = tripsSnap.size;
@@ -18,7 +19,7 @@ const transportDashboardService = {
       // 2. Process Trips
       tripsSnap.forEach((doc) => {
         const d = doc.data();
-        totalDistance += Number(d.distance) || 0;
+        totalDistance += Number(d.distanceTravelled) || 0;
         activities.push({ ...d, activityType: "Trip", id: doc.id });
       });
 
@@ -36,11 +37,23 @@ const transportDashboardService = {
         activities.push({ ...d, activityType: "Maintenance", id: doc.id });
       });
 
-      // 5. Sort all activities by date (Newest first) and take top 10
-      activities.sort((a, b) => new Date(b.date) - new Date(a.date));
+      // 5. Process JCB
+      jcbSnap.forEach((doc) => {
+        const d = doc.data();
+        activities.push({ ...d, activityType: "JCB", id: doc.id });
+      });
+
+      // 6. 🚀 Sort all activities by EXACT creation time (Newest first)
+      activities.sort((a, b) => {
+        const dateA = new Date(a.createdAt || a.date || 0);
+        const dateB = new Date(b.createdAt || b.date || 0);
+        return dateB - dateA;
+      });
+
+      // 7. Slice to exactly Top 10
       const recentActivity = activities.slice(0, 10);
 
-      // 6. Return format matched to UI
+      // 8. Return format matched to UI
       return {
         data: {
           cards: {
