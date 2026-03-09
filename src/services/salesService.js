@@ -93,13 +93,23 @@ const salesService = {
 
   deleteSale: async (id) => await deleteDoc(doc(db, COLLECTION_NAME, id)),
 
-  // 🚀 WIPE ALL DATA
-  deleteAllSales: async ({ password }) => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error("Admin not logged in.");
+  // 🚀 SECURE: WIPE ALL DATA
+  deleteAllSales: async ({ password, email }) => {
+    if (!password) {
+      throw new Error("Password is required to wipe the database.");
+    }
+    if (!email) {
+      throw new Error("Authentication Error: Unable to verify admin identity.");
+    }
 
     try {
-      await signInWithEmailAndPassword(auth, currentUser.email, password);
+      // Securely verifies password against current admin's email
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      throw new Error("Access Denied: Incorrect Admin Password.");
+    }
+
+    try {
       const snapshot = await getDocs(collection(db, COLLECTION_NAME));
       const deletePromises = [];
       snapshot.forEach((document) => {
@@ -108,7 +118,8 @@ const salesService = {
       await Promise.all(deletePromises);
       return { success: true };
     } catch (error) {
-      throw new Error("Incorrect Admin Password.");
+      console.error("Wipe Database Error:", error);
+      throw new Error("Failed to clear database. Admin rights required.");
     }
   },
 };
