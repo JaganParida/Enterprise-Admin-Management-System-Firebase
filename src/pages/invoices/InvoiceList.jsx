@@ -17,6 +17,7 @@ import {
   AlertOctagon,
   ShieldAlert,
   EyeOff,
+  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -142,7 +143,10 @@ const InvoiceList = () => {
         const date = inv.date
           ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
           : "-";
-        const number = inv.invoiceNumber || "-";
+        // Strip INV- prefix for export
+        const number = inv.invoiceNumber
+          ? String(inv.invoiceNumber).replace(/^INV-/i, "")
+          : "-";
         const client = `"${inv.client?.name || "Unknown"}"`;
         const status = inv.status || "Pending";
         return `${date},${number},${client},${status},${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0}`;
@@ -177,7 +181,9 @@ const InvoiceList = () => {
         const dateStr = inv.date
           ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
           : "-";
-        return `${dateStr},"${inv.invoiceNumber || ""}","${inv.client?.name || ""}",${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0},"${inv.status || ""}"`;
+        // Strip INV- prefix for backup
+        const number = String(inv.invoiceNumber || "").replace(/^INV-/i, "");
+        return `${dateStr},"${number}","${inv.client?.name || ""}",${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0},"${inv.status || ""}"`;
       });
       const csvContent = [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -201,7 +207,12 @@ const InvoiceList = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      await invoiceService.deleteAllInvoices({ password: deletePassword });
+      // Passing both password and admin email to strictly verify identity
+      const adminEmail = admin?.data?.email || admin?.email;
+      await invoiceService.deleteAllInvoices({
+        password: deletePassword,
+        email: adminEmail,
+      });
       toast.success("Invoices database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
@@ -255,10 +266,15 @@ const InvoiceList = () => {
     const sortedHistory = Array.isArray(inv?.editHistory)
       ? [...inv.editHistory].reverse()
       : [];
+    // Strip INV- prefix for modal title
+    const formattedNumber = String(inv?.invoiceNumber || "").replace(
+      /^INV-/i,
+      "",
+    );
     setHistoryModal({
       isOpen: true,
       data: sortedHistory,
-      itemName: `${inv?.invoiceNumber} - ${inv?.client?.name}`,
+      itemName: `${formattedNumber} - ${inv?.client?.name}`,
     });
   };
 
@@ -453,7 +469,10 @@ const InvoiceList = () => {
                 >
                   <td className="p-5 md:pl-6 align-middle">
                     <div className="font-mono font-bold text-emerald-400 whitespace-nowrap print:text-black">
-                      {inv.invoiceNumber || "N/A"}
+                      {/* Dynamically strip INV- for display */}
+                      {inv.invoiceNumber
+                        ? String(inv.invoiceNumber).replace(/^INV-/i, "")
+                        : "N/A"}
                     </div>
                     <div className="text-emerald-100/40 text-[10px] mt-1 whitespace-nowrap font-medium tracking-wide print:text-gray-500">
                       {inv.date
@@ -697,12 +716,16 @@ const InvoiceList = () => {
               >
                 Cancel
               </button>
+
+              {/* Changed Loader to RefreshCcw to avoid UI height explosion bug */}
               <button
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
                 className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {wiping ? <Loader className="w-4 h-4" /> : null}
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
