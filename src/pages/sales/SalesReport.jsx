@@ -27,6 +27,7 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
+  RefreshCcw,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
@@ -270,7 +271,11 @@ const SalesReport = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      await salesService.deleteAllSales({ password: deletePassword });
+      const adminEmail = admin?.data?.email || admin?.email;
+      await salesService.deleteAllSales({
+        password: deletePassword,
+        email: adminEmail,
+      });
       toast.success("Sales database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
@@ -811,6 +816,7 @@ const SalesReport = () => {
             />
           </div>
 
+          {/* Clear Filters Button */}
           {activeFiltersCount > 0 && (
             <button
               onClick={() => {
@@ -1254,12 +1260,16 @@ const SalesReport = () => {
               >
                 Cancel
               </button>
+
+              {/* Changed Loader to RefreshCcw to avoid UI height explosion bug */}
               <button
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
                 className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {wiping ? <Loader className="w-4 h-4" /> : null}
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
