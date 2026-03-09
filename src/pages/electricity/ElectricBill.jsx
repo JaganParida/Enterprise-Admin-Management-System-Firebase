@@ -23,6 +23,7 @@ import {
   Calendar,
   FileText,
   ChevronDown,
+  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Input from "../../components/common/Input";
@@ -408,7 +409,11 @@ const ElectricBill = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      await electricService.deleteAllBills({ password: deletePassword });
+      const adminEmail = admin?.data?.email || admin?.email;
+      await electricService.deleteAllBills({
+        password: deletePassword,
+        email: adminEmail,
+      });
       toast.success("Electric Bills database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
@@ -813,7 +818,11 @@ const ElectricBill = () => {
                       : "bg-gradient-to-r from-yellow-600 to-amber-600 text-white shadow-xl shadow-yellow-900/20"
                   }`}
                 >
-                  {saving ? <Loader className="w-4 h-4" /> : <Save size={16} />}{" "}
+                  {saving ? (
+                    <RefreshCcw size={16} className="animate-spin" />
+                  ) : (
+                    <Save size={16} />
+                  )}{" "}
                   {editId ? "Update Bill" : "Save Bill"}
                 </button>
               </div>
@@ -990,7 +999,7 @@ const ElectricBill = () => {
               </select>
               <ChevronDown
                 size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-emerald-500"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-white transition-colors"
               />
             </div>
 
@@ -1259,7 +1268,7 @@ const ElectricBill = () => {
                     </div>
                   </div>
                   {idx === 0 && (
-                    <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-md uppercase font-black border border-emerald-500/20 tracking-widest">
+                    <span className="relative z-10 text-[9px] bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-md uppercase font-black tracking-widest border border-emerald-500/20">
                       Latest
                     </span>
                   )}
@@ -1350,12 +1359,16 @@ const ElectricBill = () => {
               >
                 Cancel
               </button>
+
+              {/* Changed Loader to RefreshCcw to avoid UI height explosion bug */}
               <button
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
                 className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {wiping ? <Loader className="w-4 h-4" /> : null}
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
