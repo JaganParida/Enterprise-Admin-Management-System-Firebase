@@ -15,26 +15,27 @@ import { loginAdmin, loginWithGoogle } from "../../services/authService";
 import { motion, AnimatePresence } from "framer-motion";
 
 const Login = () => {
-  // Email States
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
-
-  // Global States
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // --- 1. EMAIL/PASSWORD LOGIN ---
+  // Helper function to handle post-login logic
+  const handleAuthSuccess = (userData) => {
+    login(userData); // Save user + role in context
+    navigate("/enterprise/dashboard");
+  };
+
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
       const data = await loginAdmin(formData);
-      login(data);
-      navigate("/enterprise/dashboard");
+      handleAuthSuccess(data);
     } catch (err) {
       setError(err.message || "Invalid Credentials");
     } finally {
@@ -42,14 +43,12 @@ const Login = () => {
     }
   };
 
-  // --- 2. GOOGLE LOGIN ---
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError("");
     try {
       const data = await loginWithGoogle();
-      login(data);
-      navigate("/enterprise/dashboard");
+      handleAuthSuccess(data);
     } catch (err) {
       setError(err.message || "Google Sign-in failed");
     } finally {
@@ -59,7 +58,6 @@ const Login = () => {
 
   return (
     <div className="min-h-screen bg-[#020403] flex items-center justify-center p-4 relative font-sans overflow-hidden selection:bg-emerald-500 selection:text-white">
-      {/* Premium Animated Background Glows */}
       <div
         className="absolute top-[-10%] left-[-10%] w-[40vw] h-[40vw] rounded-full bg-emerald-600/10 blur-[120px] pointer-events-none animate-pulse"
         style={{ animationDuration: "8s" }}
@@ -69,7 +67,6 @@ const Login = () => {
         style={{ animationDuration: "10s" }}
       ></div>
 
-      {/* Floating Back Button */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -92,14 +89,12 @@ const Login = () => {
         </Link>
       </motion.div>
 
-      {/* Login Card */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
         className="w-full max-w-md bg-[#070d0a]/60 backdrop-blur-3xl border border-white/5 p-6 sm:p-8 md:p-10 rounded-[2rem] shadow-2xl relative z-10"
       >
-        {/* Header */}
         <div className="text-center mb-8">
           <motion.div
             initial={{ scale: 0, rotate: -15 }}
@@ -122,7 +117,6 @@ const Login = () => {
           </p>
         </div>
 
-        {/* Error Message */}
         <AnimatePresence>
           {error && (
             <motion.div
@@ -137,7 +131,6 @@ const Login = () => {
           )}
         </AnimatePresence>
 
-        {/* --- FORM --- */}
         <form onSubmit={handleEmailSubmit} className="space-y-5">
           <div className="space-y-2 group">
             <label className="text-xs font-semibold text-white/60 ml-1">
@@ -191,6 +184,7 @@ const Login = () => {
             <div className="flex justify-end pt-1">
               <Link
                 to="/forgot-password"
+                size={18}
                 className="text-xs font-medium text-emerald-500 hover:text-emerald-400 transition-colors"
               >
                 Forgot Password?
@@ -217,14 +211,11 @@ const Login = () => {
           </button>
         </form>
 
-        {/* --- ALTERNATIVE LOGIN OPTIONS --- */}
         <div className="mt-8 pt-6 border-t border-white/5 relative">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#070d0a] px-3 text-[10px] text-white/30 font-bold uppercase tracking-widest">
             Or continue with
           </div>
-
           <div className="mt-4">
-            {/* Full-width Google Button */}
             <button
               type="button"
               onClick={handleGoogleLogin}
