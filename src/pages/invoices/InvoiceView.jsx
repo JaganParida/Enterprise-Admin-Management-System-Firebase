@@ -36,16 +36,14 @@ const InvoiceView = () => {
     fetchInvoice();
   }, [id, toast]);
 
-  // ✅ PERFECT A4 SCALING ENGINE - Fixed Mobile Margins
+  // PERFECT A4 SCALING ENGINE
   useEffect(() => {
     const updateLayout = () => {
       if (containerRef.current) {
-        // 🚀 Increased offset for better left/right margins on small devices
         const paddingOffset = window.innerWidth < 640 ? 40 : 64;
         const availableWidth = window.innerWidth - paddingOffset;
         const targetWidth = 800; // Fixed width of the A4 template
 
-        // Calculate required scale, max scale is 1
         const newScale =
           availableWidth < targetWidth ? availableWidth / targetWidth : 1;
         setScale(newScale);
@@ -62,7 +60,7 @@ const InvoiceView = () => {
     };
   }, [invoice]);
 
-  // ✅ PRINT FUNCTION
+  // PRINT FUNCTION - Scales to fully fit A4 without big outer margins
   const handlePrint = () => {
     const invoiceContent = printRef.current.innerHTML;
     const printWindow = window.open("", "_blank");
@@ -76,19 +74,29 @@ const InvoiceView = () => {
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap');
             @media print {
-              @page { size: A4 portrait; margin: 10mm; } 
+              @page { size: A4 portrait; margin: 0; } 
               body { 
                 font-family: 'Roboto', Arial, sans-serif;
                 -webkit-print-color-adjust: exact !important; 
                 print-color-adjust: exact !important; 
                 background: white !important;
                 margin: 0;
-                display: flex;
-                justify-content: center;
+                padding: 0;
+                display: block;
               }
               .print-wrapper {
-                width: 800px;
-                margin: 0 auto;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+              }
+              /* Override the fixed 800px width so it naturally fits 100% of the paper */
+              .print-wrapper > div {
+                width: 100% !important;
+                max-width: 100% !important;
+                height: auto !important;
+                min-height: 100vh !important;
+                margin: 0 !important;
+                /* Note: We leave padding alone here so it respects the template's internal p-8 Tailwind class */
               }
             }
           </style>
@@ -109,7 +117,7 @@ const InvoiceView = () => {
     printWindow.document.close();
   };
 
-  // ✅ PDF DOWNLOAD (Fixed Badge Cropping Issue)
+  // PDF DOWNLOAD - Uses tight bounds to prevent massive side margins
   const handleDownloadPDF = async () => {
     const element = printRef.current;
 
@@ -124,7 +132,7 @@ const InvoiceView = () => {
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        windowWidth: 860, // Slightly larger width to avoid side clipping
+        windowWidth: 800, // Matched exactly to the template width to drop excess margins
         backgroundColor: "#ffffff",
         logging: false,
       });
@@ -135,7 +143,7 @@ const InvoiceView = () => {
       const pdfWidth = 210;
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-      pdf.addImage(imgData, "PNG", 0, 5, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, "PNG", 0, 5, pdfWidth, pdfHeight); // Added small 5mm top offset
       pdf.save(`Invoice_${invoice?.invoiceNumber || id}.pdf`);
       toast.success("PDF Downloaded successfully!");
     } catch (err) {
@@ -150,14 +158,9 @@ const InvoiceView = () => {
   const handleShare = async () => {
     if (!invoice) return;
     toast.info("Preparing WhatsApp link...");
-    const phone = invoice.client.phone
-      ? invoice.client.phone.replace(/\D/g, "")
-      : "";
     const message = `*TAX INVOICE*\n------------------------\n*Invoice No:* ${invoice.invoiceNumber}\n*Date:* ${new Date(invoice.date).toLocaleDateString("en-GB")}\n*Client:* ${invoice.client.name}\n------------------------\n*Total Amount:* ₹ ${invoice.grandTotal.toLocaleString("en-IN")}\n------------------------\nPlease find your invoice details attached. Thank you!`;
 
-    const whatsappUrl = phone
-      ? `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`
-      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
 
     setTimeout(() => {
       window.open(whatsappUrl, "_blank");
@@ -260,9 +263,8 @@ const InvoiceView = () => {
     return rows;
   };
 
-  // 🚀 CORE INVOICE TEMPLATE
+  // CORE INVOICE TEMPLATE
   const InvoiceTemplate = () => (
-    // 🚀 Added pt-12 to ensure top of document has enough space for the badge during PDF generation
     <div
       className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-8 pt-12 pb-6 mx-auto"
       style={{ fontFamily: "Arial, sans-serif" }}
@@ -301,16 +303,15 @@ const InvoiceView = () => {
       </div>
 
       {/* OUTER BORDER CONTAINER */}
-      {/* 🚀 Increased mt-6 to push container down, protecting absolute badge from clipping */}
       <div className="border-[2px] border-[#1e3a8a] flex-1 flex flex-col relative z-10 bg-white/60 mt-6 rounded-sm">
-        {/* ✅ TOP BADGE - Perfectly centered on the border */}
+        {/* TOP BADGE */}
         <div className="absolute -top-[14px] left-1/2 transform -translate-x-1/2 bg-white px-3 flex items-center justify-center">
           <span className="bg-[#1e3a8a] text-white font-bold px-4 py-[3px] rounded text-[13px] tracking-widest uppercase border-[1.5px] border-[#1e3a8a] whitespace-nowrap shadow-sm">
             Tax Invoice
           </span>
         </div>
 
-        {/* --- HEADER SECTION --- */}
+        {/* HEADER SECTION */}
         <div className="flex justify-between items-start pt-8 pb-3 px-4 border-b-[2px] border-[#1e3a8a]">
           <div className="w-24 h-24 shrink-0 flex items-center justify-center">
             <img
@@ -354,7 +355,7 @@ const InvoiceView = () => {
           </div>
         </div>
 
-        {/* --- CLIENT DETAILS SECTION --- */}
+        {/* CLIENT DETAILS SECTION (Phone removed) */}
         <div className="px-4 py-3 text-[13px] font-bold space-y-2.5 border-b-[2px] border-[#1e3a8a] leading-relaxed tracking-wide">
           <div className="flex items-end">
             <span className="w-40 shrink-0">Name of the Purchaser:</span>
@@ -368,23 +369,15 @@ const InvoiceView = () => {
               {invoice.client.address || "-"}
             </span>
           </div>
-          <div className="flex justify-between items-end">
-            <div className="flex flex-1 items-end pr-6">
-              <span className="w-14 shrink-0">Phone:</span>
-              <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 px-2 pb-0.5 font-mono">
-                {invoice.client.phone}
-              </span>
-            </div>
-            <div className="flex w-[45%] items-end">
-              <span className="w-14 shrink-0 text-right pr-2">GSTIN:</span>
-              <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 text-center font-mono">
-                {invoice.client.gst || "-"}
-              </span>
-            </div>
+          <div className="flex items-end">
+            <span className="w-14 shrink-0">GSTIN:</span>
+            <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 font-mono">
+              {invoice.client.gst || "-"}
+            </span>
           </div>
         </div>
 
-        {/* --- TABLE SECTION --- */}
+        {/* TABLE SECTION */}
         <div className="flex-1 flex flex-col">
           <table className="w-full border-collapse text-[13px] h-full table-fixed font-bold tracking-wide">
             <colgroup>
@@ -478,7 +471,6 @@ const InvoiceView = () => {
 
               {renderEmptyRows(emptyRowsNeeded)}
 
-              {/* Stretching row to cover remaining space */}
               <tr className="h-full">
                 <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
                 <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a]"></td>
@@ -490,7 +482,7 @@ const InvoiceView = () => {
               </tr>
             </tbody>
 
-            {/* --- CALCULATIONS --- */}
+            {/* CALCULATIONS */}
             <tfoot className="font-bold text-[13px] tracking-wide bg-[#1e3a8a]/[0.02]">
               <tr>
                 <td
@@ -586,7 +578,7 @@ const InvoiceView = () => {
           </table>
         </div>
 
-        {/* --- BOTTOM FOOTER / SIGNATURE --- */}
+        {/* BOTTOM FOOTER / SIGNATURE */}
         <div className="flex justify-between items-end px-4 pt-3 pb-8 text-[11px] font-bold leading-relaxed border-t-[1.5px] border-[#1e3a8a] tracking-wide bg-white/50">
           <div className="space-y-0.5">
             <p>N.B: Goods once sold is not refundable.</p>
@@ -646,7 +638,7 @@ const InvoiceView = () => {
         </div>
       </div>
 
-      {/* --- INVOICE CONTAINER (Responsive & Centered) --- */}
+      {/* INVOICE CONTAINER (Responsive & Centered) */}
       <div
         ref={containerRef}
         className="w-full flex justify-center pb-6 overflow-hidden"
@@ -676,8 +668,7 @@ const InvoiceView = () => {
         </div>
       </div>
 
-      {/* --- HIDDEN WRAPPER FOR PDF GENERATION --- */}
-      {/* 🚀 Increased Padding Top prevents html2canvas clipping the badge */}
+      {/* HIDDEN WRAPPER FOR PDF GENERATION */}
       <div
         style={{
           display: "none",
@@ -689,9 +680,9 @@ const InvoiceView = () => {
       >
         <div
           style={{
-            width: "860px",
+            width: "800px",
             backgroundColor: "white",
-            padding: "30px", // Provides breathing room for rendering
+            padding: "0px", // Stripped all padding to remove arbitrary white outer edges
           }}
         >
           <InvoiceTemplate />

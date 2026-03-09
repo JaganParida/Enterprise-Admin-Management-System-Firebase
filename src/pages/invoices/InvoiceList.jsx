@@ -169,14 +169,15 @@ const InvoiceList = () => {
   const handleFullBackup = () => {
     try {
       if (invoices.length === 0) return toast.info("Database is empty.");
+      // Removed Phone from export headers to match requirements
       const headers = [
-        "Date,Invoice No,Client Name,Client Phone,SubTotal,GST Rate,Grand Total,Status",
+        "Date,Invoice No,Client Name,SubTotal,GST Rate,Grand Total,Status",
       ];
       const rows = invoices.map((inv) => {
         const dateStr = inv.date
           ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
           : "-";
-        return `${dateStr},"${inv.invoiceNumber || ""}","${inv.client?.name || ""}","${inv.client?.phone || ""}",${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0},"${inv.status || ""}"`;
+        return `${dateStr},"${inv.invoiceNumber || ""}","${inv.client?.name || ""}",${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0},"${inv.status || ""}"`;
       });
       const csvContent = [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -264,8 +265,8 @@ const InvoiceList = () => {
   if (loading) return <Loader />;
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4 print:w-full print:max-w-none print:m-0 print:p-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20">
             <FileText size={24} />
@@ -317,8 +318,8 @@ const InvoiceList = () => {
         </div>
       </div>
 
-      <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 overflow-visible relative">
-        <div className="p-5 border-b border-emerald-900/20 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#020403]/50">
+      <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 overflow-visible relative print:shadow-none print:border-none print:bg-white">
+        <div className="p-5 border-b border-emerald-900/20 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#020403]/50 print:hidden">
           <div className="relative w-full md:w-96">
             <Search
               size={16}
@@ -337,7 +338,7 @@ const InvoiceList = () => {
           </div>
         </div>
 
-        <div className="p-3 border-b border-emerald-900/20 flex flex-wrap items-center gap-3 bg-[#020403]/80">
+        <div className="p-3 border-b border-emerald-900/20 flex flex-wrap items-center gap-3 bg-[#020403]/80 print:hidden">
           <div className="flex items-center gap-1.5 text-emerald-500 text-xs font-bold uppercase tracking-wider px-2 border-r border-emerald-900/40 mr-2">
             <Filter size={14} /> Filters
             {activeFiltersCount > 0 && (
@@ -429,9 +430,9 @@ const InvoiceList = () => {
           )}
         </div>
 
-        <div className="overflow-x-auto pb-4 custom-scrollbar">
-          <table className="w-full text-left min-w-max">
-            <thead className="bg-[#020403] text-emerald-100/30 text-[10px] uppercase tracking-widest font-bold">
+        <div className="overflow-x-auto pb-4 custom-scrollbar print:overflow-visible print:w-full">
+          <table className="w-full text-left min-w-max print:min-w-0">
+            <thead className="bg-[#020403] text-emerald-100/30 text-[10px] uppercase tracking-widest font-bold print:bg-white print:text-black">
               <tr>
                 <th className="p-5 md:pl-6 whitespace-nowrap">
                   Invoice # & Date
@@ -439,36 +440,36 @@ const InvoiceList = () => {
                 <th className="p-5 whitespace-nowrap min-w-[200px]">Client</th>
                 <th className="p-5 whitespace-nowrap">Total Amount</th>
                 <th className="p-5 whitespace-nowrap">Status</th>
-                <th className="p-5 md:pr-6 text-right whitespace-nowrap">
+                <th className="p-5 md:pr-6 text-right whitespace-nowrap print:hidden">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-emerald-900/10 text-sm">
+            <tbody className="divide-y divide-emerald-900/10 text-sm print:divide-gray-200">
               {filteredInvoices.map((inv) => (
                 <tr
                   key={inv._id}
-                  className="hover:bg-emerald-400/[0.02] transition-colors group"
+                  className="hover:bg-emerald-400/[0.02] transition-colors group print:text-black"
                 >
                   <td className="p-5 md:pl-6 align-middle">
-                    <div className="font-mono font-bold text-emerald-400 whitespace-nowrap">
+                    <div className="font-mono font-bold text-emerald-400 whitespace-nowrap print:text-black">
                       {inv.invoiceNumber || "N/A"}
                     </div>
-                    <div className="text-emerald-100/40 text-[10px] mt-1 whitespace-nowrap font-medium tracking-wide">
+                    <div className="text-emerald-100/40 text-[10px] mt-1 whitespace-nowrap font-medium tracking-wide print:text-gray-500">
                       {inv.date
                         ? new Date(inv.date).toLocaleDateString("en-GB")
                         : "Unknown Date"}
                     </div>
                   </td>
                   <td className="p-5 align-middle">
-                    <div className="font-medium text-emerald-50 whitespace-nowrap">
+                    <div className="font-medium text-emerald-50 whitespace-nowrap print:text-black">
                       {inv.client?.name || "Unknown"}
                     </div>
                     {Array.isArray(inv.editHistory) &&
                       inv.editHistory.length > 0 && (
                         <div
                           onClick={() => openHistory(inv)}
-                          className="mt-1.5 inline-flex flex-col gap-0.5 cursor-pointer bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/20 p-1.5 rounded-lg transition-all w-max"
+                          className="mt-1.5 inline-flex flex-col gap-0.5 cursor-pointer bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/20 p-1.5 rounded-lg transition-all w-max print:hidden"
                         >
                           <div className="text-[9px] font-mono text-emerald-400/90 flex items-center gap-1 uppercase tracking-widest font-bold leading-none">
                             <History size={10} />{" "}
@@ -483,7 +484,7 @@ const InvoiceList = () => {
                         </div>
                       )}
                   </td>
-                  <td className="p-5 font-bold text-white font-mono align-middle whitespace-nowrap">
+                  <td className="p-5 font-bold text-white font-mono align-middle whitespace-nowrap print:text-black">
                     ₹ {(Number(inv.grandTotal) || 0).toLocaleString("en-IN")}
                   </td>
                   <td className="p-5 align-middle whitespace-nowrap">
@@ -492,7 +493,7 @@ const InvoiceList = () => {
                       onChange={(e) =>
                         handleStatusChange(inv._id, e.target.value)
                       }
-                      className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-md border outline-none cursor-pointer transition-colors ${inv.status === "Paid" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : inv.status === "Cancelled" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20"}`}
+                      className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-md border outline-none cursor-pointer transition-colors print:appearance-none print:border-none print:bg-transparent print:text-black ${inv.status === "Paid" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : inv.status === "Cancelled" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20"}`}
                     >
                       <option
                         value="Pending"
@@ -514,7 +515,7 @@ const InvoiceList = () => {
                       </option>
                     </select>
                   </td>
-                  <td className="p-5 md:pr-6 align-middle overflow-visible">
+                  <td className="p-5 md:pr-6 align-middle overflow-visible print:hidden">
                     <div className="flex justify-end gap-1.5 items-center relative overflow-visible">
                       <Link
                         to={`/enterprise/invoices/view/${inv._id}`}
@@ -558,7 +559,7 @@ const InvoiceList = () => {
                 <tr>
                   <td
                     colSpan="5"
-                    className="p-10 text-center text-emerald-100/30 text-sm italic"
+                    className="p-10 text-center text-emerald-100/30 text-sm italic print:text-black"
                   >
                     No invoices match your current filters.
                   </td>
@@ -571,7 +572,7 @@ const InvoiceList = () => {
 
       {/* History Modal */}
       {historyModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
           <div className="bg-[#050a08] border border-emerald-900/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative Z-50">
             <div className="p-5 border-b border-emerald-900/20 flex justify-between items-center bg-[#020403]">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -625,7 +626,7 @@ const InvoiceList = () => {
 
       {/* SECURE WIPE DATA MODAL */}
       {isDeleteAllOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 print:hidden">
           <div
             className="absolute inset-0"
             onClick={() => !wiping && setIsDeleteAllOpen(false)}

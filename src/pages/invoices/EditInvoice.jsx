@@ -358,22 +358,22 @@ const EditInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Bricks (10 inch)"
+                                value=" FLYASH Bricks (10 inch)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                Bricks (10 inch)
+                                Bricks 10 inch
                               </option>
                               <option
-                                value="Bricks (9 inch)"
+                                value="FLYASH Bricks (9 inch)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                Bricks (9 inch)
+                                Bricks 9 inch
                               </option>
                               <option
-                                value="Bricks (8 inch)"
+                                value="FLYASH Bricks 8 inch"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                Bricks (8 inch)
+                                Bricks 8 inch
                               </option>
                             </optgroup>
                             <optgroup
@@ -381,37 +381,37 @@ const EditInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Zig Zag (60mm)"
+                                value="Paver Blocks Zig Zag (60mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Zig Zag (60mm)
                               </option>
                               <option
-                                value="Zig Zag (80mm)"
+                                value=" Paver Blocks Zig Zag (80mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Zig Zag (80mm)
                               </option>
                               <option
-                                value="6-12 Brick (60mm)"
+                                value="Paver Blocks 6-12 Brick (60mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6-12 Brick (60mm)
                               </option>
                               <option
-                                value="6-12 Brick (80mm)"
+                                value="Paver Blocks 6-12 Brick (80mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6-12 Brick (80mm)
                               </option>
                               <option
-                                value="6/6 Brick (60mm)"
+                                value="Paver Blocks 6/6 Brick (60mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6/6 Brick 60mm
                               </option>
                               <option
-                                value="6/6 Brick (80mm)"
+                                value="Paver Blocks 6/6 Brick (80mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6/6 Brick (80mm)
@@ -422,25 +422,25 @@ const EditInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Hexagon"
+                                value="Chequered Tiles Hexagon"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Hexagon
                               </option>
                               <option
-                                value="Brick Design (9inch)"
+                                value="Chequered Tiles Brick Design (9inch)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Brick Design (9inch)
                               </option>
                               <option
-                                value="Curve Stone"
+                                value="Chequered Tiles Curve Stone"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Curve Stone
                               </option>
                               <option
-                                value="Cover Block"
+                                value="Chequered Tiles Cover Block"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Cover Block

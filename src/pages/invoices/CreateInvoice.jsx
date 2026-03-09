@@ -14,9 +14,9 @@ const CreateInvoice = () => {
   const [loading, setLoading] = useState(false);
 
   // Form States
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [client, setClient] = useState({
     name: "",
-    phone: "",
     address: "",
     gst: "",
   });
@@ -133,20 +133,15 @@ const CreateInvoice = () => {
     if (items.length > 1) setItems(items.filter((item) => item.id !== id));
   };
 
-  // 🚀 Core Validation Logic
+  // Core Validation Logic
   const validateForm = () => {
     let tempErrors = {};
-    const phoneRegex = /^[6-9]\d{9}$/;
     const gstinRegex =
       /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
+    if (!invoiceNumber.trim())
+      tempErrors.invoiceNumber = "Invoice number is mandatory";
     if (!client.name.trim()) tempErrors.name = "Client name is mandatory";
-
-    if (!client.phone) {
-      tempErrors.phone = "Phone number is required";
-    } else if (!phoneRegex.test(client.phone)) {
-      tempErrors.phone = "Must start with 6-9 and be exactly 10 digits";
-    }
 
     if (client.gst) {
       if (client.gst.length !== 15) {
@@ -180,6 +175,7 @@ const CreateInvoice = () => {
     const cleanItems = items.map(({ isCustom, nameSelect, ...rest }) => rest);
 
     const invoiceData = {
+      invoiceNumber,
       client,
       items: cleanItems,
       date: invoiceDate,
@@ -204,9 +200,9 @@ const CreateInvoice = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4">
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4 print:w-full print:max-w-none print:m-0 print:p-0 print:bg-white">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20">
@@ -239,12 +235,34 @@ const CreateInvoice = () => {
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Client Details */}
-        <div className="bg-[#050a08] p-6 md:p-8 rounded-2xl border border-emerald-900/30 shadow-lg relative overflow-hidden">
-          <h3 className="text-lg font-bold text-white mb-6 border-b border-emerald-900/20 pb-4 flex items-center gap-2">
-            <span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>{" "}
+        <div className="bg-[#050a08] p-6 md:p-8 rounded-2xl border border-emerald-900/30 shadow-lg relative overflow-hidden print:shadow-none print:border-none print:bg-transparent print:p-0">
+          <h3 className="text-lg font-bold text-white mb-6 border-b border-emerald-900/20 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
+            <span className="w-1.5 h-6 bg-emerald-500 rounded-full print:hidden"></span>{" "}
             Purchaser Details
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-1">
+              <Input
+                label="Invoice Number"
+                placeholder="e.g. INV-2024-001"
+                value={invoiceNumber}
+                onChange={(e) => {
+                  setInvoiceNumber(e.target.value);
+                  if (errors.invoiceNumber) {
+                    const newErrors = { ...errors };
+                    delete newErrors.invoiceNumber;
+                    setErrors(newErrors);
+                  }
+                }}
+                className={errors.invoiceNumber ? "border-rose-500/50" : ""}
+              />
+              {errors.invoiceNumber && (
+                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1">
+                  <AlertCircle size={10} /> {errors.invoiceNumber}
+                </p>
+              )}
+            </div>
+
             <div className="space-y-1">
               <Input
                 label="Client Name"
@@ -256,24 +274,6 @@ const CreateInvoice = () => {
               {errors.name && (
                 <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1">
                   <AlertCircle size={10} /> {errors.name}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <Input
-                label="Phone Number"
-                placeholder="e.g. 9876543210"
-                value={client.phone}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, "");
-                  if (val.length <= 10) handleClientChange("phone", val);
-                }}
-                className={errors.phone ? "border-rose-500/50" : ""}
-              />
-              {errors.phone && (
-                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1">
-                  <AlertCircle size={10} /> {errors.phone}
                 </p>
               )}
             </div>
@@ -309,31 +309,31 @@ const CreateInvoice = () => {
         </div>
 
         {/* Items Table */}
-        <div className="bg-[#050a08] p-6 md:p-8 rounded-2xl border border-emerald-900/30 shadow-lg">
-          <h3 className="text-lg font-bold text-white mb-6 border-b border-emerald-900/20 pb-4 flex items-center gap-2">
-            <span className="w-1.5 h-6 bg-teal-500 rounded-full"></span>{" "}
+        <div className="bg-[#050a08] p-6 md:p-8 rounded-2xl border border-emerald-900/30 shadow-lg print:shadow-none print:border-none print:bg-transparent print:p-0">
+          <h3 className="text-lg font-bold text-white mb-6 border-b border-emerald-900/20 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
+            <span className="w-1.5 h-6 bg-teal-500 rounded-full print:hidden"></span>{" "}
             Description of Goods
           </h3>
-          <div className="overflow-x-auto pb-4 custom-scrollbar">
-            <table className="w-full text-left mb-4 min-w-[800px]">
+          <div className="overflow-x-auto pb-4 custom-scrollbar print:overflow-visible print:w-full">
+            <table className="w-full text-left mb-4 min-w-[800px] print:min-w-0">
               <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-emerald-100/40 border-b border-emerald-900/20 font-bold">
+                <tr className="text-[10px] uppercase tracking-widest text-emerald-100/40 border-b border-emerald-900/20 font-bold print:text-gray-500">
                   <th className="pb-3 w-[35%] pl-2">Product Name</th>
                   <th className="pb-3 w-[15%]">HSN Code</th>
                   <th className="pb-3 w-20 text-center">Qnty</th>
                   <th className="pb-3 w-28 text-center">Rate / Price</th>
                   <th className="pb-3 w-32 text-right pr-4">Amount (₹)</th>
-                  <th className="pb-3 w-10 text-center"></th>
+                  <th className="pb-3 w-10 text-center print:hidden"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-emerald-900/10">
+              <tbody className="divide-y divide-emerald-900/10 print:divide-gray-200">
                 {items.map((item) => (
                   <tr key={item.id} className="group">
                     <td className="py-4 pr-3 pl-2">
                       {!item.isCustom ? (
                         <div className="relative">
                           <select
-                            className={`w-full bg-[#020403] border ${errors[`item_${item.id}_name`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm cursor-pointer appearance-none`}
+                            className={`w-full bg-[#020403] border ${errors[`item_${item.id}_name`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm cursor-pointer appearance-none print:bg-transparent print:text-black`}
                             value={item.isCustom ? "Custom" : item.name || ""}
                             onChange={(e) =>
                               handleItemChange(
@@ -355,22 +355,22 @@ const CreateInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Bricks (10 inch)"
+                                value=" FLYASH Bricks (10 inch)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                Bricks (10 inch)
+                                Bricks 10 inch
                               </option>
                               <option
-                                value="Bricks (9 inch)"
+                                value="FLYASH Bricks (9 inch)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                Bricks (9 inch)
+                                Bricks 9 inch
                               </option>
                               <option
-                                value="Bricks (8 inch)"
+                                value="FLYASH Bricks 8 inch"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                Bricks (8 inch)
+                                Bricks 8 inch
                               </option>
                             </optgroup>
                             <optgroup
@@ -378,37 +378,37 @@ const CreateInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Zig Zag (60mm)"
+                                value="Paver Blocks Zig Zag (60mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Zig Zag (60mm)
                               </option>
                               <option
-                                value="Zig Zag (80mm)"
+                                value=" Paver Blocks Zig Zag (80mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Zig Zag (80mm)
                               </option>
                               <option
-                                value="6-12 Brick (60mm)"
+                                value="Paver Blocks 6-12 Brick (60mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6-12 Brick (60mm)
                               </option>
                               <option
-                                value="6-12 Brick (80mm)"
+                                value="Paver Blocks 6-12 Brick (80mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6-12 Brick (80mm)
                               </option>
                               <option
-                                value="6/6 Brick (60mm)"
+                                value="Paver Blocks 6/6 Brick (60mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6/6 Brick 60mm
                               </option>
                               <option
-                                value="6/6 Brick (80mm)"
+                                value="Paver Blocks 6/6 Brick (80mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6/6 Brick (80mm)
@@ -419,25 +419,25 @@ const CreateInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Hexagon"
+                                value="Chequered Tiles Hexagon"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Hexagon
                               </option>
                               <option
-                                value="Brick Design (9inch)"
+                                value="Chequered Tiles Brick Design (9inch)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Brick Design (9inch)
                               </option>
                               <option
-                                value="Curve Stone"
+                                value="Chequered Tiles Curve Stone"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Curve Stone
                               </option>
                               <option
-                                value="Cover Block"
+                                value="Chequered Tiles Cover Block"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Cover Block
@@ -456,7 +456,7 @@ const CreateInvoice = () => {
                               Custom Item...
                             </option>
                           </select>
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50 text-[10px]">
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50 text-[10px] print:hidden">
                             ▼
                           </div>
                         </div>
@@ -464,7 +464,7 @@ const CreateInvoice = () => {
                         <div className="relative">
                           <input
                             type="text"
-                            className={`w-full bg-[#020403] border ${errors[`item_${item.id}_name`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm pr-12`}
+                            className={`w-full bg-[#020403] border ${errors[`item_${item.id}_name`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm pr-12 print:bg-transparent print:text-black`}
                             placeholder="Type custom description..."
                             value={item.name}
                             onChange={(e) =>
@@ -477,7 +477,7 @@ const CreateInvoice = () => {
                             onClick={() =>
                               handleItemChange(item.id, "nameSelect", "")
                             }
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-rose-400 hover:text-rose-300 text-xs"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-rose-400 hover:text-rose-300 text-xs print:hidden"
                           >
                             Undo
                           </button>
@@ -488,7 +488,7 @@ const CreateInvoice = () => {
                       <input
                         type="text"
                         placeholder="HSN"
-                        className="w-full bg-[#020403] border border-emerald-900/30 rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm text-center"
+                        className="w-full bg-[#020403] border border-emerald-900/30 rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm text-center print:bg-transparent print:text-black"
                         value={item.hsn}
                         onChange={(e) =>
                           handleItemChange(item.id, "hsn", e.target.value)
@@ -498,7 +498,7 @@ const CreateInvoice = () => {
                     <td className="py-4 pr-3">
                       <input
                         type="number"
-                        className={`w-full bg-[#020403] border ${errors[`item_${item.id}_qty`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-2 py-2.5 text-emerald-100 text-center focus:border-emerald-500/50 outline-none text-sm`}
+                        className={`w-full bg-[#020403] border ${errors[`item_${item.id}_qty`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-2 py-2.5 text-emerald-100 text-center focus:border-emerald-500/50 outline-none text-sm print:bg-transparent print:text-black`}
                         value={item.quantity}
                         onChange={(e) =>
                           handleItemChange(item.id, "quantity", e.target.value)
@@ -509,7 +509,7 @@ const CreateInvoice = () => {
                     <td className="py-4 pr-3">
                       <input
                         type="number"
-                        className={`w-full bg-[#020403] border ${errors[`item_${item.id}_price`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 text-right focus:border-emerald-500/50 outline-none text-sm`}
+                        className={`w-full bg-[#020403] border ${errors[`item_${item.id}_price`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 text-right focus:border-emerald-500/50 outline-none text-sm print:bg-transparent print:text-black`}
                         value={item.price}
                         onChange={(e) =>
                           handleItemChange(item.id, "price", e.target.value)
@@ -517,10 +517,10 @@ const CreateInvoice = () => {
                         onWheel={(e) => e.target.blur()}
                       />
                     </td>
-                    <td className="py-4 font-bold text-emerald-400 font-mono text-sm text-right pr-4">
+                    <td className="py-4 font-bold text-emerald-400 font-mono text-sm text-right pr-4 print:text-black">
                       {Number(item.total || 0).toLocaleString("en-IN")}
                     </td>
-                    <td className="py-4 text-center">
+                    <td className="py-4 text-center print:hidden">
                       <button
                         type="button"
                         onClick={() => removeItem(item.id)}
@@ -538,26 +538,26 @@ const CreateInvoice = () => {
             type="button"
             variant="secondary"
             onClick={addItem}
-            className="text-xs border-emerald-500/20 text-emerald-400 mt-2"
+            className="text-xs border-emerald-500/20 text-emerald-400 mt-2 print:hidden"
           >
             <Plus size={16} className="mr-1" /> Add Row
           </Button>
         </div>
 
         {/* Totals Section */}
-        <div className="bg-[#050a08] p-8 rounded-2xl border border-emerald-900/30 shadow-lg flex justify-end">
+        <div className="bg-[#050a08] p-8 rounded-2xl border border-emerald-900/30 shadow-lg flex justify-end print:shadow-none print:border-none print:bg-transparent print:p-0">
           <div className="w-full md:w-80 space-y-4">
-            <div className="flex justify-between text-emerald-100/60 text-sm font-medium">
+            <div className="flex justify-between text-emerald-100/60 text-sm font-medium print:text-gray-600">
               <span>G. Total (Before Tax):</span>
-              <span className="font-mono text-emerald-100">
+              <span className="font-mono text-emerald-100 print:text-black">
                 ₹ {totals.subTotal.toLocaleString("en-IN")}
               </span>
             </div>
 
-            <div className="flex justify-between items-center text-emerald-100/60 text-sm">
+            <div className="flex justify-between items-center text-emerald-100/60 text-sm print:text-gray-600">
               <span>Tax Category:</span>
               <select
-                className="bg-[#020403] border border-emerald-900/30 rounded-lg px-2 py-1 text-emerald-100 text-xs"
+                className="bg-[#020403] border border-emerald-900/30 rounded-lg px-2 py-1 text-emerald-100 text-xs print:bg-transparent print:text-black print:border-none print:appearance-none"
                 value={gstRate}
                 onChange={(e) => setGstRate(parseFloat(e.target.value))}
               >
@@ -570,9 +570,9 @@ const CreateInvoice = () => {
 
             {gstRate > 0 && (
               <>
-                <div className="flex justify-between text-emerald-100/40 text-xs">
+                <div className="flex justify-between text-emerald-100/40 text-xs print:text-gray-600">
                   <span>CGST @ {gstRate / 2}%:</span>
-                  <span className="font-mono">
+                  <span className="font-mono print:text-black">
                     ₹{" "}
                     {totals.cgst.toLocaleString("en-IN", {
                       minimumFractionDigits: 2,
@@ -580,9 +580,9 @@ const CreateInvoice = () => {
                     })}
                   </span>
                 </div>
-                <div className="flex justify-between text-emerald-100/40 text-xs">
+                <div className="flex justify-between text-emerald-100/40 text-xs print:text-gray-600">
                   <span>SGST @ {gstRate / 2}%:</span>
-                  <span className="font-mono">
+                  <span className="font-mono print:text-black">
                     ₹{" "}
                     {totals.sgst.toLocaleString("en-IN", {
                       minimumFractionDigits: 2,
@@ -593,8 +593,10 @@ const CreateInvoice = () => {
               </>
             )}
 
-            <div className="border-t border-emerald-900/20 pt-4 flex justify-between text-xl font-bold text-emerald-400">
-              <span className="text-base text-white">Net Total:</span>
+            <div className="border-t border-emerald-900/20 pt-4 flex justify-between text-xl font-bold text-emerald-400 print:text-black print:border-gray-300">
+              <span className="text-base text-white print:text-black">
+                Net Total:
+              </span>
               <span className="font-mono">
                 ₹{" "}
                 {totals.grandTotal.toLocaleString("en-IN", {
@@ -606,10 +608,11 @@ const CreateInvoice = () => {
           </div>
         </div>
 
-        <div className="flex justify-end gap-4 pb-10">
+        <div className="flex justify-end gap-4 pb-10 print:hidden">
           <Button
             variant="secondary"
             onClick={() => navigate("/enterprise/invoices")}
+            type="button"
           >
             Discard
           </Button>
