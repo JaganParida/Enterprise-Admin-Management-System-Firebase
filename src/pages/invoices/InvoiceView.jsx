@@ -36,7 +36,7 @@ const InvoiceView = () => {
     fetchInvoice();
   }, [id, toast]);
 
-  // PERFECT A4 SCALING ENGINE
+  // PERFECT A4 SCALING ENGINE (For on-screen view only)
   useEffect(() => {
     const updateLayout = () => {
       if (containerRef.current) {
@@ -60,7 +60,7 @@ const InvoiceView = () => {
     };
   }, [invoice]);
 
-  // PRINT FUNCTION - Scales to fully fit A4 without big outer margins
+  // PRINT FUNCTION - 100% full scale edge to edge, removing side margins
   const handlePrint = () => {
     const invoiceContent = printRef.current.innerHTML;
     const printWindow = window.open("", "_blank");
@@ -74,7 +74,10 @@ const InvoiceView = () => {
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap');
             @media print {
-              @page { size: A4 portrait; margin: 0; } 
+              @page { 
+                size: A4 portrait; 
+                margin: 0mm; /* Absolutely no page margins */
+              } 
               body { 
                 font-family: 'Roboto', Arial, sans-serif;
                 -webkit-print-color-adjust: exact !important; 
@@ -85,18 +88,19 @@ const InvoiceView = () => {
                 display: block;
               }
               .print-wrapper {
-                width: 100%;
+                width: 210mm; /* Exact A4 width */
+                height: 297mm; /* Exact A4 height */
                 margin: 0;
                 padding: 0;
+                overflow: hidden;
               }
-              /* Override the fixed 800px width so it naturally fits 100% of the paper */
+              /* Override tailwind constraints to stretch across the physical page entirely */
               .print-wrapper > div {
                 width: 100% !important;
-                max-width: 100% !important;
-                height: auto !important;
-                min-height: 100vh !important;
+                height: 100% !important;
+                max-width: none !important;
                 margin: 0 !important;
-                /* Note: We leave padding alone here so it respects the template's internal p-8 Tailwind class */
+                border: none !important;
               }
             }
           </style>
@@ -117,7 +121,7 @@ const InvoiceView = () => {
     printWindow.document.close();
   };
 
-  // PDF DOWNLOAD - Uses tight bounds to prevent massive side margins
+  // PDF DOWNLOAD - Stretched accurately to A4 metrics
   const handleDownloadPDF = async () => {
     const element = printRef.current;
 
@@ -132,7 +136,7 @@ const InvoiceView = () => {
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        windowWidth: 800, // Matched exactly to the template width to drop excess margins
+        windowWidth: 800, // Match the container perfectly to strip outer whitespace
         backgroundColor: "#ffffff",
         logging: false,
       });
@@ -140,10 +144,11 @@ const InvoiceView = () => {
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
 
-      const pdfWidth = 210;
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfWidth = 210; // Exactly A4 width
+      const pdfHeight = 297; // Exactly A4 height
 
-      pdf.addImage(imgData, "PNG", 0, 5, pdfWidth, pdfHeight); // Added small 5mm top offset
+      // Render image at exactly X:0, Y:0 to strip all bounds
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
       pdf.save(`Invoice_${invoice?.invoiceNumber || id}.pdf`);
       toast.success("PDF Downloaded successfully!");
     } catch (err) {
@@ -266,7 +271,8 @@ const InvoiceView = () => {
   // CORE INVOICE TEMPLATE
   const InvoiceTemplate = () => (
     <div
-      className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-8 pt-12 pb-6 mx-auto"
+      // Decreased padding significantly to push blue borders towards the edge
+      className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-3 pt-6 pb-3 mx-auto"
       style={{ fontFamily: "Arial, sans-serif" }}
     >
       {/* WATERMARK */}
@@ -303,7 +309,7 @@ const InvoiceView = () => {
       </div>
 
       {/* OUTER BORDER CONTAINER */}
-      <div className="border-[2px] border-[#1e3a8a] flex-1 flex flex-col relative z-10 bg-white/60 mt-6 rounded-sm">
+      <div className="border-[2px] border-[#1e3a8a] flex-1 flex flex-col relative z-10 bg-white/60 mt-4 rounded-sm">
         {/* TOP BADGE */}
         <div className="absolute -top-[14px] left-1/2 transform -translate-x-1/2 bg-white px-3 flex items-center justify-center">
           <span className="bg-[#1e3a8a] text-white font-bold px-4 py-[3px] rounded text-[13px] tracking-widest uppercase border-[1.5px] border-[#1e3a8a] whitespace-nowrap shadow-sm">
@@ -355,7 +361,7 @@ const InvoiceView = () => {
           </div>
         </div>
 
-        {/* CLIENT DETAILS SECTION (Phone removed) */}
+        {/* CLIENT DETAILS SECTION */}
         <div className="px-4 py-3 text-[13px] font-bold space-y-2.5 border-b-[2px] border-[#1e3a8a] leading-relaxed tracking-wide">
           <div className="flex items-end">
             <span className="w-40 shrink-0">Name of the Purchaser:</span>
@@ -498,7 +504,8 @@ const InvoiceView = () => {
                     <span className="shrink-0 ml-1">only)</span>
                   </div>
                 </td>
-                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
+                {/* Centered Total Labels */}
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
                   G. TOTAL
                 </td>
                 <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 font-mono">
@@ -512,7 +519,8 @@ const InvoiceView = () => {
               {invoice.gstRate > 0 ? (
                 <>
                   <tr>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
+                    {/* Centered & No-Wrap CGST Label */}
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
                       CGST @ {invoice.gstRate / 2}%
                     </td>
                     <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 font-mono">
@@ -523,7 +531,8 @@ const InvoiceView = () => {
                     </td>
                   </tr>
                   <tr>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
+                    {/* Centered & No-Wrap SGST Label */}
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
                       SGST @ {invoice.gstRate / 2}%
                     </td>
                     <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 font-mono">
@@ -537,14 +546,14 @@ const InvoiceView = () => {
               ) : (
                 <>
                   <tr>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
                       CGST @
                     </td>
                     <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3"></td>
                     <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center"></td>
                   </tr>
                   <tr>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
                       SGST @
                     </td>
                     <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3"></td>
@@ -554,7 +563,7 @@ const InvoiceView = () => {
               )}
 
               <tr className="bg-[#1e3a8a]/[0.06]">
-                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 pl-3">
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
                   N. TOTAL
                 </td>
                 <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 text-[15px] font-black font-mono">
@@ -566,7 +575,7 @@ const InvoiceView = () => {
               </tr>
 
               <tr>
-                <td className="border-r-[1.5px] border-[#1e3a8a] p-1.5 pl-3">
+                <td className="border-r-[1.5px] border-[#1e3a8a] p-1.5 text-center align-middle whitespace-nowrap">
                   R/O
                 </td>
                 <td className="border-r-[1.5px] border-[#1e3a8a] p-1.5 text-right pr-3 font-mono">
@@ -682,7 +691,7 @@ const InvoiceView = () => {
           style={{
             width: "800px",
             backgroundColor: "white",
-            padding: "0px", // Stripped all padding to remove arbitrary white outer edges
+            padding: "0px",
           }}
         >
           <InvoiceTemplate />
