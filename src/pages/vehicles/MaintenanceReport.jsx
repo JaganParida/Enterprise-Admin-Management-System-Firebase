@@ -22,6 +22,7 @@ import {
   Wrench,
   Map,
   IndianRupee,
+  RefreshCcw,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -218,7 +219,11 @@ const MaintenanceReport = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      await maintenanceService.deleteAllLogs({ password: deletePassword });
+      const adminEmail = admin?.data?.email || admin?.email;
+      await maintenanceService.deleteAllLogs({
+        password: deletePassword,
+        email: adminEmail,
+      });
       toast.success("Maintenance database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
@@ -599,7 +604,10 @@ const MaintenanceReport = () => {
                 disabled={wiping || !deletePassword}
                 className="px-6 py-2.5 rounded-xl text-sm font-bold bg-[#110505] text-red-500 border border-red-900/50 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2"
               >
-                {wiping ? <Loader className="w-4 h-4" /> : "Confirm Wipe"}
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}
+                {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
           </div>
