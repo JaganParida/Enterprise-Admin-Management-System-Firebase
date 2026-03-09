@@ -6,16 +6,15 @@ import {
   TrendingUp,
   Package,
   Users,
-  AlertTriangle,
   Activity,
   DollarSign,
   Download,
   Plus,
   Factory,
-  Zap,
   FileText,
   ChevronRight,
   ShoppingCart,
+  Calendar,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -41,7 +40,7 @@ const Dashboard = () => {
       lowStock: 0,
       pendingInvoices: 0,
     },
-    charts: { production: [], sales: [], electricity: [] },
+    charts: { production: [], sales: [] },
     recentActivity: [],
   });
 
@@ -57,13 +56,12 @@ const Dashboard = () => {
       }
     };
     loadDashboard();
-  }, []);
+  }, [toast]);
 
   const handleExport = () => {
     try {
       const headers = ["Section,Metric,Value,Date/Note"];
       const rows = [];
-
       rows.push(`OVERVIEW,Total Sales Revenue,${data.cards.balance},`);
       rows.push(`OVERVIEW,Total Stock Value,${data.cards.stockValue},`);
       rows.push(`OVERVIEW,Invoice Revenue,${data.cards.revenue},`);
@@ -76,22 +74,22 @@ const Dashboard = () => {
       data.charts.production.forEach((item) => {
         rows.push(`PRODUCTION,Daily Output,${item.quantity},${item.date}`);
       });
-
       data.charts.sales.forEach((item) => {
         rows.push(`SALES,Daily Sales,${item.amount},${item.date}`);
       });
 
-      const paid =
-        data.charts.electricity.find((f) => f.name === "Paid")?.value || 0;
-      const pending =
-        data.charts.electricity.find((f) => f.name === "Overdue")?.value || 0;
-      rows.push(`ELECTRICITY,Paid Bills,${paid},`);
-      rows.push(`ELECTRICITY,Pending/Overdue Bills,${pending},`);
+      if (data.recentActivity && data.recentActivity.length > 0) {
+        rows.push(`\nRECENT ACTIVITY,Type,Details,Amount/Qty,Date`);
+        data.recentActivity.forEach((act) => {
+          rows.push(
+            `ACTIVITY,${act.activityType},"${act.productName || act.clientName || "N/A"}",${act.amount || act.grandTotal || act.quantity || 0},${new Date(act.date).toLocaleDateString("en-GB")}`,
+          );
+        });
+      }
 
       const csvContent = [headers, ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute(
@@ -101,38 +99,26 @@ const Dashboard = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
       toast.success("Dashboard report exported to Excel");
     } catch (error) {
       toast.error("Failed to export data");
     }
   };
 
-  // --- 🚀 ENHANCED CHART FORMATTERS WITH PRODUCT NAMES ---
   const productionChartData = {
     labels: data.charts.production.map((d) => d.date),
     datasets: [
       {
         label: "Units Produced",
         data: data.charts.production.map((d) => d.quantity),
-        productNames: data.charts.production.map((d) => d.productName), // 👈 Crucial for tooltips
-        backgroundColor: "#10b981",
-        borderRadius: 4,
-      },
-    ],
-  };
-
-  const electricChartData = {
-    labels: ["Paid", "Overdue"],
-    datasets: [
-      {
-        label: "Electricity (₹)",
-        data: [
-          data.charts.electricity.find((f) => f.name === "Paid")?.value || 0,
-          data.charts.electricity.find((f) => f.name === "Overdue")?.value || 0,
-        ],
-        backgroundColor: ["#10b981", "#ef4444"], // Emerald vs Rose
-        borderRadius: 4,
+        productNames: data.charts.production.map((d) => d.productName),
+        backgroundColor: "rgba(16, 185, 129, 0.85)",
+        hoverBackgroundColor: "rgba(52, 211, 153, 1)",
+        borderRadius: 6,
+        borderSkipped: false,
+        // 🚀 FAT BARS (Bada Width): Removes max thickness and forces wide layout
+        barPercentage: 0.8,
+        categoryPercentage: 0.9,
       },
     ],
   };
@@ -143,20 +129,144 @@ const Dashboard = () => {
       {
         label: "Sales Revenue",
         data: data.charts.sales.map((d) => d.amount),
-        productNames: data.charts.sales.map((d) => d.productName), // 👈 Crucial for tooltips
+        productNames: data.charts.sales.map((d) => d.productName),
         borderColor: "#3b82f6",
-        backgroundColor: "rgba(59, 130, 246, 0.1)",
+        backgroundColor: "rgba(59, 130, 246, 0.15)",
+        borderWidth: 3,
+        pointBackgroundColor: "#050a08",
+        pointBorderColor: "#3b82f6",
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6,
         fill: true,
         tension: 0.4,
       },
     ],
   };
 
+  const sharedOptions = {
+    responsive: true,
+    maintainAspectRatio: false, // 🚀 Crucial to fit container
+    interaction: {
+      mode: "index",
+      intersect: false,
+    },
+    layout: { padding: { left: 10, right: 20, top: 10, bottom: 0 } }, // Stops side clipping
+  };
+
+  const emeraldChartOptions = {
+    ...sharedOptions,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: "rgba(5, 10, 8, 0.95)",
+        titleColor: "#10b981",
+        bodyColor: "#e2e8f0",
+        borderColor: "rgba(16, 185, 129, 0.3)",
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 8,
+        displayColors: true, // 🚀 Enables the Color Dot in Tooltip
+        callbacks: {
+          title: (context) => context[0].label, // e.g., "07 Mar"
+          label: function (context) {
+            const val = context.raw;
+            const productName = context.dataset.productNames
+              ? context.dataset.productNames[context.dataIndex]
+              : "";
+            return productName
+              ? ` ${productName} | Units Produced: ${val.toLocaleString("en-IN")}`
+              : ` Units Produced: ${val.toLocaleString("en-IN")}`;
+          },
+        },
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        grid: {
+          color: "rgba(16, 185, 129, 0.1)",
+          drawBorder: false,
+          borderDash: [5, 5],
+        },
+        ticks: {
+          color: "rgba(255, 255, 255, 0.5)",
+          font: { family: "monospace", size: 10 },
+          padding: 10,
+        },
+        border: { display: false },
+      },
+      x: {
+        grid: { display: false, drawBorder: false },
+        ticks: {
+          color: "rgba(255, 255, 255, 0.5)",
+          font: { family: "monospace", size: 11 },
+          padding: 10,
+        },
+        border: { display: false },
+      },
+    },
+  };
+
+  const blueChartOptions = {
+    ...sharedOptions,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: "rgba(2, 6, 23, 0.95)",
+        titleColor: "#3b82f6",
+        bodyColor: "#e2e8f0",
+        borderColor: "rgba(59, 130, 246, 0.3)",
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 8,
+        displayColors: true, // 🚀 Enables the Color Dot in Tooltip
+        callbacks: {
+          title: (context) => context[0].label,
+          label: function (context) {
+            const val = context.raw;
+            const productName = context.dataset.productNames
+              ? context.dataset.productNames[context.dataIndex]
+              : "";
+            return productName
+              ? ` ${productName} | Revenue: ₹${val.toLocaleString("en-IN")}`
+              : ` Revenue: ₹${val.toLocaleString("en-IN")}`;
+          },
+        },
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        grid: {
+          color: "rgba(59, 130, 246, 0.1)",
+          drawBorder: false,
+          borderDash: [5, 5],
+        },
+        ticks: {
+          color: "rgba(255, 255, 255, 0.5)",
+          font: { family: "monospace", size: 10 },
+          padding: 10,
+          callback: (value) => `₹${value.toLocaleString()}`,
+        },
+        border: { display: false },
+      },
+      x: {
+        grid: { display: false, drawBorder: false },
+        ticks: {
+          color: "rgba(255, 255, 255, 0.5)",
+          font: { family: "monospace", size: 11 },
+          padding: 10,
+        },
+        border: { display: false },
+      },
+    },
+  };
+
   if (loading) return <Loader text="Initializing Command Center..." />;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10 h-full flex flex-col">
-      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-20">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
@@ -166,8 +276,6 @@ const Dashboard = () => {
             Real-time factory production & financial command center.
           </p>
         </div>
-
-        {/* Action Buttons */}
         <div className="flex gap-3 relative">
           <Button
             variant="outline"
@@ -176,7 +284,6 @@ const Dashboard = () => {
           >
             <Download size={16} /> Export Report
           </Button>
-
           <div className="relative">
             <Button
               variant="primary"
@@ -198,7 +305,6 @@ const Dashboard = () => {
                     </p>
                   </div>
                   <div className="space-y-1 p-1">
-                    {/* 🚀 RELEVANT QUICK ACTIONS */}
                     <Link
                       to="/enterprise/sales"
                       className="quick-link-item group flex items-center p-2 rounded-lg hover:bg-white/5 transition-colors"
@@ -214,7 +320,6 @@ const Dashboard = () => {
                         className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-emerald-50"
                       />
                     </Link>
-
                     <Link
                       to="/enterprise/production"
                       className="quick-link-item group flex items-center p-2 rounded-lg hover:bg-white/5 transition-colors"
@@ -230,7 +335,6 @@ const Dashboard = () => {
                         className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-emerald-50"
                       />
                     </Link>
-
                     <Link
                       to="/enterprise/invoices/create"
                       className="quick-link-item group flex items-center p-2 rounded-lg hover:bg-white/5 transition-colors"
@@ -246,22 +350,6 @@ const Dashboard = () => {
                         className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-emerald-50"
                       />
                     </Link>
-
-                    <Link
-                      to="/electricity"
-                      className="quick-link-item group flex items-center p-2 rounded-lg hover:bg-white/5 transition-colors"
-                    >
-                      <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20 group-hover:text-amber-300 transition-colors mr-3">
-                        <Zap size={16} />
-                      </div>
-                      <span className="flex-1 text-sm font-medium text-emerald-50">
-                        Electric Bill
-                      </span>
-                      <ChevronRight
-                        size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-emerald-50"
-                      />
-                    </Link>
                   </div>
                 </div>
               </>
@@ -270,7 +358,6 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Sales"
@@ -306,13 +393,16 @@ const Dashboard = () => {
         />
       </div>
 
-      {/* --- ANALYTICS SECTION --- */}
       <div className="space-y-6">
-        {/* ROW 1: Charts Side by Side */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[400px]">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* ========================================== */}
           {/* PRODUCTION CHART */}
-          <div className="lg:col-span-2 p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-emerald-900/30 shadow-lg relative flex flex-col h-[350px] lg:h-full w-full overflow-hidden">
-            <div className="flex justify-between items-center mb-6 shrink-0 relative z-10">
+          {/* 🚀 Removed overflow-hidden so tooltips don't clip */}
+          {/* ========================================== */}
+          <div className="lg:col-span-2 p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-emerald-900/30 shadow-lg relative flex flex-col w-full h-[450px] group">
+            <div className="absolute -left-10 -top-10 w-40 h-40 bg-emerald-500/5 blur-[80px] rounded-full group-hover:bg-emerald-500/10 transition-colors duration-700 pointer-events-none" />
+
+            <div className="flex justify-between items-center shrink-0 relative z-10 mb-2">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <Activity size={20} className="text-emerald-500" /> Production
                 Trend
@@ -321,11 +411,16 @@ const Dashboard = () => {
                 Last 7 Days
               </span>
             </div>
-            <div className="relative flex-1 w-full min-h-0">
-              <div className="absolute inset-0 [&>div]:!h-full [&>div]:!w-full [&>div]:!bg-transparent [&>div]:!border-none [&>div]:!shadow-none [&>div]:!p-0 [&>div]:!rounded-none [&>div]:!m-0">
+
+            {/* 🚀 CHART FIX: Absolute Inset container explicitly fitting parent height without stretching canvas forcefully */}
+            <div className="relative flex-1 w-full mt-4">
+              <div className="absolute inset-0 pb-2">
                 {data.charts.production.length > 0 ? (
                   <Suspense fallback={<ChartSkeleton />}>
-                    <BarChart data={productionChartData} />
+                    <BarChart
+                      data={productionChartData}
+                      options={emeraldChartOptions}
+                    />
                   </Suspense>
                 ) : (
                   <div className="flex h-full items-center justify-center text-emerald-100/30 text-sm">
@@ -336,26 +431,40 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* ELECTRICITY CHART */}
-          <div className="lg:col-span-1 p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-emerald-900/30 shadow-lg relative flex flex-col h-[350px] lg:h-full w-full overflow-hidden">
-            <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2 shrink-0 relative z-10">
-              <Zap size={20} className="text-emerald-500" /> Electric Bill
-              Status
+          {/* ========================================== */}
+          {/* RECENT ACTIVITY */}
+          {/* ========================================== */}
+          <div className="p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-emerald-900/30 shadow-lg flex flex-col w-full h-[450px] overflow-hidden">
+            <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2 shrink-0">
+              <Activity size={20} className="text-emerald-500" /> Recent
+              Activity
+              <span className="text-xs font-normal text-emerald-100/40 ml-2">
+                (Top 10)
+              </span>
             </h3>
-            <div className="relative flex-1 w-full min-h-0">
-              <div className="absolute inset-0 [&>div]:!h-full [&>div]:!w-full [&>div]:!bg-transparent [&>div]:!border-none [&>div]:!shadow-none [&>div]:!p-0 [&>div]:!rounded-none [&>div]:!m-0">
-                <Suspense fallback={<ChartSkeleton />}>
-                  <BarChart data={electricChartData} />
-                </Suspense>
-              </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar min-h-0">
+              {data.recentActivity.length > 0 ? (
+                data.recentActivity.map((activity, index) => (
+                  <ActivityItem key={index} data={activity} />
+                ))
+              ) : (
+                <p className="text-center text-emerald-200/30 text-sm py-10 italic">
+                  No recent activity found.
+                </p>
+              )}
             </div>
           </div>
         </div>
 
-        {/* 🚀 ROW 2: FULL WIDTH SALES TRACKING CHART */}
-        <div className="w-full p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-blue-900/30 shadow-lg relative flex flex-col h-[400px] overflow-hidden group">
+        {/* ========================================== */}
+        {/* SALES CHART */}
+        {/* 🚀 Removed overflow-hidden so tooltips don't clip */}
+        {/* ========================================== */}
+        <div className="w-full p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-blue-900/30 shadow-lg relative flex flex-col h-[450px] group">
           <div className="absolute -left-10 -top-10 w-40 h-40 bg-blue-500/5 blur-[80px] rounded-full group-hover:bg-blue-500/10 transition-colors duration-700 pointer-events-none" />
-          <div className="flex justify-between items-center mb-6 shrink-0 relative z-10">
+
+          <div className="flex justify-between items-center shrink-0 relative z-10 mb-2">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
               <TrendingUp size={20} className="text-blue-500" /> Sales Revenue
               Trend
@@ -364,11 +473,13 @@ const Dashboard = () => {
               Last 7 Days
             </span>
           </div>
-          <div className="relative flex-1 w-full min-h-0">
-            <div className="absolute inset-0 [&>div]:!h-full [&>div]:!w-full [&>div]:!bg-transparent [&>div]:!border-none [&>div]:!shadow-none [&>div]:!p-0 [&>div]:!rounded-none [&>div]:!m-0">
+
+          {/* 🚀 CHART FIX: Absolute Inset container */}
+          <div className="relative flex-1 w-full mt-4">
+            <div className="absolute inset-0 pb-2">
               {data.charts.sales.length > 0 ? (
                 <Suspense fallback={<ChartSkeleton />}>
-                  <LineChart data={salesChartData} />
+                  <LineChart data={salesChartData} options={blueChartOptions} />
                 </Suspense>
               ) : (
                 <div className="flex h-full items-center justify-center text-blue-100/30 text-sm">
@@ -411,6 +522,51 @@ const StatCard = ({ title, value, icon: Icon, color, trend, trendUp }) => {
         <h3 className="text-3xl font-bold text-white tracking-tight">
           {value}
         </h3>
+      </div>
+    </div>
+  );
+};
+
+const ActivityItem = ({ data }) => {
+  let Icon = Factory;
+  let colorTheme = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+  let title = `Production: ${data.productName || "Product"}`;
+  let desc = `${Number(data.quantity || 0).toLocaleString()} Units Produced`;
+  let amount = null;
+
+  if (data.activityType === "Sale") {
+    Icon = ShoppingCart;
+    colorTheme = "text-blue-400 bg-blue-500/10 border-blue-500/20";
+    title = `Sale: ${data.customerName || "Customer"}`;
+    desc = data.productName || "Items Sold";
+    amount = `₹${Number(data.amount || 0).toLocaleString("en-IN")}`;
+  } else if (data.activityType === "Invoice") {
+    Icon = FileText;
+    colorTheme = "text-purple-400 bg-purple-500/10 border-purple-500/20";
+    title = `Invoice: ${data.invoiceNumber || "INV"}`;
+    desc = `Billed to ${data.clientName || "Client"}`;
+    amount = `₹${Number(data.grandTotal || 0).toLocaleString("en-IN")}`;
+  }
+
+  return (
+    <div className="flex items-start gap-4 p-3 rounded-2xl hover:bg-emerald-900/20 transition-colors border border-transparent hover:border-emerald-900/30">
+      <div className={`p-2 rounded-xl border shrink-0 ${colorTheme}`}>
+        <Icon size={16} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex justify-between items-start">
+          <p className="text-sm font-bold text-white truncate">{title}</p>
+          {amount && (
+            <p className="text-xs font-bold text-white font-mono ml-2">
+              {amount}
+            </p>
+          )}
+        </div>
+        <p className="text-xs text-emerald-100/50 truncate mt-0.5">{desc}</p>
+        <p className="text-[10px] text-emerald-100/30 mt-1 font-mono">
+          <Calendar size={10} className="inline mr-1" />
+          {new Date(data.date || data.createdAt).toLocaleDateString("en-GB")}
+        </p>
       </div>
     </div>
   );
