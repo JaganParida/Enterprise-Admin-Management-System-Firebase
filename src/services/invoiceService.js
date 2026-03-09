@@ -9,7 +9,6 @@ import {
   deleteDoc,
   query,
   orderBy,
-  limit,
 } from "firebase/firestore";
 
 const invCollection = collection(db, "invoices");
@@ -49,22 +48,10 @@ const invoiceService = {
 
   createInvoice: async (invoiceData, user) => {
     try {
-      const q = query(invCollection, orderBy("createdAt", "desc"), limit(1));
-      const lastInvSnap = await getDocs(q);
-
-      let nextNumber = 1001;
-      if (!lastInvSnap.empty) {
-        const lastInvData = lastInvSnap.docs[0].data();
-        if (lastInvData.invoiceNumber) {
-          const lastNum = parseInt(lastInvData.invoiceNumber.split("-")[1]);
-          nextNumber = lastNum + 1;
-        }
-      }
-
-      const invoiceNumber = `INV-${nextNumber}`;
+      // Auto-generation logic removed.
+      // It now strictly uses the manual 'invoiceNumber' passed from frontend.
       const payload = {
         ...invoiceData,
-        invoiceNumber,
         createdAt: new Date().toISOString(),
         createdBy: user?.email || "Unknown",
         createdRole: user?.role || "Admin",
@@ -132,8 +119,6 @@ const invoiceService = {
 
   // 🛑 SECURE: Wipe Entire Database Method Added
   deleteAllInvoices: async ({ password }) => {
-    // You can enforce a specific local password check here if desired.
-    // Usually, real admin protection relies on backend logic or Firebase rules.
     if (!password) {
       throw new Error("Password is required to wipe the database.");
     }

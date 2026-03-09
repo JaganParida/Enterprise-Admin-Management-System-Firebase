@@ -271,7 +271,6 @@ const InvoiceView = () => {
   // CORE INVOICE TEMPLATE
   const InvoiceTemplate = () => (
     <div
-      // Decreased padding significantly to push blue borders towards the edge
       className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-3 pt-6 pb-3 mx-auto"
       style={{ fontFamily: "Arial, sans-serif" }}
     >
@@ -318,7 +317,7 @@ const InvoiceView = () => {
         </div>
 
         {/* HEADER SECTION */}
-        <div className="flex justify-between items-start pt-8 pb-3 px-4 border-b-[2px] border-[#1e3a8a]">
+        <div className="flex justify-between items-start pt-8 pb-4 px-4 border-b-[2px] border-[#1e3a8a]">
           <div className="w-24 h-24 shrink-0 flex items-center justify-center">
             <img
               src="/maa.jpg"
@@ -345,7 +344,7 @@ const InvoiceView = () => {
             </p>
           </div>
 
-          <div className="w-56 text-right font-bold space-y-3 text-[14px] pt-4 pr-2">
+          <div className="w-56 text-right font-bold space-y-4 text-[14px] pt-4 pr-2">
             <div className="flex justify-between items-end">
               <span className="shrink-0 tracking-wide">Invoice No:</span>
               <span className="font-mono border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 text-right ml-2 pb-0.5 text-[15px]">
@@ -386,12 +385,13 @@ const InvoiceView = () => {
         {/* TABLE SECTION */}
         <div className="flex-1 flex flex-col">
           <table className="w-full border-collapse text-[13px] h-full table-fixed font-bold tracking-wide">
+            {/* UPDATED COLGROUP: Decreased Description width (41%), Increased Rate/Price width (16%) to fix CGST overlap */}
             <colgroup>
               <col className="w-[5%]" />
-              <col className="w-[45%]" />
+              <col className="w-[41%]" />
               <col className="w-[10%]" />
               <col className="w-[8%]" />
-              <col className="w-[12%]" />
+              <col className="w-[16%]" />
               <col className="w-[15%]" />
               <col className="w-[5%]" />
             </colgroup>
@@ -452,25 +452,25 @@ const InvoiceView = () => {
                 const amt = formatRsP(item.total);
                 return (
                   <tr key={i}>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-center font-mono">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-2 text-center font-mono">
                       {i + 1}
                     </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 pl-4 uppercase">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-4 uppercase">
                       {item.name}
                     </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-center font-mono">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-2 text-center font-mono">
                       {item.hsn || "-"}
                     </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-center font-mono">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-2 text-center font-mono">
                       {item.quantity}
                     </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-right pr-3 font-mono">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-3 text-right font-mono">
                       {Number(item.price).toFixed(2)}
                     </td>
-                    <td className="border-r-[1.5px] border-[#1e3a8a] p-2 pt-4 text-right pr-3 font-mono">
+                    <td className="border-r-[1.5px] border-[#1e3a8a] py-4 px-3 text-right font-mono">
                       {amt.rs}
                     </td>
-                    <td className="p-2 pt-4 text-center font-mono">{amt.p}</td>
+                    <td className="py-4 px-2 text-center font-mono">{amt.p}</td>
                   </tr>
                 );
               })}
@@ -497,21 +497,20 @@ const InvoiceView = () => {
                   className="border-r-[1.5px] border-[#1e3a8a] p-3 pl-4 align-top bg-white/50"
                 >
                   <div className="flex items-start text-[14px]">
-                    <span className="shrink-0 mr-2">(Rupees</span>
-                    <span className="uppercase border-b-[1.5px] border-[#1e3a8a] border-dotted leading-loose flex-1 px-2 pb-1">
-                      {toWords(Math.floor(invoice.grandTotal))}
+                    <span className="shrink-0 mr-2 pt-[3px]">(Rupees</span>
+                    <span className="uppercase border-b-[1.5px] border-[#1e3a8a] border-dotted leading-loose flex-1 px-2 pb-1 text-justify break-words">
+                      {toWords(Math.floor(invoice.grandTotal))} only)
                     </span>
-                    <span className="shrink-0 ml-1">only)</span>
                   </div>
                 </td>
-                {/* Centered Total Labels */}
-                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
+                {/* Replaced p-2 with py-2.5 px-2 to prevent vertical text overlap on lines */}
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                   G. TOTAL
                 </td>
-                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 font-mono">
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3 text-right font-mono">
                   {formatRsP(invoice.subTotal).rs}
                 </td>
-                <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center font-mono">
+                <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center font-mono">
                   {formatRsP(invoice.subTotal).p}
                 </td>
               </tr>
@@ -519,26 +518,24 @@ const InvoiceView = () => {
               {invoice.gstRate > 0 ? (
                 <>
                   <tr>
-                    {/* Centered & No-Wrap CGST Label */}
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                       CGST @ {invoice.gstRate / 2}%
                     </td>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 font-mono">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3 text-right font-mono">
                       {formatRsP(invoice.gstAmount / 2).rs}
                     </td>
-                    <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center font-mono">
+                    <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center font-mono">
                       {formatRsP(invoice.gstAmount / 2).p}
                     </td>
                   </tr>
                   <tr>
-                    {/* Centered & No-Wrap SGST Label */}
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                       SGST @ {invoice.gstRate / 2}%
                     </td>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 font-mono">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3 text-right font-mono">
                       {formatRsP(invoice.gstAmount / 2).rs}
                     </td>
-                    <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center font-mono">
+                    <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center font-mono">
                       {formatRsP(invoice.gstAmount / 2).p}
                     </td>
                   </tr>
@@ -546,42 +543,42 @@ const InvoiceView = () => {
               ) : (
                 <>
                   <tr>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                       CGST @
                     </td>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3"></td>
-                    <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center"></td>
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3 text-right"></td>
+                    <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center"></td>
                   </tr>
                   <tr>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                       SGST @
                     </td>
-                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3"></td>
-                    <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center"></td>
+                    <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3 text-right"></td>
+                    <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center"></td>
                   </tr>
                 </>
               )}
 
               <tr className="bg-[#1e3a8a]/[0.06]">
-                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-center align-middle whitespace-nowrap">
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                   N. TOTAL
                 </td>
-                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] p-2 text-right pr-3 text-[15px] font-black font-mono">
+                <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-3 text-right text-[15px] font-black font-mono">
                   {formatRsP(invoice.grandTotal).rs}
                 </td>
-                <td className="border-b-[1.5px] border-[#1e3a8a] p-2 text-center font-black font-mono">
+                <td className="border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center font-black font-mono">
                   {formatRsP(invoice.grandTotal).p}
                 </td>
               </tr>
 
               <tr>
-                <td className="border-r-[1.5px] border-[#1e3a8a] p-1.5 text-center align-middle whitespace-nowrap">
+                <td className="border-r-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                   R/O
                 </td>
-                <td className="border-r-[1.5px] border-[#1e3a8a] p-1.5 text-right pr-3 font-mono">
+                <td className="border-r-[1.5px] border-[#1e3a8a] py-2.5 px-3 text-right font-mono">
                   00
                 </td>
-                <td className="p-1.5 text-center font-mono">00</td>
+                <td className="py-2.5 px-2 text-center font-mono">00</td>
               </tr>
             </tfoot>
           </table>
@@ -600,15 +597,13 @@ const InvoiceView = () => {
               Printed at Enterprise Admin System
             </p>
           </div>
-          <div className="text-center w-56 flex flex-col items-center pt-10">
+          <div className="text-right flex flex-col items-end pt-10">
             <p className="italic font-bold">Signature of the</p>
             <p className="italic font-bold">Authorised Person</p>
+            <p className="font-black uppercase text-[13px] tracking-widest mt-1">
+              FOR M/S MAA FLYASH BRICKS
+            </p>
           </div>
-        </div>
-
-        {/* Bottom Right Tag */}
-        <div className="absolute bottom-2 right-4 font-black uppercase text-[13px] tracking-widest">
-          For M/S MAA FLYASH BRICKS
         </div>
       </div>
     </div>
