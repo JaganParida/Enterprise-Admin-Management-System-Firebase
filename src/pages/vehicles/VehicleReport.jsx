@@ -29,6 +29,7 @@ import {
   Map,
   Receipt,
   Banknote,
+  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -277,8 +278,10 @@ const VehicleReport = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
+      const adminEmail = admin?.data?.email || admin?.email;
       await vehicleService.deleteAllLogs({
         password: deletePassword,
+        email: adminEmail,
         type: activeTab,
       });
       toast.success(
@@ -891,7 +894,7 @@ const VehicleReport = () => {
                             <Trash2 size={16} />
                           </button>
                           {warningTooltip === exp._id && (
-                            <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#050a08] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg w-max shadow-xl">
+                            <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#050a08] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
                               🚫 Access Denied
                             </div>
                           )}
@@ -996,6 +999,8 @@ const VehicleReport = () => {
               >
                 Cancel
               </button>
+
+              {/* Changed Loader to RefreshCcw to avoid UI height explosion bug */}
               <button
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
@@ -1005,84 +1010,11 @@ const VehicleReport = () => {
                     : "bg-[#7f1d1d] text-white hover:bg-red-700 shadow-lg"
                 }`}
               >
-                {wiping ? <Loader className="w-4 h-4" /> : "Confirm Wipe"}
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}
+                {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🚀 HISTORY MODAL REFINED UI */}
-      {historyModal.isOpen && historyModal.data && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div
-            className="absolute inset-0 cursor-pointer"
-            onClick={() => setHistoryModal({ isOpen: false, data: null })}
-          />
-          <div className="bg-[#030816] border border-emerald-900/30 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-emerald-900/20 bg-[#060d1f]/50 shrink-0">
-              <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className="text-emerald-500" />
-                Log History:{" "}
-                <span className="text-emerald-400 font-normal">
-                  {historyModal.itemName}
-                </span>
-              </div>
-              <button
-                onClick={() => setHistoryModal({ isOpen: false, data: null })}
-                className="text-blue-100/40 hover:text-white transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
-              {historyModal.data.map((log, index) => (
-                <div
-                  key={index}
-                  className={`bg-[#060d1f] border ${index === 0 ? "border-emerald-500/30" : "border-blue-900/20"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
-                >
-                  {index === 0 && (
-                    <div className="absolute left-0 top-0 w-1 h-full bg-emerald-500"></div>
-                  )}
-
-                  <div className="flex items-center gap-4 pl-1">
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-blue-900/10 text-blue-100/40"}`}
-                    >
-                      {(log.role || "A")[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-blue-100/50"}`}
-                      >
-                        {log.role || "ADMIN"}
-                      </h4>
-                      <p className="text-blue-100/40 text-[10px] mt-0.5 font-mono">
-                        {log.by || "admin@system.com"}
-                      </p>
-                      <p
-                        className={`text-[10px] font-mono mt-1 ${index === 0 ? "text-emerald-400" : "text-blue-100/30"}`}
-                      >
-                        {new Date(log.at).toLocaleString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                  </div>
-
-                  {index === 0 && (
-                    <div className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
-                      LATEST
-                    </div>
-                  )}
-                </div>
-              ))}
             </div>
           </div>
         </div>
