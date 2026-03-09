@@ -10,6 +10,7 @@ import {
   orderBy,
 } from "firebase/firestore";
 import { db } from "../config/firebase";
+import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
 
 const PROD_COLLECTION = "production";
 const LABOUR_COLLECTION = "labour_payouts";
@@ -84,7 +85,47 @@ const productionService = {
   },
 
   deleteProduction: async (id) => await deleteDoc(doc(db, PROD_COLLECTION, id)),
-  deleteAllProduction: async () => {},
+
+  // 🛑 SECURE: Wipe Entire Production & Payouts Database Method Added
+  deleteAllProduction: async ({ password, email }) => {
+    if (!password) {
+      throw new Error("Password is required to wipe the database.");
+    }
+    if (!email) {
+      throw new Error("Authentication Error: Unable to verify admin identity.");
+    }
+
+    try {
+      const auth = getAuth();
+      // Securely verifies password against current admin's email using Firebase Auth
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      throw new Error("Access Denied: Incorrect Admin Password.");
+    }
+
+    try {
+      // 1. Delete all Production Logs
+      const prodSnap = await getDocs(collection(db, PROD_COLLECTION));
+      const prodPromises = prodSnap.docs.map((document) =>
+        deleteDoc(doc(db, PROD_COLLECTION, document.id)),
+      );
+
+      // 2. Delete all Labour Payout Logs
+      const labSnap = await getDocs(collection(db, LABOUR_COLLECTION));
+      const labPromises = labSnap.docs.map((document) =>
+        deleteDoc(doc(db, LABOUR_COLLECTION, document.id)),
+      );
+
+      // Wait for both collections to be wiped
+      await Promise.all([...prodPromises, ...labPromises]);
+      return {
+        message: "All production and payout records deleted successfully",
+      };
+    } catch (error) {
+      console.error("Wipe Database Error:", error);
+      throw new Error("Failed to clear database. Admin rights required.");
+    }
+  },
 
   // --- LABOUR PAYOUTS ---
   addLabourPayout: async (data, user) => {
