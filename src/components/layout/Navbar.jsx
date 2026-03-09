@@ -40,9 +40,9 @@ const Navbar = ({ toggleMobileSidebar }) => {
 
   return (
     <header
-      className={`h-20 ${theme.bg} backdrop-blur-md border-b ${theme.border} flex items-center justify-between px-6 md:px-8 sticky top-0 z-40`}
+      className={`h-20 ${theme.bg} backdrop-blur-md border-b ${theme.border} flex items-center justify-between px-4 md:px-8 sticky top-0 z-40`}
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 md:gap-4">
         <div className="md:hidden">
           {isHomePage ? (
             <button
@@ -62,7 +62,7 @@ const Navbar = ({ toggleMobileSidebar }) => {
         </div>
 
         <div className="flex flex-col justify-center">
-          <h2 className="text-white font-bold text-xl tracking-tight hidden sm:block">
+          <h2 className="text-white font-bold text-lg md:text-xl tracking-tight hidden sm:block">
             {isHomePage
               ? "Enterprise OS"
               : isTransport
@@ -79,7 +79,7 @@ const Navbar = ({ toggleMobileSidebar }) => {
               ></span>
             </span>
             <p
-              className={`text-[10px] ${theme.textSubtle} font-mono uppercase tracking-widest`}
+              className={`text-[10px] ${theme.textSubtle} font-mono uppercase tracking-widest hidden sm:block`}
             >
               System Active
             </p>
@@ -90,10 +90,10 @@ const Navbar = ({ toggleMobileSidebar }) => {
       <div className="flex items-center gap-4">
         {admin && (
           <div
-            className={`flex items-center gap-4 pl-6 border-l ${theme.border}`}
+            className={`flex items-center gap-3 md:gap-4 pl-4 md:pl-6 border-l ${theme.border}`}
           >
-            <div className="text-right hidden sm:block">
-              {/* Only show name if it exists */}
+            {/* 🚀 REMOVED: hidden sm:block SO ROLE SHOWS ON MOBILE */}
+            <div className="text-right">
               {userName && (
                 <p className="text-sm font-bold text-white leading-tight mb-0.5">
                   {userName}
@@ -110,9 +110,9 @@ const Navbar = ({ toggleMobileSidebar }) => {
                 className={`absolute -inset-0.5 bg-gradient-to-br ${theme.gradientFrom} ${theme.gradientTo} rounded-full blur-[2px] opacity-75`}
               ></div>
               <div
-                className={`relative w-10 h-10 rounded-full bg-black flex items-center justify-center border ${theme.avatarBorder}`}
+                className={`relative w-9 h-9 md:w-10 md:h-10 rounded-full bg-black flex items-center justify-center border ${theme.avatarBorder}`}
               >
-                <UserCircle size={28} className={theme.textHighlight} />
+                <UserCircle size={24} className={theme.textHighlight} />
               </div>
             </div>
           </div>
