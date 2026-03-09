@@ -10,8 +10,33 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
 
 const stockCollection = collection(db, "stocks");
+
+const getUpdatedHistory = async (id, user) => {
+  const docRef = doc(db, "stocks", id);
+  const snapshot = await getDoc(docRef);
+  let currentHistory = [];
+
+  if (snapshot.exists() && snapshot.data().editHistory) {
+    currentHistory = snapshot.data().editHistory;
+  }
+
+  const currentEdit = {
+    by: user?.email || "Unknown",
+    role: user?.role || "Admin",
+    at: new Date().toISOString(),
+  };
+
+  currentHistory.push(currentEdit);
+
+  if (currentHistory.length > 10) {
+    currentHistory = currentHistory.slice(currentHistory.length - 10);
+  }
+
+  return { currentEdit, currentHistory, docRef };
+};
 
 const stockService = {
   getAllStocks: async () => {
@@ -91,6 +116,36 @@ const stockService = {
     const docRef = doc(db, "stocks", id);
     await deleteDoc(docRef);
     return { message: "Item deleted successfully" };
+  },
+
+  // 🛑 SECURE: Wipe Entire Database Method Added - Strictly Verifies Admin Password
+  deleteAllStocks: async ({ password, email }) => {
+    if (!password) {
+      throw new Error("Password is required to wipe the database.");
+    }
+    if (!email) {
+      throw new Error("Authentication Error: Unable to verify admin identity.");
+    }
+
+    try {
+      const auth = getAuth();
+      // Securely verifies password against current admin's email using Firebase Auth
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      throw new Error("Access Denied: Incorrect Admin Password.");
+    }
+
+    try {
+      const snapshot = await getDocs(stockCollection);
+      const deletePromises = snapshot.docs.map((document) =>
+        deleteDoc(doc(db, "stocks", document.id)),
+      );
+      await Promise.all(deletePromises);
+      return { message: "All stocks deleted successfully" };
+    } catch (error) {
+      console.error("Wipe Database Error:", error);
+      throw new Error("Failed to clear database. Admin rights required.");
+    }
   },
 };
 
