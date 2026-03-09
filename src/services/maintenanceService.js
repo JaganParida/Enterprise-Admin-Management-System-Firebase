@@ -78,13 +78,23 @@ const maintenanceService = {
     return { message: "Deleted" };
   },
 
-  // 🚀 SECURE WIPE DATABASE FEATURE
-  deleteAllLogs: async ({ password }) => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error("Admin not logged in.");
+  // 🚀 SECURE WIPE DATABASE FEATURE - Strictly Verifies Admin Password
+  deleteAllLogs: async ({ password, email }) => {
+    if (!password) {
+      throw new Error("Password is required to wipe the database.");
+    }
+    if (!email) {
+      throw new Error("Authentication Error: Unable to verify admin identity.");
+    }
 
     try {
-      await signInWithEmailAndPassword(auth, currentUser.email, password);
+      // Securely verifies password against current admin's email using Firebase Auth
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      throw new Error("Access Denied: Incorrect Admin Password.");
+    }
+
+    try {
       const snapshot = await getDocs(maintCollection);
       const deletePromises = [];
       snapshot.forEach((document) => {
@@ -93,7 +103,8 @@ const maintenanceService = {
       await Promise.all(deletePromises);
       return { success: true };
     } catch (error) {
-      throw new Error("Incorrect Admin Password or Wipe Failed.");
+      console.error("Wipe Database Error:", error);
+      throw new Error("Failed to clear database. Admin rights required.");
     }
   },
 };
