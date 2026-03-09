@@ -205,7 +205,7 @@ const EditInvoice = () => {
       gstAmount: totals.gstAmount,
       grandTotal: totals.grandTotal,
       status,
-      invoiceNumber: `INV-${invoiceNumber}`, // Auto append INV- back to the number on save
+      invoiceNumber, // Just saving the exact number entered
     };
 
     try {
@@ -274,31 +274,23 @@ const EditInvoice = () => {
             Purchaser Details
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Auto Fixed INV- Prefix Input */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-emerald-100/60 uppercase tracking-wider pl-1">
-                Invoice Number
-              </label>
-              <div className="flex items-stretch shadow-sm rounded-xl">
-                <span className="bg-emerald-900/20 border border-emerald-900/30 border-r-0 rounded-l-xl px-4 flex items-center text-emerald-500 font-black text-sm uppercase tracking-wider select-none">
-                  INV-
-                </span>
-                <input
-                  type="text"
-                  placeholder="e.g. 1003"
-                  value={invoiceNumber}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, ""); // Allow only numbers
-                    setInvoiceNumber(val);
-                    if (errors.invoiceNumber) {
-                      const newErrors = { ...errors };
-                      delete newErrors.invoiceNumber;
-                      setErrors(newErrors);
-                    }
-                  }}
-                  className={`w-full bg-[#020403] border ${errors.invoiceNumber ? "border-rose-500/50" : "border-emerald-900/30"} rounded-r-xl px-3 py-3 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm transition-all font-mono`}
-                />
-              </div>
+            {/* Pure Number Input for Invoice */}
+            <div className="space-y-1">
+              <Input
+                label="Invoice Number"
+                placeholder="e.g. 1003"
+                value={invoiceNumber}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, ""); // Allow only numbers
+                  setInvoiceNumber(val);
+                  if (errors.invoiceNumber) {
+                    const newErrors = { ...errors };
+                    delete newErrors.invoiceNumber;
+                    setErrors(newErrors);
+                  }
+                }}
+                className={errors.invoiceNumber ? "border-rose-500/50" : ""}
+              />
               {errors.invoiceNumber && (
                 <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1">
                   <AlertCircle size={10} /> {errors.invoiceNumber}
@@ -385,22 +377,22 @@ const EditInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Bricks (10 inch)"
+                                value=" FLYASH Bricks (10 inch)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                Bricks (10 inch)
+                                Bricks 10 inch
                               </option>
                               <option
-                                value="Bricks (9 inch)"
+                                value="FLYASH Bricks (9 inch)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                Bricks (9 inch)
+                                Bricks 9 inch
                               </option>
                               <option
-                                value="Bricks (8 inch)"
+                                value="FLYASH Bricks 8 inch"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                Bricks (8 inch)
+                                Bricks 8 inch
                               </option>
                             </optgroup>
                             <optgroup
@@ -408,37 +400,37 @@ const EditInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Zig Zag (60mm)"
+                                value="Paver Blocks Zig Zag (60mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Zig Zag (60mm)
                               </option>
                               <option
-                                value="Zig Zag (80mm)"
+                                value="Paver Blocks Zig Zag (80mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Zig Zag (80mm)
                               </option>
                               <option
-                                value="6-12 Brick (60mm)"
+                                value="Paver Blocks 6/12 Brick (60mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                6-12 Brick (60mm)
+                                6/12 Brick (60mm)
                               </option>
                               <option
-                                value="6-12 Brick (80mm)"
+                                value="Paver Blocks 6/12 Brick (80mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
-                                6-12 Brick (80mm)
+                                6/12 Brick (80mm)
                               </option>
                               <option
-                                value="6/6 Brick (60mm)"
+                                value="Paver Blocks 6/6 Brick (60mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6/6 Brick 60mm
                               </option>
                               <option
-                                value="6/6 Brick (80mm)"
+                                value="Paver Blocks 6/6 Brick (80mm)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 6/6 Brick (80mm)
@@ -449,25 +441,25 @@ const EditInvoice = () => {
                               className="bg-[#020403] text-emerald-500 font-bold"
                             >
                               <option
-                                value="Hexagon"
+                                value="Chequered Tiles Hexagon"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Hexagon
                               </option>
                               <option
-                                value="Brick Design (9inch)"
+                                value="Chequered Tiles Brick Design (9inch)"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Brick Design (9inch)
                               </option>
                               <option
-                                value="Curve Stone"
+                                value="Chequered Tiles Curve Stone"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Curve Stone
                               </option>
                               <option
-                                value="Cover Block"
+                                value="Chequered Tiles Cover Block"
                                 className="bg-[#050a08] text-white font-normal"
                               >
                                 Cover Block

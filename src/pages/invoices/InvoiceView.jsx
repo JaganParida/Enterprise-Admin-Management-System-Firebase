@@ -347,8 +347,9 @@ const InvoiceView = () => {
           <div className="w-56 text-right font-bold space-y-4 text-[14px] pt-4 pr-2">
             <div className="flex justify-between items-end">
               <span className="shrink-0 tracking-wide">Invoice No:</span>
+              {/* Only rendering the number directly by stripping out the 'INV-' string */}
               <span className="font-mono border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 text-right ml-2 pb-0.5 text-[15px]">
-                {invoice.invoiceNumber}
+                {invoice.invoiceNumber.replace(/^INV-/, "")}
               </span>
             </div>
             <div className="flex justify-between items-end">
@@ -360,23 +361,23 @@ const InvoiceView = () => {
           </div>
         </div>
 
-        {/* CLIENT DETAILS SECTION */}
-        <div className="px-4 py-3 text-[13px] font-bold space-y-2.5 border-b-[2px] border-[#1e3a8a] leading-relaxed tracking-wide">
+        {/* CLIENT DETAILS SECTION (Updated Text Sizes) */}
+        <div className="px-4 py-3 text-[14px] font-bold space-y-3 border-b-[2px] border-[#1e3a8a] leading-relaxed tracking-wide">
           <div className="flex items-end">
-            <span className="w-40 shrink-0">Name of the Purchaser:</span>
-            <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 text-[#1e3a8a]">
+            <span className="w-48 shrink-0">Name of the Purchaser:</span>
+            <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 text-[#1e3a8a] text-[16px] font-black">
               {invoice.client.name}
             </span>
           </div>
           <div className="flex items-end">
-            <span className="w-16 shrink-0">Address:</span>
-            <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 px-2 pb-0.5">
+            <span className="w-20 shrink-0">Address:</span>
+            <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 px-2 pb-0.5 text-[15px]">
               {invoice.client.address || "-"}
             </span>
           </div>
           <div className="flex items-end">
-            <span className="w-14 shrink-0">GSTIN:</span>
-            <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 font-mono">
+            <span className="w-16 shrink-0">GSTIN:</span>
+            <span className="border-b-[1.5px] border-[#1e3a8a] border-dotted flex-1 uppercase px-2 pb-0.5 font-mono text-[16px]">
               {invoice.client.gst || "-"}
             </span>
           </div>
@@ -385,13 +386,12 @@ const InvoiceView = () => {
         {/* TABLE SECTION */}
         <div className="flex-1 flex flex-col">
           <table className="w-full border-collapse text-[13px] h-full table-fixed font-bold tracking-wide">
-            {/* UPDATED COLGROUP: Decreased Description width (41%), Increased Rate/Price width (16%) to fix CGST overlap */}
             <colgroup>
               <col className="w-[5%]" />
-              <col className="w-[41%]" />
+              <col className="w-[39%]" />
               <col className="w-[10%]" />
               <col className="w-[8%]" />
-              <col className="w-[16%]" />
+              <col className="w-[18%]" />
               <col className="w-[15%]" />
               <col className="w-[5%]" />
             </colgroup>
@@ -503,7 +503,6 @@ const InvoiceView = () => {
                     </span>
                   </div>
                 </td>
-                {/* Replaced p-2 with py-2.5 px-2 to prevent vertical text overlap on lines */}
                 <td className="border-r-[1.5px] border-b-[1.5px] border-[#1e3a8a] py-2.5 px-2 text-center align-middle whitespace-nowrap">
                   G. TOTAL
                 </td>
