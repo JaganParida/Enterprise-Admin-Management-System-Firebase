@@ -7,9 +7,8 @@ const dashboardService = {
       const stockSnap = await getDocs(collection(db, "stocks"));
       const empSnap = await getDocs(collection(db, "employees"));
       const invSnap = await getDocs(collection(db, "invoices"));
-      const electricSnap = await getDocs(collection(db, "electricity_bills"));
 
-      // Fetch ample records to safely cover the last 7 days
+      // Fetch ample records to safely cover the last 7 days and activities
       const prodQuery = query(
         collection(db, "production"),
         orderBy("date", "desc"),
@@ -24,6 +23,8 @@ const dashboardService = {
       );
       const salesSnap = await getDocs(salesQuery);
 
+      let activities = [];
+
       // 1. Calculate Stock Status
       let stockValue = 0,
         lowStock = 0;
@@ -33,37 +34,33 @@ const dashboardService = {
         if (Number(d.quantity) < 10) lowStock++;
       });
 
-      // 2. Calculate Invoice Revenue
+      // 2. Calculate Invoice Revenue & Collect Invoice Activities
       let revenue = 0,
         pendingInvoices = 0;
       invSnap.forEach((doc) => {
         const d = doc.data();
         if (d.status === "Paid") revenue += Number(d.grandTotal) || 0;
         if (d.status === "Pending") pendingInvoices++;
+        activities.push({
+          ...d,
+          activityType: "Invoice",
+          id: doc.id,
+          date: d.invoiceDate || d.date,
+        });
       });
 
-      // 3. 🚀 ELECTRICITY LOGIC: Overdue decreases when Paid
-      let totalElectricPaid = 0,
-        totalElectricOverdue = 0;
-      electricSnap.forEach((doc) => {
-        const d = doc.data();
-        if (d.status === "Paid") totalElectricPaid += Number(d.amount) || 0;
-        // Map both Pending and Overdue into the Overdue chart calculation
-        if (d.status === "Pending" || d.status === "Overdue")
-          totalElectricOverdue += Number(d.amount) || 0;
-      });
-
-      // 🚀 DATE LOGIC FOR "LAST 7 DAYS" (Not just 7 records)
+      // 🚀 DATE LOGIC FOR "LAST 7 DAYS"
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setHours(0, 0, 0, 0);
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-      // 4. 🚀 Format Sales Data for Line Chart (Only within last 7 Days)
+      // 3. 🚀 Format Sales Data for Line Chart & Collect Sales Activities
       let totalSalesRevenue = 0;
       const salesData = [];
       salesSnap.forEach((doc) => {
         const d = doc.data();
-        totalSalesRevenue += Number(d.amount) || 0; // Total of fetched records
+        totalSalesRevenue += Number(d.amount) || 0;
+        activities.push({ ...d, activityType: "Sale", id: doc.id });
 
         const saleDate = new Date(d.date);
         if (saleDate >= sevenDaysAgo) {
@@ -77,22 +74,36 @@ const dashboardService = {
           });
         }
       });
-      // Reverse to plot chronologically (Oldest to Newest left-to-right)
       const formattedSalesData = salesData.reverse();
 
-      // 5. 🚀 Format Production Data for Bar Chart (Only within last 7 Days)
-      const productionData = prodSnap.docs
-        .map((doc) => doc.data())
-        .filter((d) => new Date(d.date) >= sevenDaysAgo)
-        .map((d) => ({
-          date: new Date(d.date).toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-          }),
-          quantity: Number(d.quantity) || Number(d.output) || 0,
-          productName: d.productName || "Unknown Product",
-        }))
-        .reverse();
+      // 4. 🚀 Format Production Data for Bar Chart & Collect Production Activities
+      const productionData = [];
+      prodSnap.forEach((doc) => {
+        const d = doc.data();
+        activities.push({ ...d, activityType: "Production", id: doc.id });
+
+        const prodDate = new Date(d.date);
+        if (prodDate >= sevenDaysAgo) {
+          productionData.push({
+            date: prodDate.toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+            }),
+            quantity: Number(d.quantity) || Number(d.output) || 0,
+            productName: d.productName || "Unknown Product",
+          });
+        }
+      });
+      const formattedProductionData = productionData.reverse();
+
+      // 5. 🚀 Sort all activities by EXACT creation time or date (Newest first)
+      activities.sort((a, b) => {
+        const dateA = new Date(a.createdAt || a.date || 0);
+        const dateB = new Date(b.createdAt || b.date || 0);
+        return dateB - dateA;
+      });
+
+      const recentActivity = activities.slice(0, 10); // Take Top 10 Latest
 
       return {
         data: {
@@ -105,14 +116,10 @@ const dashboardService = {
             pendingInvoices: pendingInvoices,
           },
           charts: {
-            production: productionData,
+            production: formattedProductionData,
             sales: formattedSalesData,
-            electricity: [
-              { name: "Paid", value: totalElectricPaid },
-              { name: "Overdue", value: totalElectricOverdue },
-            ],
           },
-          recentActivity: [],
+          recentActivity,
         },
       };
     } catch (error) {
