@@ -15,11 +15,13 @@ import {
   Filter,
   Download,
   ShieldAlert,
+  Eye,
+  EyeOff,
+  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-import Input from "../../components/common/Input";
 
 const StockList = () => {
   const [stocks, setStocks] = useState([]);
@@ -36,6 +38,7 @@ const StockList = () => {
   // Delete All State
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [wiping, setWiping] = useState(false);
 
   const [warningTooltip, setWarningTooltip] = useState(null);
@@ -197,16 +200,21 @@ const StockList = () => {
 
     setWiping(true);
     try {
-      await stockService.deleteAllStocks({ password: deletePassword });
+      // Passes the current admin email securely for verification
+      const adminEmail = admin?.data?.email || admin?.email;
+      await stockService.deleteAllStocks({
+        password: deletePassword,
+        email: adminEmail,
+      });
       toast.success("All inventory records have been wiped.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
+      setShowPassword(false);
       refreshStocks();
     } catch (error) {
       console.error("Wipe Error:", error);
-      toast.error(
-        error.response?.data?.message || "Authentication failed. Wipe aborted.",
-      );
+      // Properly captures the 'Access Denied' error thrown from the service
+      toast.error(error.message || "Authentication failed. Wipe aborted.");
     } finally {
       setWiping(false);
     }
@@ -603,69 +611,85 @@ const StockList = () => {
 
       {/* 🚀 UPGRADED SECURE DELETE ALL MODAL */}
       {isDeleteAllOpen && !isManager && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#050a08] border border-red-900/50 rounded-2xl shadow-2xl shadow-red-900/20 w-full max-w-md p-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 blur-3xl rounded-full pointer-events-none"></div>
-
-            <div className="flex items-center gap-3 mb-6 text-red-500">
-              <div className="p-2 bg-red-500/10 rounded-lg border border-red-500/20">
-                <AlertOctagon size={24} />
-              </div>
-              <h3 className="text-xl font-bold">Wipe Inventory</h3>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
+          <div
+            className="absolute inset-0"
+            onClick={() => !wiping && setIsDeleteAllOpen(false)}
+          />
+          <div className="bg-[#050a08] border border-red-900/50 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
+            <div className="flex items-center gap-3 text-red-500 mb-6">
+              <AlertOctagon size={28} />
+              <h2 className="text-xl font-bold tracking-wide">
+                Wipe Inventory Database
+              </h2>
             </div>
 
-            <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl mb-6 flex flex-col gap-4 relative z-10">
+            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
-                  className="text-amber-500 shrink-0 mt-0.5"
                   size={20}
+                  className="text-yellow-500 shrink-0 mt-0.5"
                 />
                 <div>
-                  <h4 className="text-amber-400 text-sm font-bold">
+                  <h3 className="text-yellow-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
-                  </h4>
-                  <p className="text-amber-100/60 text-[11px] mt-1">
-                    Download a CSV backup of all current inventory records.
+                  </h3>
+                  <p className="text-yellow-100/60 text-xs mb-4 leading-relaxed">
+                    Before wiping the database, we highly recommend downloading
+                    a complete CSV backup of all your current inventory records.
                   </p>
+                  <button
+                    onClick={handleFullBackup}
+                    className="w-full sm:w-auto px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Download size={14} /> Download Full Database Backup
+                  </button>
                 </div>
               </div>
+            </div>
+
+            <p className="text-red-100/70 text-sm mb-4">
+              This action will{" "}
+              <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
+              inventory records. Please enter your Admin password to confirm.
+            </p>
+
+            <div className="relative mb-8">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="Enter your admin password..."
+                className="w-full bg-[#020403] border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
+              />
               <button
                 type="button"
-                onClick={handleFullBackup}
-                className="w-full flex items-center justify-center gap-2 bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30 text-xs font-bold py-2.5 rounded-lg transition-colors"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-red-100/30 hover:text-red-100/60 transition-colors"
               >
-                <Download size={14} /> Download Backup
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
 
-            <p className="text-sm text-emerald-100/60 mb-4">
-              Enter Admin password to confirm permanent deletion.
-            </p>
-
-            <Input
-              type="password"
-              placeholder="Admin password..."
-              value={deletePassword}
-              onChange={(e) => setDeletePassword(e.target.value)}
-              className="bg-[#020403] border-red-900/30 focus:border-red-500/50 relative z-10"
-            />
-
-            <div className="flex justify-end gap-3 mt-8 relative z-10">
-              <Button
-                type="button"
-                variant="secondary"
+            <div className="flex justify-end gap-3">
+              <button
                 onClick={() => {
                   setIsDeleteAllOpen(false);
                   setDeletePassword("");
                 }}
+                disabled={wiping}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-red-100/50 hover:text-red-100 hover:bg-red-900/20 transition-colors disabled:opacity-50"
               >
                 Cancel
-              </Button>
+              </button>
               <button
                 onClick={handleWipeAll}
-                disabled={!deletePassword || wiping}
-                className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold text-sm transition-colors"
+                disabled={wiping || !deletePassword}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
