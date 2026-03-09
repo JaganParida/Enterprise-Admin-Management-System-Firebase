@@ -12,6 +12,7 @@ import {
   Download,
   Calendar,
   ChevronRight,
+  Timer,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -19,7 +20,7 @@ import Loader from "../../components/common/Loader";
 // ✅ LAZY LOAD HEAVY CHART COMPONENTS
 const BarChart = lazy(() => import("../../components/charts/BarChart"));
 
-// ✅ SKELETON LOADER FOR CHARTS (Prevents layout shift/glitch)
+// ✅ SKELETON LOADER FOR CHARTS
 const ChartSkeleton = () => (
   <div className="w-full h-full bg-blue-900/10 animate-pulse rounded-xl"></div>
 );
@@ -43,11 +44,9 @@ const TransportationDashboard = () => {
   useEffect(() => {
     const loadDashboard = async () => {
       try {
-        // ✅ REMOVED ARTIFICIAL TIMEOUT DELAY FOR INSTANT LOADING
         const response = await transportDashboardService.getStats();
         setData(response.data);
       } catch (error) {
-        console.error("Dashboard Load Error:", error);
         toast.error("Failed to load transport metrics.");
       } finally {
         setLoading(false);
@@ -80,13 +79,17 @@ const TransportationDashboard = () => {
           let amount = "-";
 
           if (type === "Trip") {
-            details = `"${act.distance} KM • ${act.route}"`;
+            details = `"${act.loadingPoint} to ${act.unloadingSite}"`;
+            amount = act.totalAmount || "-";
           } else if (type === "Fuel") {
-            details = `"${act.liters} L at ${act.stationName || "Pump"}"`;
+            details = `"${act.liters} L"`;
             amount = act.totalCost;
           } else if (type === "Maintenance") {
             details = `"${act.serviceType}"`;
             amount = act.cost;
+          } else if (type === "JCB") {
+            details = `"${act.totalHours}h ${act.totalMinutes}m • ${act.location}"`;
+            amount = "-";
           }
 
           return `${dateStr},${type},${vehicle},${details},${amount}`;
@@ -110,7 +113,6 @@ const TransportationDashboard = () => {
 
       toast.success("Dashboard report exported successfully!");
     } catch (error) {
-      console.error("Export Error:", error);
       toast.error("Failed to export report.");
     }
   };
@@ -134,6 +136,44 @@ const TransportationDashboard = () => {
       ],
     };
   }, [data]);
+
+  // 🚀 ADDED CHART OPTIONS TO FORCE FILL CONTAINER & MATCH DARK THEME
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false, // This is crucial for filling the div
+    plugins: {
+      legend: {
+        position: "top",
+        labels: {
+          color: "rgba(255, 255, 255, 0.7)",
+          font: { family: "monospace", size: 11 },
+        },
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        grid: {
+          color: "rgba(59, 130, 246, 0.1)", // Subtle blue grid lines
+        },
+        ticks: {
+          color: "rgba(255, 255, 255, 0.5)",
+          font: { family: "monospace", size: 10 },
+        },
+        border: { display: false },
+      },
+      x: {
+        grid: {
+          display: false,
+        },
+        ticks: {
+          color: "rgba(255, 255, 255, 0.5)",
+          font: { family: "monospace", size: 11 },
+        },
+        border: { display: false },
+      },
+    },
+  };
 
   if (loading) return <Loader text="Initializing Fleet Command..." />;
 
@@ -174,8 +214,8 @@ const TransportationDashboard = () => {
                   className="fixed inset-0 z-10"
                   onClick={() => setShowQuickMenu(false)}
                 ></div>
-                <div className="absolute right-0 mt-3 w-64 bg-[#020617]/95 backdrop-blur-xl border border-blue-500/20 rounded-2xl shadow-2xl p-2 z-20 animate-in fade-in zoom-in-95 duration-200 origin-top-right ring-1 ring-black/50">
-                  <div className="px-3 py-2 border-b border-white/5 mb-1">
+                <div className="absolute right-0 mt-3 w-64 bg-[#030816]/95 backdrop-blur-xl border border-blue-900/40 rounded-2xl shadow-2xl p-2 z-20 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                  <div className="px-3 py-2 border-b border-blue-900/20 mb-1">
                     <p className="text-[10px] uppercase font-bold text-blue-100/30 tracking-[0.2em]">
                       Add Record
                     </p>
@@ -183,10 +223,10 @@ const TransportationDashboard = () => {
                   <div className="space-y-1 p-1">
                     <Link
                       to="/transportation/logs"
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-blue-100/70 hover:text-white hover:bg-blue-500/10 transition-all cursor-pointer text-sm font-medium group"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-blue-100/70 hover:text-white hover:bg-blue-900/20 transition-all cursor-pointer text-sm font-medium group"
                     >
                       <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20 transition-colors">
-                        <Gauge size={16} />
+                        <Truck size={16} />
                       </div>
                       <span className="flex-1">Log Trip</span>
                       <ChevronRight
@@ -196,7 +236,7 @@ const TransportationDashboard = () => {
                     </Link>
                     <Link
                       to="/transportation/fuel"
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-blue-100/70 hover:text-white hover:bg-cyan-500/10 transition-all cursor-pointer text-sm font-medium group"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-blue-100/70 hover:text-white hover:bg-cyan-900/20 transition-all cursor-pointer text-sm font-medium group"
                     >
                       <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 group-hover:bg-cyan-500/20 transition-colors">
                         <Droplet size={16} />
@@ -209,12 +249,25 @@ const TransportationDashboard = () => {
                     </Link>
                     <Link
                       to="/transportation/maintenance"
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-blue-100/70 hover:text-white hover:bg-amber-500/10 transition-all cursor-pointer text-sm font-medium group"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-blue-100/70 hover:text-white hover:bg-amber-900/20 transition-all cursor-pointer text-sm font-medium group"
                     >
                       <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20 transition-colors">
                         <Wrench size={16} />
                       </div>
                       <span className="flex-1">Log Maintenance</span>
+                      <ChevronRight
+                        size={14}
+                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all"
+                      />
+                    </Link>
+                    <Link
+                      to="/transportation/jcb"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-blue-100/70 hover:text-white hover:bg-amber-900/20 transition-all cursor-pointer text-sm font-medium group"
+                    >
+                      <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 group-hover:bg-amber-500/20 transition-colors">
+                        <Timer size={16} />
+                      </div>
+                      <span className="flex-1">Log JCB Work</span>
                       <ChevronRight
                         size={14}
                         className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all"
@@ -256,29 +309,34 @@ const TransportationDashboard = () => {
         />
       </div>
 
-      {/* --- ANALYTICS & ACTIVITY SECTION (FIXED HEIGHT SYNC) --- */}
+      {/* --- ANALYTICS & ACTIVITY SECTION --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:auto-rows-fr h-auto">
-        {/* Chart Panel */}
-        <div className="lg:col-span-2 p-6 rounded-3xl bg-[#020617]/40 backdrop-blur-md border border-blue-500/10 shadow-xl relative overflow-hidden flex flex-col h-full min-h-[400px]">
+        {/* 🚀 CHART PANEL FIX: Removed flex-center, added absolute inset wrapper */}
+        <div className="lg:col-span-2 p-6 rounded-3xl bg-[#030816] border border-blue-900/30 shadow-2xl relative overflow-hidden flex flex-col h-full min-h-[400px]">
           <div className="flex justify-between items-center mb-6 shrink-0">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <Activity size={18} className="text-blue-500" /> Expense Overview
             </h3>
           </div>
 
-          <div className="relative flex-1 min-h-0 w-full flex items-center justify-center">
-            {/* ✅ ADDED SUSPENSE FOR LAZY LOADING */}
-            <Suspense fallback={<ChartSkeleton />}>
-              <BarChart data={expenseChartData} />
-            </Suspense>
+          {/* Absolute Inset forces Chart.js to stretch completely to the edges of the parent container */}
+          <div className="relative flex-1 min-h-[300px] w-full">
+            <div className="absolute inset-0">
+              <Suspense fallback={<ChartSkeleton />}>
+                <BarChart data={expenseChartData} options={chartOptions} />
+              </Suspense>
+            </div>
           </div>
         </div>
 
         {/* Activity Feed */}
-        <div className="p-6 rounded-3xl bg-[#020617]/40 backdrop-blur-md border border-blue-500/10 shadow-xl flex flex-col w-full h-full min-h-[400px] overflow-hidden">
+        <div className="p-6 rounded-3xl bg-[#030816] border border-blue-900/30 shadow-2xl flex flex-col w-full h-full min-h-[400px] overflow-hidden">
           <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2 shrink-0">
             <Activity size={18} className="text-blue-500" /> Recent Fleet
             Activity
+            <span className="text-xs font-normal text-blue-100/40 ml-2">
+              (Top 10)
+            </span>
           </h3>
 
           <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
@@ -308,9 +366,9 @@ const StatCard = ({ title, value, icon: Icon, color }) => {
   const theme = themes[color] || themes.blue;
 
   return (
-    <div className="p-5 lg:p-6 bg-[#020617]/40 backdrop-blur-md border border-blue-500/10 rounded-2xl flex flex-col items-center text-center hover:bg-blue-600/5 transition-all group relative overflow-hidden">
+    <div className="p-5 lg:p-6 bg-[#030816] border border-blue-900/30 rounded-2xl flex flex-col items-center text-center hover:bg-blue-900/10 transition-all group relative overflow-hidden">
       <div
-        className={`absolute -right-5 -top-5 w-20 h-20 bg-blue-500/5 blur-2xl rounded-full group-hover:bg-blue-500/10 transition-all`}
+        className={`absolute -right-5 -top-5 w-20 h-20 bg-${color}-500/5 blur-2xl rounded-full group-hover:bg-${color}-500/10 transition-all`}
       />
       <div
         className={`p-3 rounded-xl mb-3 transition-transform group-hover:scale-105 border ${theme}`}
@@ -329,8 +387,8 @@ const ActivityItem = ({ data }) => {
   let Icon = Truck;
   let colorTheme = "text-indigo-400 bg-indigo-500/10 border-indigo-500/20";
   let title = `Trip: ${data.vehicleNo}`;
-  let desc = `${data.distance} KM • ${data.route}`;
-  let amount = null;
+  let desc = `${data.loadingPoint || ""} to ${data.unloadingSite || ""}`;
+  let amount = data.totalAmount ? `₹${data.totalAmount}` : null;
 
   if (data.activityType === "Fuel") {
     Icon = Droplet;
@@ -344,10 +402,16 @@ const ActivityItem = ({ data }) => {
     title = `Repair: ${data.vehicleNo}`;
     desc = data.serviceType;
     amount = `₹${data.cost}`;
+  } else if (data.activityType === "JCB") {
+    Icon = Timer;
+    colorTheme = "text-amber-500 bg-amber-500/10 border-amber-500/30";
+    title = `JCB: ${data.vehicleNo}`;
+    desc = `${data.totalHours}h ${data.totalMinutes}m • ${data.location}`;
+    amount = null;
   }
 
   return (
-    <div className="flex items-start gap-4 p-3 rounded-2xl hover:bg-blue-500/5 transition-colors border border-transparent hover:border-blue-500/10">
+    <div className="flex items-start gap-4 p-3 rounded-2xl hover:bg-blue-900/20 transition-colors border border-transparent hover:border-blue-900/30">
       <div className={`p-2 rounded-xl border shrink-0 ${colorTheme}`}>
         <Icon size={16} />
       </div>
@@ -355,7 +419,7 @@ const ActivityItem = ({ data }) => {
         <div className="flex justify-between items-start">
           <p className="text-sm font-bold text-white truncate">{title}</p>
           {amount && (
-            <p className="text-xs font-bold text-white font-mono ml-2">
+            <p className="text-xs font-bold text-emerald-400 font-mono ml-2">
               {amount}
             </p>
           )}
@@ -363,7 +427,7 @@ const ActivityItem = ({ data }) => {
         <p className="text-xs text-blue-200/50 truncate mt-0.5">{desc}</p>
         <p className="text-[10px] text-blue-200/30 mt-1 font-mono">
           <Calendar size={10} className="inline mr-1" />
-          {new Date(data.date).toLocaleDateString()}
+          {new Date(data.date).toLocaleDateString("en-GB")}
         </p>
       </div>
     </div>
