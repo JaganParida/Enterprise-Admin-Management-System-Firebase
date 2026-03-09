@@ -49,7 +49,8 @@ const StockList = () => {
   const { admin } = useAuth();
 
   // Role Detection
-  const isManager = admin?.data?.role === "manager";
+  const isManager =
+    admin?.data?.role === "manager" || admin?.role === "manager";
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -64,7 +65,7 @@ const StockList = () => {
       }
     };
     fetchInitialData();
-  }, []);
+  }, [toast]);
 
   const refreshStocks = async () => {
     try {
@@ -98,7 +99,7 @@ const StockList = () => {
     (f) => f !== "All",
   ).length;
 
-  // 🚀 STANDARD EXPORT (Exports only filtered items on the screen)
+  // 🚀 STANDARD EXPORT
   const handleExport = () => {
     try {
       if (filteredStocks.length === 0) return toast.info("No items to export");
@@ -133,7 +134,7 @@ const StockList = () => {
     }
   };
 
-  // 🚀 FULL BACKUP EXPORT (Explicitly for the Wipe Data Modal)
+  // 🚀 FULL BACKUP EXPORT
   const handleFullBackup = () => {
     try {
       if (stocks.length === 0) return toast.info("Database is already empty.");
@@ -296,7 +297,6 @@ const StockList = () => {
       </div>
 
       <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 overflow-visible relative">
-        {/* Table & Filtering structure remains exactly the same as previously fixed */}
         {/* Top Search Bar */}
         <div className="p-5 border-b border-emerald-900/20 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#020403]/50">
           <h2 className="text-lg font-bold text-white">All Items</h2>
@@ -525,7 +525,83 @@ const StockList = () => {
         </div>
       </div>
 
-      {/* 🚀 UPGRADED SECURE DELETE ALL MODAL WITH DATA GUARD */}
+      {/* 🚀 HISTORY MODAL (FIXED) */}
+      {historyModal.isOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div
+            className="absolute inset-0 cursor-pointer"
+            onClick={() =>
+              setHistoryModal({ isOpen: false, data: [], itemName: "" })
+            }
+          />
+          <div className="bg-[#050a08] border border-emerald-900/30 rounded-2xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-emerald-900/20 bg-[#020403]/50 shrink-0">
+              <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
+                <History size={16} className="text-emerald-500" />
+                Edit History:{" "}
+                <span className="text-emerald-400 font-normal">
+                  {historyModal.itemName}
+                </span>
+              </div>
+              <button
+                onClick={() =>
+                  setHistoryModal({ isOpen: false, data: [], itemName: "" })
+                }
+                className="text-emerald-100/40 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
+              {historyModal.data.map((log, index) => (
+                <div
+                  key={index}
+                  className={`bg-[#020403] border ${index === 0 ? "border-emerald-500/30" : "border-emerald-900/10"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                >
+                  {index === 0 && (
+                    <div className="absolute left-0 top-0 w-1 h-full bg-emerald-500"></div>
+                  )}
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-900/10 text-emerald-100/30"}`}
+                    >
+                      {(log.role || "A")[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <h4
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-emerald-100/50"}`}
+                      >
+                        {log.role || "ADMIN"}
+                      </h4>
+                      <p className="text-emerald-100/20 text-[10px] font-mono mt-0.5">
+                        {log.by || "system@enterprise.com"}
+                      </p>
+                      <p
+                        className={`text-[10px] font-mono mt-1 ${index === 0 ? "text-emerald-400" : "text-emerald-100/30"}`}
+                      >
+                        {new Date(log.at).toLocaleString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                  {index === 0 && (
+                    <div className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
+                      LATEST
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚀 UPGRADED SECURE DELETE ALL MODAL */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#050a08] border border-red-900/50 rounded-2xl shadow-2xl shadow-red-900/20 w-full max-w-md p-6 relative overflow-hidden">
@@ -538,7 +614,6 @@ const StockList = () => {
               <h3 className="text-xl font-bold">Wipe Inventory</h3>
             </div>
 
-            {/* 🛡️ DATA BACKUP GUIDE BOX */}
             <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl mb-6 flex flex-col gap-4 relative z-10">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -549,9 +624,8 @@ const StockList = () => {
                   <h4 className="text-amber-400 text-sm font-bold">
                     Recommended: Safe Backup
                   </h4>
-                  <p className="text-amber-100/60 text-[11px] mt-1 leading-relaxed">
-                    Before wiping the database, we highly recommend downloading
-                    a complete CSV backup of all your current inventory records.
+                  <p className="text-amber-100/60 text-[11px] mt-1">
+                    Download a CSV backup of all current inventory records.
                   </p>
                 </div>
               </div>
@@ -560,21 +634,17 @@ const StockList = () => {
                 onClick={handleFullBackup}
                 className="w-full flex items-center justify-center gap-2 bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30 text-xs font-bold py-2.5 rounded-lg transition-colors"
               >
-                <Download size={14} /> Download Full Database Backup
+                <Download size={14} /> Download Backup
               </button>
             </div>
 
-            <p className="text-sm text-emerald-100/60 mb-4 leading-relaxed">
-              This action will{" "}
-              <span className="text-red-400 font-bold uppercase">
-                permanently delete all
-              </span>{" "}
-              inventory records. Please enter your Admin password to confirm.
+            <p className="text-sm text-emerald-100/60 mb-4">
+              Enter Admin password to confirm permanent deletion.
             </p>
 
             <Input
               type="password"
-              placeholder="Enter your admin password..."
+              placeholder="Admin password..."
               value={deletePassword}
               onChange={(e) => setDeletePassword(e.target.value)}
               className="bg-[#020403] border-red-900/30 focus:border-red-500/50 relative z-10"
@@ -594,7 +664,7 @@ const StockList = () => {
               <button
                 onClick={handleWipeAll}
                 disabled={!deletePassword || wiping}
-                className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold text-sm transition-colors"
               >
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
