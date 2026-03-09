@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   Eye,
   EyeOff,
+  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -262,13 +263,18 @@ const ProductionReport = () => {
     }
   };
 
-  // Wipe All Logic
+  // Wipe All Logic - Securely verify password
   const handleWipeAll = async () => {
     if (isManager || !deletePassword)
       return toast.error("Verification failed.");
+
     setWiping(true);
     try {
-      await productionService.deleteAllProduction({ password: deletePassword });
+      const adminEmail = admin?.data?.email || admin?.email;
+      await productionService.deleteAllProduction({
+        password: deletePassword,
+        email: adminEmail,
+      });
       toast.success("Database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
@@ -1176,11 +1182,11 @@ const ProductionReport = () => {
         title="Delete Record"
         message={`Are you sure you want to permanently delete this ${deleteType === "production" ? "production log" : "payout record"}?`}
         confirmText="Delete"
-        isDestructive={true} // 👈 This prop makes it Red!
+        isDestructive={true}
       />
 
       {/* 🛑 SECURE WIPE DATA MODAL 🛑 */}
-      {isDeleteAllOpen && (
+      {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
@@ -1254,12 +1260,16 @@ const ProductionReport = () => {
               >
                 Cancel
               </button>
+
+              {/* Using RefreshCcw icon instead of Loader to prevent UI height glitch */}
               <button
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
                 className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {wiping ? <Loader className="w-4 h-4" /> : null}
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
