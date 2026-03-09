@@ -10,6 +10,7 @@ import {
   query,
   orderBy,
 } from "firebase/firestore";
+import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
 
 const invCollection = collection(db, "invoices");
 
@@ -117,10 +118,21 @@ const invoiceService = {
     return { message: "Invoice deleted" };
   },
 
-  // 🛑 SECURE: Wipe Entire Database Method Added
-  deleteAllInvoices: async ({ password }) => {
+  // 🛑 SECURE: Wipe Entire Database Method Added - Strictly Verifies Admin Password against Auth server
+  deleteAllInvoices: async ({ password, email }) => {
     if (!password) {
       throw new Error("Password is required to wipe the database.");
+    }
+    if (!email) {
+      throw new Error("Authentication Error: Unable to verify admin identity.");
+    }
+
+    try {
+      const auth = getAuth();
+      // Securely verifies password against current admin's email using Firebase Auth
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      throw new Error("Access Denied: Incorrect Admin Password.");
     }
 
     try {
