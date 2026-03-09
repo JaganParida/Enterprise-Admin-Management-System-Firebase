@@ -116,9 +116,7 @@ const Dashboard = () => {
         hoverBackgroundColor: "rgba(52, 211, 153, 1)",
         borderRadius: 6,
         borderSkipped: false,
-        // 🚀 FAT BARS (Bada Width): Removes max thickness and forces wide layout
-        barPercentage: 0.8,
-        categoryPercentage: 0.9,
+        maxBarThickness: 48,
       },
     ],
   };
@@ -146,12 +144,13 @@ const Dashboard = () => {
 
   const sharedOptions = {
     responsive: true,
-    maintainAspectRatio: false, // 🚀 Crucial to fit container
+    maintainAspectRatio: false, // Ensure this is false!
     interaction: {
       mode: "index",
       intersect: false,
     },
-    layout: { padding: { left: 10, right: 20, top: 10, bottom: 0 } }, // Stops side clipping
+    // Removed bottom padding to ensure x-axis fits perfectly
+    layout: { padding: { left: 0, right: 0, top: 10, bottom: 0 } },
   };
 
   const emeraldChartOptions = {
@@ -166,17 +165,20 @@ const Dashboard = () => {
         borderWidth: 1,
         padding: 12,
         cornerRadius: 8,
-        displayColors: true, // 🚀 Enables the Color Dot in Tooltip
+        displayColors: false,
         callbacks: {
-          title: (context) => context[0].label, // e.g., "07 Mar"
+          title: (context) => `Date: ${context[0].label}`,
           label: function (context) {
             const val = context.raw;
             const productName = context.dataset.productNames
               ? context.dataset.productNames[context.dataIndex]
               : "";
             return productName
-              ? ` ${productName} | Units Produced: ${val.toLocaleString("en-IN")}`
-              : ` Units Produced: ${val.toLocaleString("en-IN")}`;
+              ? [
+                  `Product: ${productName}`,
+                  `Output: ${val.toLocaleString("en-IN")} Units`,
+                ]
+              : `Output: ${val.toLocaleString("en-IN")} Units`;
           },
         },
       },
@@ -220,17 +222,20 @@ const Dashboard = () => {
         borderWidth: 1,
         padding: 12,
         cornerRadius: 8,
-        displayColors: true, // 🚀 Enables the Color Dot in Tooltip
+        displayColors: false,
         callbacks: {
-          title: (context) => context[0].label,
+          title: (context) => `Date: ${context[0].label}`,
           label: function (context) {
             const val = context.raw;
             const productName = context.dataset.productNames
               ? context.dataset.productNames[context.dataIndex]
               : "";
             return productName
-              ? ` ${productName} | Revenue: ₹${val.toLocaleString("en-IN")}`
-              : ` Revenue: ₹${val.toLocaleString("en-IN")}`;
+              ? [
+                  `Item Sold: ${productName}`,
+                  `Revenue: ₹${val.toLocaleString("en-IN")}`,
+                ]
+              : `Revenue: ₹${val.toLocaleString("en-IN")}`;
           },
         },
       },
@@ -397,12 +402,12 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* ========================================== */}
           {/* PRODUCTION CHART */}
-          {/* 🚀 Removed overflow-hidden so tooltips don't clip */}
+          {/* Height badha di h-[450px] tak jisse proper space mile */}
           {/* ========================================== */}
-          <div className="lg:col-span-2 p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-emerald-900/30 shadow-lg relative flex flex-col w-full h-[450px] group">
+          <div className="lg:col-span-2 p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-emerald-900/30 shadow-lg relative flex flex-col w-full h-[450px] overflow-hidden group">
             <div className="absolute -left-10 -top-10 w-40 h-40 bg-emerald-500/5 blur-[80px] rounded-full group-hover:bg-emerald-500/10 transition-colors duration-700 pointer-events-none" />
 
-            <div className="flex justify-between items-center shrink-0 relative z-10 mb-2">
+            <div className="flex justify-between items-center shrink-0 relative z-10 mb-6">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <Activity size={20} className="text-emerald-500" /> Production
                 Trend
@@ -412,27 +417,26 @@ const Dashboard = () => {
               </span>
             </div>
 
-            {/* 🚀 CHART FIX: Absolute Inset container explicitly fitting parent height without stretching canvas forcefully */}
-            <div className="relative flex-1 w-full mt-4">
-              <div className="absolute inset-0 pb-2">
-                {data.charts.production.length > 0 ? (
-                  <Suspense fallback={<ChartSkeleton />}>
-                    <BarChart
-                      data={productionChartData}
-                      options={emeraldChartOptions}
-                    />
-                  </Suspense>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-emerald-100/30 text-sm">
-                    No production data in last 7 days
-                  </div>
-                )}
-              </div>
+            {/* 🔥 MAGIC CLASSES FOR CHART JS: [&>div]:!h-full forces the canvas wrapper to fill up completely */}
+            <div className="relative flex-1 w-full min-h-0 [&>div]:!h-full [&>div]:!w-full [&_canvas]:!h-full [&_canvas]:!w-full">
+              {data.charts.production.length > 0 ? (
+                <Suspense fallback={<ChartSkeleton />}>
+                  <BarChart
+                    data={productionChartData}
+                    options={emeraldChartOptions}
+                  />
+                </Suspense>
+              ) : (
+                <div className="flex h-full items-center justify-center text-emerald-100/30 text-sm">
+                  No production data in last 7 days
+                </div>
+              )}
             </div>
           </div>
 
           {/* ========================================== */}
           {/* RECENT ACTIVITY */}
+          {/* Same h-[450px] to match perfectly */}
           {/* ========================================== */}
           <div className="p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-emerald-900/30 shadow-lg flex flex-col w-full h-[450px] overflow-hidden">
             <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2 shrink-0">
@@ -459,12 +463,12 @@ const Dashboard = () => {
 
         {/* ========================================== */}
         {/* SALES CHART */}
-        {/* 🚀 Removed overflow-hidden so tooltips don't clip */}
+        {/* Same h-[450px] and same aggressive chart fix */}
         {/* ========================================== */}
-        <div className="w-full p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-blue-900/30 shadow-lg relative flex flex-col h-[450px] group">
+        <div className="w-full p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-blue-900/30 shadow-lg relative flex flex-col h-[450px] overflow-hidden group">
           <div className="absolute -left-10 -top-10 w-40 h-40 bg-blue-500/5 blur-[80px] rounded-full group-hover:bg-blue-500/10 transition-colors duration-700 pointer-events-none" />
 
-          <div className="flex justify-between items-center shrink-0 relative z-10 mb-2">
+          <div className="flex justify-between items-center shrink-0 relative z-10 mb-6">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
               <TrendingUp size={20} className="text-blue-500" /> Sales Revenue
               Trend
@@ -474,19 +478,17 @@ const Dashboard = () => {
             </span>
           </div>
 
-          {/* 🚀 CHART FIX: Absolute Inset container */}
-          <div className="relative flex-1 w-full mt-4">
-            <div className="absolute inset-0 pb-2">
-              {data.charts.sales.length > 0 ? (
-                <Suspense fallback={<ChartSkeleton />}>
-                  <LineChart data={salesChartData} options={blueChartOptions} />
-                </Suspense>
-              ) : (
-                <div className="flex h-full items-center justify-center text-blue-100/30 text-sm">
-                  No sales data in last 7 days
-                </div>
-              )}
-            </div>
+          {/* 🔥 MAGIC CLASSES FOR SALES CHART */}
+          <div className="relative flex-1 w-full min-h-0 [&>div]:!h-full [&>div]:!w-full [&_canvas]:!h-full [&_canvas]:!w-full">
+            {data.charts.sales.length > 0 ? (
+              <Suspense fallback={<ChartSkeleton />}>
+                <LineChart data={salesChartData} options={blueChartOptions} />
+              </Suspense>
+            ) : (
+              <div className="flex h-full items-center justify-center text-blue-100/30 text-sm">
+                No sales data in last 7 days
+              </div>
+            )}
           </div>
         </div>
       </div>
