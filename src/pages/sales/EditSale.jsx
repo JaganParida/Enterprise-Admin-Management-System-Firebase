@@ -60,6 +60,7 @@ const EditSale = () => {
     vehicleNo: "",
     productName: "",
     quantity: "",
+    pricePerQuantity: "",
     amount: "",
     amountPaid: "",
     amountDue: "",
@@ -81,6 +82,7 @@ const EditSale = () => {
           vehicleNo: data.vehicleNo || "",
           productName: data.productName || "",
           quantity: data.quantity || "",
+          pricePerQuantity: data.pricePerQuantity || "",
           amount: data.amount || "",
           amountPaid: data.amountPaid || "",
           amountDue: data.amountDue || "",
@@ -113,14 +115,21 @@ const EditSale = () => {
     const { name, value } = e.target;
     setFormData((prev) => {
       let newData = { ...prev, [name]: value };
+
+      if (name === "quantity" || name === "pricePerQuantity") {
+        const qty = Number(newData.quantity) || 0;
+        const rate = Number(newData.pricePerQuantity) || 0;
+        if (qty > 0 && rate > 0) {
+          newData.amount = (qty * rate).toString();
+        }
+      }
+
       const totalAmount = Number(newData.amount) || 0;
 
-      if (name === "amount") {
+      if (
+        ["amount", "quantity", "pricePerQuantity", "amountPaid"].includes(name)
+      ) {
         const paid = Number(newData.amountPaid) || 0;
-        newData.amountDue =
-          totalAmount > 0 ? Math.max(0, totalAmount - paid).toString() : "";
-      } else if (name === "amountPaid") {
-        const paid = Number(value) || 0;
         newData.amountDue =
           totalAmount > 0 ? Math.max(0, totalAmount - paid).toString() : "";
       } else if (name === "amountDue") {
@@ -336,16 +345,16 @@ const EditSale = () => {
                       Zig Zag (80mm)
                     </option>
                     <option
-                      value="6-12 Brick (60mm)"
+                      value="6/12 Brick (60mm)"
                       className="text-zinc-100 font-normal"
                     >
-                      6-12 Brick (60mm)
+                      6/12 Brick (60mm)
                     </option>
                     <option
-                      value="6-12 Brick (80mm)"
+                      value="6/12 Brick (80mm)"
                       className="text-zinc-100 font-normal"
                     >
-                      6-12 Brick (80mm)
+                      6/12 Brick (80mm)
                     </option>
                     <option
                       value="6/6 Brick (60mm)"
@@ -416,6 +425,21 @@ const EditSale = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
+                Price per Qty (₹)
+              </label>
+              <input
+                type="number"
+                name="pricePerQuantity"
+                value={formData.pricePerQuantity}
+                onChange={handleChange}
+                onWheel={(e) => e.target.blur()}
+                required
+                placeholder="0.00"
+                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Total Bill Amount (₹)
               </label>
               <input
@@ -430,7 +454,7 @@ const EditSale = () => {
               />
             </div>
 
-            <div>
+            <div className="md:col-span-2">
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 ml-1">
                 Payment Mode
               </label>
