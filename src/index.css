@@ -3,26 +3,37 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    /* ✅ CHANGED: From Green-Black (#020403) to Neutral Pure Black (#000000) */
-    /* ✅ CHANGED: From text-emerald-50 to Neutral Slate (#f8fafc) */
-    @apply bg-black text-slate-50 antialiased selection:bg-blue-500 selection:text-white;
+  /* ✅ FIXED: Added 'html' and hardcoded the colors.
+   This guarantees the browser paints the dark background instantly on refresh,
+   eliminating the FOUC (Flash of Unstyled Content).
+  */
+  html, body {
+    background-color: #09090B;
+    color: #f4f4f5; /* zinc-100 */
+    @apply antialiased selection:bg-indigo-500 selection:text-white;
   }
 }
 
-/* Scrollbar Styling - Made Neutral/Blue */
+/* --- SCROLLBAR STYLING --- */
 ::-webkit-scrollbar {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-black;
+  background-color: #09090B; /* Matches the main body background smoothly */
 }
 ::-webkit-scrollbar-thumb {
-  /* ✅ CHANGED: Emerald -> Slate/Blue */
-  @apply bg-slate-800 rounded-full hover:bg-blue-600 transition-colors;
+  @apply bg-zinc-800 rounded-full hover:bg-zinc-600 transition-colors;
 }
 
-/* Normal view: Hide the report */
+/* Custom Scrollbar for Sidebar/Internal Divs */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-zinc-800 rounded-full hover:bg-zinc-600 transition-colors;
+}
+
+/* --- PRINT VIEW STYLING --- */
 .print-only {
   display: none;
 }
@@ -60,35 +71,6 @@
   }
 }
 
-/* --- TRANSLATE FIXES --- */
-.goog-te-banner-frame,
-#goog-gt-tt,
-.goog-te-balloon-frame {
-  display: none !important;
-}
-body {
-  top: 0 !important;
-  position: static !important;
-}
-.goog-te-menu-frame {
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
-  /* ✅ CHANGED: Border to Blue-ish */
-  border: 1px solid rgba(59, 130, 246, 0.2) !important;
-  border-radius: 16px !important;
-}
-iframe.goog-te-menu-frame {
-  filter: invert(0.9) hue-rotate(200deg) !important; /* Adjusted for Blue hue */
-}
-.goog-te-gadget-simple {
-  border: none !important;
-  background: transparent !important;
-}
-.goog-te-gadget-icon,
-.goog-te-menu-value span:nth-child(3),
-.goog-te-menu-value span:nth-child(5) {
-  display: none !important;
-}
-
 /* --- GOOGLE TRANSLATE UI CLEANUP --- */
 .goog-te-banner-frame,
 #goog-gt-tt,
@@ -105,7 +87,7 @@ body {
 /* Force dark mode styling on the Google menu popup */
 .goog-te-menu-frame {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
-  border: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border: 1px solid rgba(99, 102, 241, 0.2) !important; /* Indigo border to match theme */
   border-radius: 16px !important;
 }
 
@@ -114,13 +96,14 @@ iframe.goog-te-menu-frame {
   filter: invert(0.9) hue-rotate(200deg) !important;
 }
 
-/* Custom Scrollbar for Sidebar */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+.goog-te-gadget-simple {
+  border: none !important;
+  background: transparent !important;
 }
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
+.goog-te-gadget-icon,
+.goog-te-menu-value span:nth-child(3),
+.goog-te-menu-value span:nth-child(5) {
+  display: none !important;
 }
 
 /* Ensure main content is pushed down on mobile to clear the Top Bar */
