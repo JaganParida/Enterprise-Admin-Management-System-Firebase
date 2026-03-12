@@ -26,20 +26,20 @@ const GlassInput = ({
   type = "text",
   required,
   className = "",
-  labelClass = "text-amber-100/50",
+  theme,
   ...props
 }) => (
   <div className="flex flex-col gap-1.5 w-full">
     {label && (
-      <label
-        className={`text-[10px] font-bold tracking-widest uppercase ml-1 ${labelClass}`}
-      >
+      <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-400 ml-1">
         {label} {required && <span className="text-rose-500">*</span>}
       </label>
     )}
     <div className="relative group">
       {Icon && (
-        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-amber-400 transition-colors pointer-events-none z-10">
+        <div
+          className={`absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:${theme.primaryText} transition-colors pointer-events-none z-10`}
+        >
           <Icon size={16} />
         </div>
       )}
@@ -47,7 +47,7 @@ const GlassInput = ({
         type={type}
         autoComplete="new-password"
         onWheel={(e) => e.target.blur()}
-        className={`w-full bg-[#060d1f] border border-gray-800 rounded-xl ${Icon ? "pl-10" : "pl-4"} pr-4 py-2.5 text-sm text-gray-50 outline-none transition-all placeholder:text-gray-700 shadow-inner [color-scheme:dark] focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 ${className}`}
+        className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl ${Icon ? "pl-10" : "pl-4"} pr-4 py-2.5 text-sm text-zinc-100 outline-none ${theme.primaryFocus} transition-all placeholder:text-zinc-600 [color-scheme:dark] ${className}`}
         required={required}
         {...props}
       />
@@ -61,22 +61,25 @@ const GlassSelect = ({
   required,
   className = "",
   children,
+  theme,
   ...props
 }) => (
   <div className="flex flex-col gap-1.5 w-full">
     {label && (
-      <label className="text-[10px] font-bold tracking-widest uppercase text-amber-100/50 ml-1">
+      <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-400 ml-1">
         {label} {required && <span className="text-rose-500">*</span>}
       </label>
     )}
     <div className="relative group">
       {Icon && (
-        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-amber-400 transition-colors pointer-events-none z-10">
+        <div
+          className={`absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:${theme.primaryText} transition-colors pointer-events-none z-10`}
+        >
           <Icon size={16} />
         </div>
       )}
       <select
-        className={`w-full bg-[#060d1f] border border-gray-800 rounded-xl appearance-none ${Icon ? "pl-10" : "pl-4"} pr-10 py-2.5 text-sm text-gray-50 outline-none transition-all shadow-inner cursor-pointer focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 ${className}`}
+        className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl appearance-none ${Icon ? "pl-10" : "pl-4"} pr-10 py-2.5 text-sm text-zinc-100 outline-none transition-all shadow-inner cursor-pointer ${theme.primaryFocus} ${className}`}
         required={required}
         {...props}
       >
@@ -95,6 +98,27 @@ const JcbTracker = () => {
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
   const [activeTab, setActiveTab] = useState("logs");
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50",
+    glowOrb: isTransport ? "bg-cyan-500/5" : "bg-indigo-500/5",
+    tabActive: isTransport
+      ? "bg-cyan-600 text-white shadow-lg shadow-cyan-900/20"
+      : "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20",
+  };
+
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
     data: [],
@@ -243,22 +267,24 @@ const JcbTracker = () => {
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20">
-              <Truck className="text-amber-400" size={24} />
+            <div
+              className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryBorder}`}
+            >
+              <Truck className={theme.primaryText} size={24} />
             </div>
             JCB Working Logs
           </h1>
-          <p className="text-amber-100/40 text-sm mt-1 ml-1">
+          <p className="text-zinc-400 text-sm mt-1 ml-1">
             Track heavy machinery working hours & locations.
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-[#030816] p-1 rounded-xl border border-gray-800/50 w-full sm:w-auto h-[42px] shadow-inner">
+        <div className="flex items-center gap-2 bg-[#09090B] p-1.5 rounded-2xl border border-zinc-800/60 w-full sm:w-auto h-[48px] shadow-inner">
           <button
             onClick={() => {
               setActiveTab("logs");
               resetForm();
             }}
-            className={`px-5 h-full text-xs font-bold transition-all rounded-lg flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "logs" ? "bg-amber-600 text-[#020403] shadow-lg" : "text-gray-500 hover:text-gray-300"}`}
+            className={`px-5 h-full text-xs font-bold transition-all rounded-xl flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "logs" ? theme.tabActive : "text-zinc-500 hover:text-zinc-300"}`}
           >
             <Clock size={14} /> Active Logs
           </button>
@@ -267,42 +293,48 @@ const JcbTracker = () => {
               setActiveTab("daywise");
               resetForm();
             }}
-            className={`px-5 h-full text-xs font-bold transition-all rounded-lg flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "daywise" ? "bg-amber-600 text-[#020403] shadow-lg" : "text-gray-500 hover:text-gray-300"}`}
+            className={`px-5 h-full text-xs font-bold transition-all rounded-xl flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "daywise" ? theme.tabActive : "text-zinc-500 hover:text-zinc-300"}`}
           >
             <CalendarDays size={14} /> Day-wise Summary
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-5">
           <div
-            className={`bg-[#030816] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? "border-amber-500/50 ring-1 ring-amber-500/20 shadow-amber-500/10" : "border-amber-900/30"}`}
+            className={`bg-[#09090B] border p-6 md:p-8 rounded-3xl shadow-xl transition-all duration-300 relative overflow-hidden ${editId ? `border-${isTransport ? "cyan" : "indigo"}-500/50 ring-1 ring-${isTransport ? "cyan" : "indigo"}-500/20` : "border-zinc-800/60"}`}
           >
-            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 blur-[80px] rounded-full pointer-events-none"></div>
+            <div
+              className={`absolute top-0 right-0 w-64 h-64 blur-[80px] rounded-full pointer-events-none ${theme.glowOrb}`}
+            ></div>
             <div className="flex justify-between items-center mb-6 relative z-10">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 {editId ? (
-                  <Edit2 size={18} className="text-amber-400" />
+                  <Edit2 size={18} className={theme.primaryText} />
                 ) : (
-                  <Timer size={18} className="text-amber-400" />
+                  <Timer size={18} className={theme.primaryText} />
                 )}
                 {editId ? "Update JCB Log" : "Log Working Hours"}
               </h3>
               {editId && (
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   onClick={resetForm}
-                  className="text-xs text-rose-400 hover:text-rose-300 font-bold tracking-widest uppercase"
+                  className="!px-3 !py-1 !text-[10px] text-rose-400 hover:text-rose-300 tracking-widest uppercase !h-auto"
                 >
                   Cancel Edit
-                </button>
+                </Button>
               )}
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
+            <form
+              onSubmit={handleSubmit}
+              className="space-y-5 relative z-10 animate-in fade-in zoom-in-95 duration-300"
+            >
               <div className="grid grid-cols-2 gap-4">
                 <GlassInput
+                  theme={theme}
                   label="Date"
                   type="date"
                   name="date"
@@ -314,6 +346,7 @@ const JcbTracker = () => {
                   required
                 />
                 <GlassSelect
+                  theme={theme}
                   label="Vehicle No."
                   name="vehicleNo"
                   value={formData.vehicleNo}
@@ -323,30 +356,22 @@ const JcbTracker = () => {
                   icon={Truck}
                   required
                 >
-                  <option value="" className="bg-[#050a08] text-gray-500">
+                  <option value="" className="bg-zinc-900 text-zinc-500">
                     Select...
                   </option>
-                  <option
-                    value="OD02AT6907"
-                    className="bg-[#020403] text-white"
-                  >
+                  <option value="OD02AT6907" className="bg-zinc-800 text-white">
                     OD02AT6907
                   </option>
-                  <option
-                    value="OD02XA7407"
-                    className="bg-[#020403] text-white"
-                  >
+                  <option value="OD02XA7407" className="bg-zinc-800 text-white">
                     OD02XA7407
                   </option>
-                  <option
-                    value="OD02AJ3507"
-                    className="bg-[#020403] text-white"
-                  >
+                  <option value="OD02AJ3507" className="bg-zinc-800 text-white">
                     OD02AJ3507
                   </option>
                 </GlassSelect>
               </div>
               <GlassInput
+                theme={theme}
                 label="Customer Name"
                 placeholder="e.g. Ramesh Singh"
                 value={formData.customerName}
@@ -358,6 +383,7 @@ const JcbTracker = () => {
               />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <GlassInput
+                  theme={theme}
                   label="Phone Number"
                   type="tel"
                   maxLength="10"
@@ -373,6 +399,7 @@ const JcbTracker = () => {
                   required
                 />
                 <GlassInput
+                  theme={theme}
                   label="Location"
                   placeholder="Site / Village"
                   value={formData.location}
@@ -383,8 +410,9 @@ const JcbTracker = () => {
                   required
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4 p-4 bg-amber-950/10 border border-amber-900/30 rounded-xl">
+              <div className="grid grid-cols-2 gap-4 p-5 bg-zinc-900/30 border border-zinc-800/60 rounded-xl">
                 <GlassInput
+                  theme={theme}
                   label="Starting Time"
                   type="time"
                   name="startTime"
@@ -396,6 +424,7 @@ const JcbTracker = () => {
                   required
                 />
                 <GlassInput
+                  theme={theme}
                   label="Ending Time"
                   type="time"
                   name="endTime"
@@ -407,23 +436,26 @@ const JcbTracker = () => {
                   required
                 />
               </div>
-              <div className="flex items-center gap-4 bg-[#0a1222] p-4 rounded-xl border border-amber-900/30 mt-2">
-                <div className="flex-1">
-                  <p className="text-amber-100/40 uppercase tracking-widest text-[10px] font-bold mb-1">
+              <div className="flex items-center gap-4 bg-[#09090B] p-4 rounded-xl border border-zinc-800/60 mt-2">
+                <div className="flex-1 text-right pr-2">
+                  <p className="text-zinc-500 uppercase tracking-widest text-[10px] font-bold mb-1">
                     Calculated Duration
                   </p>
-                  <p className="text-2xl font-black text-white font-mono flex items-baseline gap-1">
-                    <span className="text-amber-400">{duration.hours}</span>
-                    <span className="text-xs text-amber-100/30 mr-2">h</span>
-                    <span className="text-amber-400">{duration.minutes}</span>
-                    <span className="text-xs text-amber-100/30">m</span>
+                  <p className="text-2xl font-black text-white font-mono flex items-baseline justify-end gap-1">
+                    <span className={theme.primaryText}>{duration.hours}</span>
+                    <span className="text-xs text-zinc-500 mr-2">h</span>
+                    <span className={theme.primaryText}>
+                      {duration.minutes}
+                    </span>
+                    <span className="text-xs text-zinc-500">m</span>
                   </p>
                 </div>
               </div>
               <Button
                 type="submit"
                 disabled={submitting}
-                className="w-full h-12 shadow-xl shadow-indigo-900/20 text-sm tracking-widest uppercase font-black bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 border-none mt-2 text-white"
+                variant="primary"
+                className="w-full mt-2 rounded-xl"
               >
                 {submitting
                   ? "Processing..."
@@ -437,42 +469,46 @@ const JcbTracker = () => {
 
         {/* 🚀 LIST SECTION (RIGHT COLUMN) */}
         <div className="lg:col-span-7 space-y-6">
-          <div className="bg-[#030816] border border-amber-900/30 rounded-3xl overflow-hidden shadow-xl">
-            <div className="p-6 border-b border-amber-900/20 flex justify-between items-center bg-amber-950/10">
+          <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl overflow-hidden shadow-xl">
+            <div className="p-6 border-b border-zinc-800/60 flex justify-between items-center bg-zinc-900/10">
               <h3 className="font-bold text-white">
                 {activeTab === "logs"
                   ? "Recent Working Logs"
                   : "Day-wise Summary"}
                 {activeTab === "logs" && (
-                  <span className="text-xs font-normal text-amber-100/40 ml-2">
+                  <span className="text-xs font-normal text-zinc-400 ml-2">
                     (Top 10)
                   </span>
                 )}
               </h3>
               <Link
-                to="/transportation/jcb/report"
-                className="text-[10px] font-bold bg-amber-500/10 text-amber-400 px-3 py-1.5 rounded-lg uppercase tracking-widest border border-amber-500/20 hover:bg-amber-500/20 transition-colors"
+                to={
+                  isTransport
+                    ? "/transportation/jcb/report"
+                    : "/enterprise/jcb/report"
+                }
               >
-                View All{" "}
-                {activeTab === "logs" ? logs.length : daywiseSummary.length}
+                <Button
+                  variant="outline"
+                  className={`!px-3 !py-1.5 !text-[10px] uppercase tracking-widest !h-auto ${theme.primaryBg} ${theme.primaryText} border ${theme.primaryBorder} hover:opacity-80`}
+                >
+                  View All{" "}
+                  {activeTab === "logs" ? logs.length : daywiseSummary.length}
+                </Button>
               </Link>
             </div>
 
-            <div className="overflow-x-auto max-h-[650px] custom-scrollbar p-2">
+            <div className="overflow-x-auto max-h-[700px] custom-scrollbar p-2">
               {activeTab === "logs" ? (
                 <table className="w-full text-left min-w-[550px] animate-in fade-in duration-300">
-                  <thead className="sticky top-0 bg-[#060d1f] text-[10px] uppercase font-bold text-amber-100/40 tracking-[0.15em] z-10 shadow-sm border-b border-amber-900/20">
+                  <thead className="sticky top-0 bg-[#09090B] text-[10px] uppercase font-bold text-zinc-500 tracking-[0.15em] z-10 shadow-sm border-b border-zinc-800/60">
                     <tr>
-                      <th className="py-4 px-4 rounded-tl-xl w-[30%]">
-                        Date & Vehicle
-                      </th>
+                      <th className="py-4 px-4 w-[30%]">Date & Vehicle</th>
                       <th className="py-4 px-4 w-[40%]">Customer Info</th>
-                      <th className="py-4 px-4 text-right rounded-tr-xl w-[30%]">
-                        Time Log
-                      </th>
+                      <th className="py-4 px-4 text-right w-[30%]">Time Log</th>
                     </tr>
                   </thead>
-                  <tbody className="text-sm text-amber-100/70 divide-y divide-amber-900/10">
+                  <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
                     {logs.slice(0, 10).map((log) => {
                       const hasEdits =
                         log.editHistory && log.editHistory.length > 0;
@@ -482,48 +518,55 @@ const JcbTracker = () => {
                       return (
                         <tr
                           key={log._id}
-                          className="hover:bg-amber-400/[0.03] group transition-colors"
+                          className="hover:bg-zinc-800/30 group transition-colors"
                         >
                           <td className="p-4 align-top">
-                            <p className="text-[11px] font-mono text-amber-400 mb-1">
+                            <p className="text-[11px] font-mono text-zinc-400 mb-1">
                               {new Date(log.date).toLocaleDateString("en-GB")}
                             </p>
                             <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
-                              <Truck size={14} className="text-amber-500/50" />{" "}
+                              <Truck size={14} className="text-zinc-500" />{" "}
                               {log.vehicleNo}
                             </p>
                             {hasEdits && (
                               <div
                                 onClick={() => openHistory(log)}
-                                className="mt-3 flex items-center gap-1.5 bg-[#020403] border border-amber-900/30 px-2 py-1 rounded-lg cursor-pointer w-max hover:border-amber-500/50 transition-colors"
+                                className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                               >
-                                <History size={10} className="text-amber-500" />
-                                <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest">
-                                  {latestLog.role || "ADMIN"}
-                                </span>
+                                <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
+                                  <History
+                                    size={10}
+                                    className="text-zinc-400"
+                                  />
+                                  <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
+                                    {latestLog.role || "ADMIN"}
+                                  </span>
+                                </div>
                               </div>
                             )}
                           </td>
                           <td className="p-4 align-top">
                             <div className="font-bold text-white text-md tracking-wide flex items-center gap-2">
-                              <User size={14} className="text-amber-500/50" />{" "}
+                              <User size={14} className="text-zinc-500" />{" "}
                               {log.customerName}
                             </div>
-                            <div className="text-[11px] text-amber-100/60 font-mono mt-1 flex items-center gap-1.5">
-                              <Phone size={10} className="text-amber-500/40" />{" "}
+                            <div className="text-[11px] text-zinc-400 font-mono mt-1 flex items-center gap-1.5">
+                              <Phone size={10} className="text-zinc-600" />{" "}
                               {log.phone}
                             </div>
-                            <div className="text-[11px] text-amber-100/40 mt-1 flex items-center gap-1.5 uppercase tracking-wider">
-                              <MapPin size={10} className="text-amber-500/40" />{" "}
+                            <div className="text-[11px] text-zinc-500 mt-1 flex items-center gap-1.5 uppercase tracking-wider">
+                              <MapPin size={10} className="text-zinc-600" />{" "}
                               {log.location}
                             </div>
                           </td>
                           <td className="p-4 align-top text-right">
                             <div className="flex flex-col items-end gap-1.5">
-                              <span className="text-[10px] bg-amber-950/30 border border-amber-900/40 px-2 py-1 rounded text-amber-100/60 font-mono w-max">
+                              <span className="text-[10px] bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded text-zinc-400 font-mono w-max">
                                 {log.startTime} to {log.endTime}
                               </span>
-                              <span className="text-lg font-black text-amber-400 font-mono tracking-wider mt-1">
+                              <span
+                                className={`text-lg font-black font-mono tracking-wider mt-1 ${theme.primaryText}`}
+                              >
                                 {log.totalHours}h {log.totalMinutes}m
                               </span>
                             </div>
@@ -535,7 +578,7 @@ const JcbTracker = () => {
                       <tr>
                         <td
                           colSpan="3"
-                          className="p-10 text-center text-amber-100/30 italic"
+                          className="p-10 text-center text-zinc-500 italic"
                         >
                           No logs found.
                         </td>
@@ -545,41 +588,43 @@ const JcbTracker = () => {
                 </table>
               ) : (
                 <table className="w-full text-left min-w-[500px] animate-in fade-in duration-300">
-                  <thead className="sticky top-0 bg-[#060d1f] text-[10px] uppercase font-bold text-amber-100/40 tracking-[0.15em] z-10 shadow-sm border-b border-amber-900/20">
+                  <thead className="sticky top-0 bg-[#09090B] text-[10px] uppercase font-bold text-zinc-500 tracking-[0.15em] z-10 shadow-sm border-b border-zinc-800/60">
                     <tr>
-                      <th className="py-4 px-6 rounded-tl-xl w-[30%]">Date</th>
+                      <th className="py-4 px-6 w-[30%]">Date</th>
                       <th className="py-4 px-6 w-[30%] text-center">
                         Total Entries
                       </th>
-                      <th className="py-4 px-6 text-right rounded-tr-xl w-[40%]">
+                      <th className="py-4 px-6 text-right w-[40%]">
                         Total Working Hours
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="text-sm text-amber-100/70 divide-y divide-amber-900/10">
+                  <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
                     {daywiseSummary.map((day) => (
                       <tr
                         key={day.date}
-                        className="hover:bg-amber-400/[0.03] group transition-colors"
+                        className="hover:bg-zinc-800/30 group transition-colors"
                       >
-                        <td className="p-5 px-6 font-mono text-xs text-amber-400 align-middle">
+                        <td className="p-5 px-6 font-mono text-xs text-zinc-400 align-middle">
                           {new Date(day.date).toLocaleDateString("en-GB")}
                         </td>
                         <td className="p-5 px-6 text-center align-middle">
-                          <span className="bg-amber-900/20 text-amber-200 px-3 py-1 rounded-lg font-bold">
+                          <span className="bg-zinc-800/50 text-zinc-300 px-3 py-1 rounded-lg font-bold border border-zinc-700/50">
                             {day.entries}
                           </span>
                         </td>
                         <td className="p-5 px-6 text-right align-middle">
                           <div className="text-xl font-black text-white font-mono drop-shadow-sm">
-                            <span className="text-amber-500">{day.hours}</span>
-                            <span className="text-sm text-amber-100/30 mr-2">
+                            <span className={theme.primaryText}>
+                              {day.hours}
+                            </span>
+                            <span className="text-sm text-zinc-500 mr-2">
                               h
                             </span>
-                            <span className="text-amber-500">
+                            <span className={theme.primaryText}>
                               {day.minutes}
                             </span>
-                            <span className="text-sm text-amber-100/30">m</span>
+                            <span className="text-sm text-zinc-500">m</span>
                           </div>
                         </td>
                       </tr>
@@ -588,7 +633,7 @@ const JcbTracker = () => {
                       <tr>
                         <td
                           colSpan="3"
-                          className="p-10 text-center text-amber-100/30 italic"
+                          className="p-10 text-center text-zinc-500 italic"
                         >
                           No summary data available.
                         </td>
@@ -604,19 +649,19 @@ const JcbTracker = () => {
 
       {/* 🚀 HISTORY MODAL REFINED UI */}
       {historyModal.isOpen && historyModal.data && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div
             className="absolute inset-0 cursor-pointer"
             onClick={() =>
               setHistoryModal({ isOpen: false, data: null, itemName: "" })
             }
           />
-          <div className="bg-[#030816] border border-amber-900/30 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-amber-900/20 bg-[#060d1f]/50 shrink-0">
+          <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-5 border-b border-zinc-800/60 bg-[#09090B] shrink-0">
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className="text-amber-500" />
+                <History size={16} className={theme.primaryText} />
                 Log History:{" "}
-                <span className="text-amber-400 font-normal">
+                <span className="text-zinc-400 font-normal">
                   {historyModal.itemName}
                 </span>
               </div>
@@ -624,7 +669,7 @@ const JcbTracker = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-gray-400 hover:text-white transition-colors"
+                className="text-zinc-500 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
@@ -633,28 +678,30 @@ const JcbTracker = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-[#060d1f] border ${index === 0 ? "border-amber-500/30" : "border-gray-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-zinc-900/30 border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
-                    <div className="absolute left-0 top-0 w-1 h-full bg-amber-500"></div>
+                    <div
+                      className={`absolute left-0 top-0 w-1 h-full ${theme.primaryBg}`}
+                    ></div>
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-amber-500/10 text-amber-400" : "bg-gray-800 text-gray-500"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-gray-500"}`}
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-400"}`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
-                      <p className="text-gray-500 text-[10px] mt-0.5 font-mono">
+                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
                         {log.by || "admin@system.com"}
                       </p>
                       <p
-                        className={`text-[10px] font-mono mt-1 ${index === 0 ? "text-amber-400" : "text-gray-600"}`}
+                        className={`text-[10px] font-mono mt-1 ${index === 0 ? theme.primaryText : "text-zinc-600"}`}
                       >
                         {new Date(log.at).toLocaleString("en-GB", {
                           day: "2-digit",
@@ -668,7 +715,9 @@ const JcbTracker = () => {
                     </div>
                   </div>
                   {index === 0 && (
-                    <div className="bg-amber-500/10 border-amber-500/20 text-amber-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
+                    <div
+                      className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                    >
                       LATEST
                     </div>
                   )}
