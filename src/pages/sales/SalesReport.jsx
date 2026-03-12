@@ -28,6 +28,7 @@ import {
   EyeOff,
   ArrowRight,
   RefreshCcw,
+  MapPin,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
@@ -235,18 +236,6 @@ const SalesReport = () => {
     return `${String(date.getDate()).padStart(2, "0")} ${date.toLocaleString("en-GB", { month: "short" })}, ${date.toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
   };
 
-  const formatLogDateFull = (isoString) => {
-    if (!isoString) return "N/A";
-    return new Date(isoString).toLocaleString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  };
-
   const handleFullBackup = () => {
     try {
       if (sales.length === 0) return toast.info("Database is empty.");
@@ -255,8 +244,10 @@ const SalesReport = () => {
         "Challan No",
         "Buyer Name",
         "Vehicle No",
+        "Delivery Address",
         "Item Name",
         "Quantity",
+        "Price/Qty",
         "Total Bill",
         "Paid",
         "Due",
@@ -266,7 +257,7 @@ const SalesReport = () => {
         let dateStr = sale.date
           ? `\t${new Date(sale.date).toLocaleDateString("en-GB")}`
           : "-";
-        return `${dateStr},"${sale.challanNo || ""}","${sale.buyerName || ""}","${sale.vehicleNo || ""}","${sale.productName || ""}",${sale.quantity || 0},${sale.amount || 0},${sale.amountPaid || sale.amount || 0},${sale.amountDue || 0},"${sale.paymentMode || ""}"`;
+        return `${dateStr},"${sale.challanNo || ""}","${sale.buyerName || ""}","${sale.vehicleNo || ""}","${sale.address || ""}","${sale.productName || ""}",${sale.quantity || 0},${sale.pricePerQuantity || 0},${sale.amount || 0},${sale.amountPaid || sale.amount || 0},${sale.amountDue || 0},"${sale.paymentMode || ""}"`;
       });
       const csvContent = [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -317,9 +308,11 @@ const SalesReport = () => {
           "Challan No",
           "Buyer Name",
           "Vehicle No",
+          "Delivery Address",
           "Item Name",
           "Size",
           "Quantity",
+          "Price/Qty",
           "Total Bill",
           "Paid",
           "Due",
@@ -330,7 +323,7 @@ const SalesReport = () => {
             ? `\t${new Date(sale.date).toLocaleDateString("en-GB")}`
             : "-";
           const { name, size } = parseProduct(sale.productName);
-          return `${dateStr},"${sale.challanNo || ""}","${sale.buyerName || ""}","${sale.vehicleNo || ""}","${name}","${size}",${sale.quantity || 0},${sale.amount || 0},${sale.amountPaid || sale.amount || 0},${sale.amountDue || 0},"${sale.paymentMode || ""}"`;
+          return `${dateStr},"${sale.challanNo || ""}","${sale.buyerName || ""}","${sale.vehicleNo || ""}","${sale.address || ""}","${name}","${size}",${sale.quantity || 0},${sale.pricePerQuantity || 0},${sale.amount || 0},${sale.amountPaid || sale.amount || 0},${sale.amountDue || 0},"${sale.paymentMode || ""}"`;
         });
         const csvContent = [headers.join(","), ...rows].join("\n");
         const blob = new Blob([csvContent], {
@@ -639,13 +632,13 @@ const SalesReport = () => {
                   value="6-12 Brick (60mm)"
                   className="text-zinc-300 font-normal"
                 >
-                  6-12 Brick (60mm)
+                  6/12 Brick (60mm)
                 </option>
                 <option
                   value="6-12 Brick (80mm)"
                   className="text-zinc-300 font-normal"
                 >
-                  6-12 Brick (80mm)
+                  6/12 Brick (80mm)
                 </option>
                 <option
                   value="6/6 Brick (60mm)"
@@ -817,12 +810,12 @@ const SalesReport = () => {
         {activeTab === "all_sales" && (
           <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
             <table className="w-full text-left min-w-[800px] animate-in fade-in duration-300">
-              <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-wider border-b border-zinc-800/60">
+              <thead className="bg-[#09090B] text-zinc-500 text-[11px] uppercase font-bold tracking-widest border-b border-zinc-800/60">
                 <tr>
                   <th className="p-5 md:pl-6">Date & Challan</th>
                   <th className="p-5">Buyer Details</th>
                   <th className="p-5">Item</th>
-                  <th className="p-5">Size</th>
+                  <th className="p-5">Size & Rate</th>
                   <th className="p-5">Financials (Bill / Paid / Due)</th>
                   <th className="p-5 md:pr-6 text-right">Actions</th>
                 </tr>
@@ -849,7 +842,7 @@ const SalesReport = () => {
                             : "-"}
                         </div>
                         <div
-                          className={`text-[10px] ${theme.primaryText} font-bold tracking-wider mb-2`}
+                          className={`text-[11px] ${theme.primaryText} font-bold tracking-wider mb-2`}
                         >
                           {sale.challanNo || "NO CHALLAN"}
                         </div>
@@ -881,38 +874,56 @@ const SalesReport = () => {
                       </td>
 
                       <td className="p-5 align-middle">
-                        <div className="font-bold text-white tracking-wide mb-1">
+                        <div className="font-bold text-white tracking-wide text-sm mb-1">
                           {sale.buyerName}
                         </div>
-                        <div className="text-[10px] text-zinc-500 font-mono mt-1 flex items-center gap-1.5">
-                          <Truck size={12} className="text-zinc-600" />{" "}
+                        {sale.address && (
+                          <div className="text-[11px] text-zinc-400 mt-1 mb-1.5 flex items-start gap-1.5 leading-tight max-w-[200px]">
+                            <MapPin
+                              size={12}
+                              className="text-zinc-500 shrink-0 mt-0.5"
+                            />
+                            <span className="line-clamp-2">{sale.address}</span>
+                          </div>
+                        )}
+                        <div className="text-xs text-zinc-400 font-mono font-medium mt-1 flex items-center gap-1.5">
+                          <Truck size={14} className="text-zinc-500" />{" "}
                           {sale.vehicleNo}
                         </div>
                       </td>
 
                       <td className="p-5 align-middle">
                         <span
-                          className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest inline-flex items-center gap-2 w-max mb-2`}
+                          className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} px-2.5 py-1 rounded-md text-[11px] uppercase font-bold tracking-widest inline-flex items-center gap-2 w-max mb-2`}
                         >
                           <Layers size={12} /> {name}
                         </span>
                         <div className="text-xs text-zinc-400 font-medium">
                           Qty:{" "}
-                          <span className="font-bold text-zinc-300">
+                          <span className="text-sm font-bold text-zinc-300">
                             {Number(sale.quantity).toLocaleString()}
                           </span>
                         </div>
                       </td>
 
-                      <td className="p-5 align-middle text-zinc-300 font-medium text-xs">
-                        {size}
+                      <td className="p-5 align-middle">
+                        <div className="text-zinc-300 font-medium text-xs mb-1.5">
+                          {size}
+                        </div>
+                        {sale.pricePerQuantity && (
+                          <div
+                            className={`text-[11px] font-mono font-semibold ${theme.primaryText} bg-black/20 px-2 py-1 rounded-md border border-zinc-800/80 inline-block`}
+                          >
+                            ₹{sale.pricePerQuantity} / qty
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-5 align-middle">
-                        <div className="font-bold text-white font-mono mb-1.5">
+                        <div className="font-bold text-white font-mono mb-1.5 text-[15px]">
                           Total: ₹{Number(sale.amount).toLocaleString("en-IN")}
                         </div>
-                        <div className="flex items-center gap-2 mb-1 text-xs font-mono">
+                        <div className="flex items-center gap-2 mb-1.5 text-xs font-mono">
                           <span className={`${theme.primaryText} font-bold`}>
                             Paid: ₹
                             {Number(
@@ -920,7 +931,7 @@ const SalesReport = () => {
                             ).toLocaleString("en-IN")}
                           </span>
                           <span
-                            className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border inline-block ${
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border inline-block ${
                               sale.paymentMode === "Online"
                                 ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
                                 : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
@@ -931,7 +942,7 @@ const SalesReport = () => {
                         </div>
                         {Number(sale.amountDue) > 0 && (
                           <div className="text-xs font-mono">
-                            <span className="text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded w-max inline-block">
+                            <span className="text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded w-max inline-block text-[11px]">
                               Due: ₹
                               {Number(sale.amountDue).toLocaleString("en-IN")}
                             </span>
@@ -943,7 +954,7 @@ const SalesReport = () => {
                         <div className="flex justify-end gap-2 items-center relative">
                           <Link
                             to={`${isTransport ? `/transportation/sales/edit/${sale._id}` : `/enterprise/sales/edit/${sale._id}`}`}
-                            className={`p-2 text-zinc-500 hover:${theme.primaryText} ${theme.primaryHoverBg} rounded-lg transition-colors`}
+                            className={`p-2 text-zinc-400 hover:${theme.primaryText} ${theme.primaryHoverBg} rounded-lg transition-colors`}
                           >
                             <Edit size={16} />
                           </Link>
@@ -962,7 +973,7 @@ const SalesReport = () => {
                             className={`p-2 rounded-lg transition-colors ${
                               isManager
                                 ? "text-zinc-600 opacity-50 cursor-not-allowed"
-                                : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                                : "text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
                             }`}
                           >
                             <Trash2 size={16} />
@@ -1055,7 +1066,7 @@ const SalesReport = () => {
 
                         <div className="flex items-center gap-6 sm:gap-10 w-full sm:w-auto">
                           <div className="text-left sm:text-right hidden sm:block">
-                            <p className="text-zinc-500 text-[10px] uppercase tracking-widest font-bold mb-1">
+                            <p className="text-zinc-500 text-[11px] uppercase tracking-widest font-bold mb-1">
                               Total Purchases
                             </p>
                             <p className="text-zinc-300 font-mono font-bold">
@@ -1063,7 +1074,7 @@ const SalesReport = () => {
                             </p>
                           </div>
                           <div className="text-left sm:text-right flex-1 sm:flex-none">
-                            <p className="text-rose-500/70 text-[10px] uppercase tracking-widest font-bold mb-1">
+                            <p className="text-rose-500/70 text-[11px] uppercase tracking-widest font-bold mb-1">
                               Total Pending Due
                             </p>
                             <p className="text-rose-400 font-mono font-black text-xl">
@@ -1086,13 +1097,13 @@ const SalesReport = () => {
                             Pending Bill Details
                           </h4>
                           <div className="overflow-x-auto custom-scrollbar">
-                            <table className="w-full text-left min-w-[600px]">
-                              <thead className="text-zinc-500 text-[10px] uppercase font-bold tracking-wider border-b border-zinc-800/60">
+                            <table className="w-full text-left min-w-[700px]">
+                              <thead className="text-zinc-500 text-[11px] uppercase font-bold tracking-wider border-b border-zinc-800/60">
                                 <tr>
                                   <th className="pb-3 pl-2">Date</th>
-                                  <th className="pb-3">Challan</th>
+                                  <th className="pb-3">Challan & Info</th>
                                   <th className="pb-3">Item</th>
-                                  <th className="pb-3">Size</th>
+                                  <th className="pb-3">Size & Rate</th>
                                   <th className="pb-3 text-right">
                                     Bill Amount
                                   </th>
@@ -1115,52 +1126,69 @@ const SalesReport = () => {
                                       key={record._id}
                                       className="hover:bg-zinc-800/30 transition-colors"
                                     >
-                                      <td className="py-3 pl-2 text-zinc-400 font-mono text-xs">
+                                      <td className="py-4 pl-2 text-zinc-400 font-mono text-xs">
                                         {record.date
                                           ? new Date(
                                               record.date,
                                             ).toLocaleDateString("en-GB")
                                           : "-"}
                                       </td>
-                                      <td className="py-3">
+                                      <td className="py-4">
                                         <div
-                                          className={`${theme.primaryText} text-xs font-bold`}
+                                          className={`${theme.primaryText} text-xs font-bold mb-1`}
                                         >
                                           {record.challanNo || "-"}
                                         </div>
+                                        {record.address && (
+                                          <div
+                                            className="text-[11px] text-zinc-400 mt-1 max-w-[160px] truncate"
+                                            title={record.address}
+                                          >
+                                            📍 {record.address}
+                                          </div>
+                                        )}
                                       </td>
-                                      <td className="py-3 text-zinc-300 text-[11px] font-medium">
+                                      <td className="py-4 text-zinc-300 text-xs font-medium">
                                         {name}
                                       </td>
-                                      <td className="py-3 text-zinc-500 text-[11px]">
-                                        {size}
+                                      <td className="py-4 align-middle">
+                                        <div className="text-zinc-400 text-xs mb-1.5">
+                                          {size}
+                                        </div>
+                                        {record.pricePerQuantity && (
+                                          <div
+                                            className={`text-[11px] font-mono font-semibold ${theme.primaryText} bg-black/20 px-2 py-0.5 rounded border border-zinc-800/80 w-max`}
+                                          >
+                                            ₹{record.pricePerQuantity}/qty
+                                          </div>
+                                        )}
                                       </td>
-                                      <td className="py-3 text-right text-zinc-300 font-mono">
+                                      <td className="py-4 text-right text-zinc-300 font-mono text-sm">
                                         ₹{" "}
                                         {Number(
                                           record.amount || 0,
                                         ).toLocaleString("en-IN")}
                                       </td>
                                       <td
-                                        className={`py-3 text-right font-mono font-bold ${theme.primaryText}`}
+                                        className={`py-4 text-right font-mono font-bold text-sm ${theme.primaryText}`}
                                       >
                                         ₹{" "}
                                         {Number(
                                           record.amountPaid || 0,
                                         ).toLocaleString("en-IN")}
                                       </td>
-                                      <td className="py-3 pr-2 text-right text-rose-400 font-mono font-bold text-lg">
+                                      <td className="py-4 pr-2 text-right text-rose-400 font-mono font-bold text-[15px]">
                                         ₹{" "}
                                         {Number(
                                           record.amountDue || 0,
                                         ).toLocaleString("en-IN")}
                                       </td>
-                                      <td className="py-3 text-center">
+                                      <td className="py-4 text-center">
                                         <Link
                                           to={`${isTransport ? `/transportation/sales/edit/${record._id}` : `/enterprise/sales/edit/${record._id}`}`}
-                                          className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest bg-rose-500/10 text-rose-400 hover:bg-rose-500 border border-rose-500/20 hover:text-white px-3 py-1.5 rounded transition-all"
+                                          className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest bg-rose-500/10 text-rose-400 hover:bg-rose-500 border border-rose-500/20 hover:text-white px-3 py-1.5 rounded transition-all"
                                         >
-                                          Settle <ArrowRight size={12} />
+                                          Settle <ArrowRight size={14} />
                                         </Link>
                                       </td>
                                     </tr>
