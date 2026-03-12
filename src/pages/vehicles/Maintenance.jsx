@@ -14,6 +14,7 @@ import {
   Settings,
   Map,
   ArrowRight,
+  Edit2,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -24,20 +25,20 @@ const GlassInput = ({
   type = "text",
   required,
   className = "",
-  labelClass = "text-amber-100/50",
+  theme,
   ...props
 }) => (
   <div className="flex flex-col gap-1.5 w-full">
     {label && (
-      <label
-        className={`text-[10px] font-bold tracking-widest uppercase ml-1 ${labelClass}`}
-      >
+      <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-400 ml-1">
         {label} {required && <span className="text-rose-500">*</span>}
       </label>
     )}
     <div className="relative group">
       {Icon && (
-        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-gray-300 transition-colors pointer-events-none z-10">
+        <div
+          className={`absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:${theme.primaryText} transition-colors pointer-events-none z-10`}
+        >
           <Icon size={16} />
         </div>
       )}
@@ -45,7 +46,7 @@ const GlassInput = ({
         type={type}
         autoComplete="new-password"
         onWheel={(e) => e.target.blur()}
-        className={`w-full bg-[#060d1f] border border-gray-800 rounded-xl ${Icon ? "pl-10" : "pl-4"} pr-4 py-2.5 text-sm text-gray-50 outline-none transition-all placeholder:text-gray-700 shadow-inner [color-scheme:dark] ${className}`}
+        className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl ${Icon ? "pl-10" : "pl-4"} pr-4 py-2.5 text-sm text-zinc-100 outline-none ${theme.primaryFocus} transition-all placeholder:text-zinc-600 [color-scheme:dark] ${className}`}
         required={required}
         {...props}
       />
@@ -61,6 +62,23 @@ const Maintenance = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50",
+    glowOrb: isTransport ? "bg-cyan-500/5" : "bg-indigo-500/5",
+  };
 
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
@@ -94,7 +112,6 @@ const Maintenance = () => {
     fetchLogs();
   }, []);
 
-  // 🚀 Catch edit triggers from the Report page
   useEffect(() => {
     if (location.state && location.state.editLog) {
       const log = location.state.editLog;
@@ -209,43 +226,55 @@ const Maintenance = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20">
-              <Wrench className="text-amber-400" size={24} />
+            <div
+              className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryBorder}`}
+            >
+              <Wrench className={theme.primaryText} size={24} />
             </div>
             Maintenance Logs
           </h1>
-          <p className="text-amber-100/40 text-sm mt-1 ml-1">
+          <p className="text-zinc-400 text-sm mt-1 ml-1">
             Track vehicle repairs and servicing costs.
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
         <div className="xl:col-span-5">
           <div
-            className={`bg-[#030816] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? "border-amber-500/50 ring-1 ring-amber-500/20 shadow-amber-500/10" : "border-amber-900/30"}`}
+            className={`bg-[#09090B] border p-6 md:p-8 rounded-3xl shadow-xl transition-all duration-300 relative overflow-hidden ${editId ? `border-${isTransport ? "cyan" : "indigo"}-500/50 ring-1 ring-${isTransport ? "cyan" : "indigo"}-500/20` : "border-zinc-800/60"}`}
           >
-            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 blur-[80px] rounded-full pointer-events-none"></div>
+            <div
+              className={`absolute top-0 right-0 w-64 h-64 blur-[80px] rounded-full pointer-events-none ${theme.glowOrb}`}
+            ></div>
 
             <div className="flex justify-between items-center mb-6 relative z-10">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Settings size={18} className="text-amber-400" />
+                {editId ? (
+                  <Edit2 size={18} className={theme.primaryText} />
+                ) : (
+                  <Settings size={18} className={theme.primaryText} />
+                )}
                 {editId ? "Update Entry" : "Log Service"}
               </h3>
               {editId && (
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   onClick={resetForm}
-                  className="text-xs text-rose-400 hover:text-rose-300 font-bold tracking-widest uppercase"
+                  className="!px-3 !py-1 !text-[10px] text-rose-400 hover:text-rose-300 tracking-widest uppercase !h-auto"
                 >
                   Cancel Edit
-                </button>
+                </Button>
               )}
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
+            <form
+              onSubmit={handleSubmit}
+              className="space-y-5 relative z-10 animate-in fade-in zoom-in-95 duration-300"
+            >
               <div className="grid grid-cols-2 gap-4">
                 <GlassInput
+                  theme={theme}
                   label="Date"
                   type="date"
                   name="date"
@@ -255,21 +284,22 @@ const Maintenance = () => {
                   }
                   icon={Calendar}
                   required
-                  className="focus:border-amber-500/50 focus:ring-amber-500/20"
                 />
                 <GlassInput
+                  theme={theme}
                   label="Vehicle No."
                   placeholder="OD-02-AX-1234"
                   value={formData.vehicleNo}
                   onChange={handleVehicleNoChange}
                   icon={Truck}
                   required
-                  className="focus:border-amber-500/50 focus:ring-amber-500/20 uppercase"
+                  className="uppercase"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <GlassInput
+                  theme={theme}
                   label="Meter / Km Reading"
                   type="number"
                   placeholder="e.g. 45000"
@@ -279,9 +309,9 @@ const Maintenance = () => {
                   }
                   icon={Map}
                   required
-                  className="focus:border-amber-500/50 focus:ring-amber-500/20"
                 />
                 <GlassInput
+                  theme={theme}
                   label="Total Cost (₹)"
                   type="number"
                   name="cost"
@@ -292,12 +322,12 @@ const Maintenance = () => {
                   }
                   icon={IndianRupee}
                   required
-                  className="text-amber-400 font-bold focus:border-amber-500/50 focus:ring-amber-500/20"
+                  className={`${theme.primaryText} font-bold text-lg`}
                 />
               </div>
 
               <div className="flex flex-col gap-1.5 w-full">
-                <label className="text-[10px] font-bold tracking-widest uppercase ml-1 text-amber-100/50">
+                <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-400 ml-1">
                   Description (Optional)
                 </label>
                 <textarea
@@ -306,14 +336,15 @@ const Maintenance = () => {
                   onChange={(e) =>
                     setFormData({ ...formData, description: e.target.value })
                   }
-                  className="w-full bg-[#060d1f] border border-gray-800 rounded-xl px-4 py-3 text-sm text-gray-50 outline-none transition-all placeholder:text-gray-700 shadow-inner focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 resize-none h-24 custom-scrollbar"
+                  className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 outline-none ${theme.primaryFocus} transition-all placeholder:text-zinc-600 resize-none h-24 custom-scrollbar`}
                 />
               </div>
 
               <Button
                 type="submit"
+                variant="primary"
                 disabled={submitting}
-                className="w-full h-12 shadow-xl shadow-amber-900/20 text-sm tracking-widest uppercase font-black bg-amber-600 hover:bg-amber-500 border-none mt-2 text-[#020403]"
+                className="w-full mt-4 rounded-xl"
               >
                 {submitting
                   ? "Processing..."
@@ -327,22 +358,27 @@ const Maintenance = () => {
 
         <div className="xl:col-span-7 space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-[#030816] border border-amber-900/30 p-5 rounded-2xl relative overflow-hidden group">
-              <div className="absolute -right-4 -bottom-4 opacity-5 text-amber-500 group-hover:opacity-10 transition-opacity">
+            <div
+              className={`bg-[#09090B] border border-zinc-800/60 p-5 rounded-2xl relative overflow-hidden group hover:border-${isTransport ? "cyan" : "indigo"}-500/30 transition-all`}
+            >
+              <div
+                className={`absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity ${theme.primaryText}`}
+              >
                 <IndianRupee size={80} />
               </div>
-              <p className="text-amber-100/50 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">
+              <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">
                 Total Maintenance Cost
               </p>
-              <h3 className="text-2xl font-black text-amber-400 font-mono relative z-10">
-                ₹ {(stats.totalCost || 0).toLocaleString("en-IN")}
+              <h3 className="text-2xl font-black text-white font-mono relative z-10">
+                <span className={theme.primaryText}>₹</span>{" "}
+                {(stats.totalCost || 0).toLocaleString("en-IN")}
               </h3>
             </div>
-            <div className="bg-[#030816] border border-emerald-900/30 p-5 rounded-2xl relative overflow-hidden group">
+            <div className="bg-[#09090B] border border-zinc-800/60 p-5 rounded-2xl relative overflow-hidden group hover:border-emerald-500/30 transition-all">
               <div className="absolute -right-4 -bottom-4 opacity-5 text-emerald-500 group-hover:opacity-10 transition-opacity">
                 <Wrench size={80} />
               </div>
-              <p className="text-emerald-100/50 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">
+              <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">
                 Total Services Logged
               </p>
               <h3 className="text-2xl font-black text-white font-mono relative z-10">
@@ -351,36 +387,40 @@ const Maintenance = () => {
             </div>
           </div>
 
-          <div className="bg-[#030816] border border-amber-900/30 rounded-3xl overflow-hidden shadow-xl">
-            <div className="p-6 border-b border-amber-900/20 flex justify-between items-center bg-amber-950/10">
+          <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl overflow-hidden shadow-xl">
+            <div className="p-6 border-b border-zinc-800/60 flex justify-between items-center bg-zinc-900/10">
               <h3 className="font-bold text-white">
                 Recent Maintenance{" "}
-                <span className="text-xs font-normal text-amber-100/40 ml-2">
+                <span className="text-xs font-normal text-zinc-400 ml-2">
                   (Latest)
                 </span>
               </h3>
               <Link
-                to="/transportation/maintenance/report"
-                className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 hover:underline whitespace-nowrap text-amber-400"
+                to={
+                  isTransport
+                    ? "/transportation/maintenance/report"
+                    : "/enterprise/maintenance/report"
+                }
               >
-                View All <ArrowRight size={14} />
+                <Button
+                  variant="outline"
+                  className={`!px-3 !py-1.5 !text-[10px] uppercase tracking-widest !h-auto ${theme.primaryBg} ${theme.primaryText} border ${theme.primaryBorder} hover:opacity-80`}
+                >
+                  View All <ArrowRight size={14} className="ml-1" />
+                </Button>
               </Link>
             </div>
 
             <div className="overflow-x-auto max-h-[600px] custom-scrollbar p-2">
-              <table className="w-full text-left min-w-[550px]">
-                <thead className="sticky top-0 bg-[#060d1f] text-[10px] uppercase font-bold text-amber-100/40 tracking-[0.15em] z-10 shadow-sm border-b border-amber-900/20">
+              <table className="w-full text-left min-w-[550px] animate-in fade-in">
+                <thead className="sticky top-0 bg-[#09090B] text-[10px] uppercase font-bold text-zinc-500 tracking-[0.15em] z-10 shadow-sm border-b border-zinc-800/60">
                   <tr>
-                    <th className="py-4 px-4 rounded-tl-xl w-[35%]">
-                      Vehicle Details
-                    </th>
-                    <th className="py-4 px-4 w-[40%]">Service Info</th>
-                    <th className="py-4 px-4 text-right rounded-tr-xl w-[25%]">
-                      Cost
-                    </th>
+                    <th className="py-3 px-3 w-[35%]">Vehicle Details</th>
+                    <th className="py-3 px-3 w-[40%]">Service Info</th>
+                    <th className="py-3 px-3 text-right w-[25%]">Cost</th>
                   </tr>
                 </thead>
-                <tbody className="text-sm text-amber-100/70 divide-y divide-amber-900/10">
+                <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
                   {logs.slice(0, 10).map((log) => {
                     const historyArray = Array.isArray(log?.editHistory)
                       ? log.editHistory
@@ -393,18 +433,18 @@ const Maintenance = () => {
                     return (
                       <tr
                         key={log._id}
-                        className="hover:bg-amber-400/[0.03] transition-colors group"
+                        className="hover:bg-zinc-800/30 transition-colors group"
                       >
-                        <td className="p-4 align-top">
-                          <p className="text-[11px] font-mono text-amber-400 mb-1">
+                        <td className="p-3 align-top">
+                          <p className="text-[11px] font-mono text-zinc-400 mb-1">
                             {new Date(log.date).toLocaleDateString("en-GB")}
                           </p>
                           <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
-                            <Truck size={14} className="text-amber-500/50" />{" "}
+                            <Truck size={14} className="text-zinc-600" />{" "}
                             {log.vehicleNo || "N/A"}
                           </p>
                           {log.meterKm && (
-                            <p className="text-[10px] text-amber-100/40 mt-1 uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                            <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-widest font-semibold flex items-center gap-1.5">
                               <Map size={10} className="text-emerald-500/50" />{" "}
                               {log.meterKm} KM
                             </p>
@@ -413,30 +453,37 @@ const Maintenance = () => {
                           {historyArray.length > 0 && (
                             <div
                               onClick={() => openHistory(log)}
-                              className="mt-3 flex items-center gap-1.5 bg-[#020403] border border-amber-900/30 px-2 py-1 rounded-lg cursor-pointer hover:border-amber-500/50 transition-colors w-max"
+                              className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                             >
-                              <History size={10} className="text-amber-500" />
-                              <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest">
-                                {latestEdit.role || "ADMIN"}
-                              </span>
+                              <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
+                                <History size={10} className="text-zinc-400" />
+                                <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
+                                  {latestEdit.role || "ADMIN"}
+                                </span>
+                                {log.editHistory.length > 1 && (
+                                  <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                    +{log.editHistory.length - 1} MORE
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )}
                         </td>
 
-                        <td className="p-4 align-top">
-                          <div className="text-xs text-emerald-200 mb-2 flex items-center gap-1.5 bg-emerald-900/20 w-max px-2.5 py-1 rounded-md font-medium border border-emerald-900/30 uppercase tracking-wide">
+                        <td className="p-3 align-top">
+                          <div className="text-[11px] text-zinc-300 mb-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2 py-1 rounded font-medium border border-zinc-800 uppercase tracking-wide">
                             <Wrench size={12} className="text-emerald-400" />{" "}
                             {log.serviceType || "Routine"}
                           </div>
                           {log.description && (
-                            <div className="text-[10px] text-amber-100/40 font-mono mt-1.5 line-clamp-2 pr-4">
+                            <div className="text-[10px] text-zinc-500 font-mono mt-1.5 line-clamp-2 pr-4">
                               {log.description}
                             </div>
                           )}
                         </td>
 
-                        <td className="p-4 text-right align-top">
-                          <p className="text-lg font-black text-amber-400 font-mono drop-shadow-sm mb-2">
+                        <td className="p-3 text-right align-top">
+                          <p className="text-lg font-black text-white font-mono drop-shadow-sm mb-2">
                             ₹{(Number(log.cost) || 0).toLocaleString("en-IN")}
                           </p>
                         </td>
@@ -447,7 +494,7 @@ const Maintenance = () => {
                     <tr>
                       <td
                         colSpan="3"
-                        className="p-10 text-center text-amber-100/30 italic"
+                        className="p-10 text-center text-zinc-500 italic"
                       >
                         No maintenance records found.
                       </td>
@@ -460,21 +507,20 @@ const Maintenance = () => {
         </div>
       </div>
 
-      {/* 🚀 MULTIPLE LOG HISTORY MODAL UI */}
       {historyModal.isOpen && historyModal.data && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div
             className="absolute inset-0 cursor-pointer"
             onClick={() =>
               setHistoryModal({ isOpen: false, data: null, itemName: "" })
             }
           />
-          <div className="bg-[#030816] border border-amber-900/30 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-amber-900/20 bg-[#060d1f]/50 shrink-0">
+          <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-5 border-b border-zinc-800/60 bg-[#09090B] shrink-0">
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className="text-amber-500" />
+                <History size={16} className={theme.primaryText} />
                 Log History:{" "}
-                <span className="text-amber-400 font-normal">
+                <span className="text-zinc-400 font-normal">
                   {historyModal.itemName}
                 </span>
               </div>
@@ -482,7 +528,7 @@ const Maintenance = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-gray-400 hover:text-white transition-colors"
+                className="text-zinc-500 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
@@ -492,28 +538,30 @@ const Maintenance = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-[#060d1f] border ${index === 0 ? "border-amber-500/30" : "border-gray-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-zinc-900/30 border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
-                    <div className="absolute left-0 top-0 w-1 h-full bg-amber-500"></div>
+                    <div
+                      className={`absolute left-0 top-0 w-1 h-full ${theme.primaryBg}`}
+                    ></div>
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-amber-500/10 text-amber-400" : "bg-gray-800 text-gray-500"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-gray-500"}`}
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-400"}`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
-                      <p className="text-gray-500 text-[10px] mt-0.5 font-mono">
+                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
                         {log.by || "admin@system.com"}
                       </p>
                       <p
-                        className={`text-[10px] font-mono mt-1 ${index === 0 ? "text-amber-400" : "text-gray-600"}`}
+                        className={`text-[10px] font-mono mt-1 ${index === 0 ? theme.primaryText : "text-zinc-600"}`}
                       >
                         {new Date(log.at).toLocaleString("en-GB", {
                           day: "2-digit",
@@ -527,7 +575,9 @@ const Maintenance = () => {
                     </div>
                   </div>
                   {index === 0 && (
-                    <div className="bg-amber-500/10 border-amber-500/20 text-amber-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
+                    <div
+                      className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                    >
                       LATEST
                     </div>
                   )}
