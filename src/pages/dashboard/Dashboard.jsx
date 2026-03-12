@@ -1,5 +1,5 @@
 import React, { useEffect, useState, Suspense, lazy } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import dashboardService from "../../services/dashboardService";
 import { useUI } from "../../context/UIProvider";
 import {
@@ -23,13 +23,36 @@ const BarChart = lazy(() => import("../../components/charts/BarChart"));
 const LineChart = lazy(() => import("../../components/charts/LineChart"));
 
 const ChartSkeleton = () => (
-  <div className="w-full h-full bg-emerald-900/10 animate-pulse rounded-xl"></div>
+  <div className="w-full h-full bg-zinc-800/30 animate-pulse rounded-2xl"></div>
 );
 
 const Dashboard = () => {
   const { toast } = useUI();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [showQuickMenu, setShowQuickMenu] = useState(false);
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-blue-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-blue-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-blue-500/20" : "border-indigo-500/20",
+    primaryHoverBorder: isTransport
+      ? "hover:border-blue-500/30"
+      : "hover:border-indigo-500/30",
+    gradientBtn: isTransport
+      ? "from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-blue-900/20"
+      : "from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-indigo-900/20",
+    glowOrb: isTransport
+      ? "bg-blue-500/5 group-hover:bg-blue-500/10"
+      : "bg-indigo-500/5 group-hover:bg-indigo-500/10",
+  };
 
   const [data, setData] = useState({
     cards: {
@@ -112,8 +135,12 @@ const Dashboard = () => {
         label: "Units Produced",
         data: data.charts.production.map((d) => d.quantity),
         productNames: data.charts.production.map((d) => d.productName),
-        backgroundColor: "rgba(16, 185, 129, 0.85)",
-        hoverBackgroundColor: "rgba(52, 211, 153, 1)",
+        backgroundColor: isTransport
+          ? "rgba(6, 182, 212, 0.85)"
+          : "rgba(124, 58, 237, 0.85)", // Cyan vs Violet
+        hoverBackgroundColor: isTransport
+          ? "rgba(8, 145, 178, 1)"
+          : "rgba(139, 92, 246, 1)",
         borderRadius: 6,
         borderSkipped: false,
         maxBarThickness: 48,
@@ -128,11 +155,13 @@ const Dashboard = () => {
         label: "Sales Revenue",
         data: data.charts.sales.map((d) => d.amount),
         productNames: data.charts.sales.map((d) => d.productName),
-        borderColor: "#3b82f6",
-        backgroundColor: "rgba(59, 130, 246, 0.15)",
+        borderColor: isTransport ? "#0ea5e9" : "#3b82f6", // Sky vs Blue
+        backgroundColor: isTransport
+          ? "rgba(14, 165, 233, 0.15)"
+          : "rgba(59, 130, 246, 0.15)",
         borderWidth: 3,
-        pointBackgroundColor: "#050a08",
-        pointBorderColor: "#3b82f6",
+        pointBackgroundColor: "#09090B",
+        pointBorderColor: isTransport ? "#0ea5e9" : "#3b82f6",
         pointBorderWidth: 2,
         pointRadius: 4,
         pointHoverRadius: 6,
@@ -144,24 +173,23 @@ const Dashboard = () => {
 
   const sharedOptions = {
     responsive: true,
-    maintainAspectRatio: false, // Ensure this is false!
+    maintainAspectRatio: false,
     interaction: {
       mode: "index",
       intersect: false,
     },
-    // Removed bottom padding to ensure x-axis fits perfectly
     layout: { padding: { left: 0, right: 0, top: 10, bottom: 0 } },
   };
 
-  const emeraldChartOptions = {
+  const productionChartOptions = {
     ...sharedOptions,
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: "rgba(5, 10, 8, 0.95)",
-        titleColor: "#10b981",
-        bodyColor: "#e2e8f0",
-        borderColor: "rgba(16, 185, 129, 0.3)",
+        backgroundColor: "rgba(9, 9, 11, 0.95)",
+        titleColor: isTransport ? "#22d3ee" : "#a78bfa", // Cyan vs Violet
+        bodyColor: "#f4f4f5",
+        borderColor: "rgba(39, 39, 42, 1)",
         borderWidth: 1,
         padding: 12,
         cornerRadius: 8,
@@ -187,12 +215,12 @@ const Dashboard = () => {
       y: {
         beginAtZero: true,
         grid: {
-          color: "rgba(16, 185, 129, 0.1)",
+          color: "rgba(255, 255, 255, 0.03)",
           drawBorder: false,
           borderDash: [5, 5],
         },
         ticks: {
-          color: "rgba(255, 255, 255, 0.5)",
+          color: "rgba(161, 161, 170, 0.8)",
           font: { family: "monospace", size: 10 },
           padding: 10,
         },
@@ -201,7 +229,7 @@ const Dashboard = () => {
       x: {
         grid: { display: false, drawBorder: false },
         ticks: {
-          color: "rgba(255, 255, 255, 0.5)",
+          color: "rgba(161, 161, 170, 0.8)",
           font: { family: "monospace", size: 11 },
           padding: 10,
         },
@@ -215,10 +243,10 @@ const Dashboard = () => {
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: "rgba(2, 6, 23, 0.95)",
-        titleColor: "#3b82f6",
-        bodyColor: "#e2e8f0",
-        borderColor: "rgba(59, 130, 246, 0.3)",
+        backgroundColor: "rgba(9, 9, 11, 0.95)",
+        titleColor: isTransport ? "#38bdf8" : "#60a5fa", // Sky vs Blue
+        bodyColor: "#f4f4f5",
+        borderColor: "rgba(39, 39, 42, 1)",
         borderWidth: 1,
         padding: 12,
         cornerRadius: 8,
@@ -244,12 +272,12 @@ const Dashboard = () => {
       y: {
         beginAtZero: true,
         grid: {
-          color: "rgba(59, 130, 246, 0.1)",
+          color: "rgba(255, 255, 255, 0.03)",
           drawBorder: false,
           borderDash: [5, 5],
         },
         ticks: {
-          color: "rgba(255, 255, 255, 0.5)",
+          color: "rgba(161, 161, 170, 0.8)",
           font: { family: "monospace", size: 10 },
           padding: 10,
           callback: (value) => `₹${value.toLocaleString()}`,
@@ -259,7 +287,7 @@ const Dashboard = () => {
       x: {
         grid: { display: false, drawBorder: false },
         ticks: {
-          color: "rgba(255, 255, 255, 0.5)",
+          color: "rgba(161, 161, 170, 0.8)",
           font: { family: "monospace", size: 11 },
           padding: 10,
         },
@@ -275,16 +303,21 @@ const Dashboard = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-20">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-            <Factory className="text-emerald-500" size={32} /> Enterprise Hub
+            <div
+              className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryBorder}`}
+            >
+              <Factory className={theme.primaryText} size={28} />
+            </div>
+            Enterprise Hub
           </h1>
-          <p className="text-emerald-100/40 mt-1 text-sm">
+          <p className="text-zinc-400 mt-2 text-sm font-medium">
             Real-time factory production & financial command center.
           </p>
         </div>
         <div className="flex gap-3 relative">
           <Button
             variant="outline"
-            className="text-xs h-10 gap-2 border-emerald-900/30 hover:bg-emerald-900/10"
+            className="text-xs h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors"
             onClick={handleExport}
           >
             <Download size={16} /> Export Report
@@ -292,7 +325,7 @@ const Dashboard = () => {
           <div className="relative">
             <Button
               variant="primary"
-              className="text-xs h-10 gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
+              className={`text-xs h-11 px-5 gap-2 rounded-xl bg-gradient-to-r text-white active:scale-95 transition-all ${theme.gradientBtn}`}
               onClick={() => setShowQuickMenu(!showQuickMenu)}
             >
               <Plus size={16} /> Quick Action
@@ -303,56 +336,56 @@ const Dashboard = () => {
                   className="fixed inset-0 z-10"
                   onClick={() => setShowQuickMenu(false)}
                 ></div>
-                <div className="absolute right-0 mt-3 w-64 bg-[#050a08]/95 backdrop-blur-xl border border-emerald-500/20 rounded-2xl shadow-2xl p-2 z-20 animate-in fade-in zoom-in-95 duration-200 origin-top-right ring-1 ring-black/50">
-                  <div className="px-3 py-2 border-b border-white/5 mb-1">
-                    <p className="text-[10px] uppercase font-bold text-emerald-100/30 tracking-[0.2em]">
+                <div className="absolute right-0 mt-3 w-64 bg-[#09090B]/95 backdrop-blur-xl border border-zinc-800/80 rounded-2xl shadow-2xl p-2 z-20 animate-in fade-in zoom-in-95 duration-200 origin-top-right ring-1 ring-black/50">
+                  <div className="px-3 py-2 border-b border-zinc-800/60 mb-1">
+                    <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-[0.2em]">
                       Create New Entry
                     </p>
                   </div>
                   <div className="space-y-1 p-1">
                     <Link
                       to="/enterprise/sales"
-                      className="quick-link-item group flex items-center p-2 rounded-lg hover:bg-white/5 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-zinc-800/50 transition-colors"
                     >
-                      <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20 group-hover:text-emerald-300 transition-colors mr-3">
+                      <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 transition-colors mr-3">
                         <ShoppingCart size={16} />
                       </div>
-                      <span className="flex-1 text-sm font-medium text-emerald-50">
+                      <span className="flex-1 text-sm font-medium text-zinc-200">
                         Sales Entry
                       </span>
                       <ChevronRight
                         size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-emerald-50"
+                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-zinc-400"
                       />
                     </Link>
                     <Link
                       to="/enterprise/production"
-                      className="quick-link-item group flex items-center p-2 rounded-lg hover:bg-white/5 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-zinc-800/50 transition-colors"
                     >
-                      <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 group-hover:text-blue-300 transition-colors mr-3">
+                      <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20 transition-colors mr-3">
                         <Factory size={16} />
                       </div>
-                      <span className="flex-1 text-sm font-medium text-emerald-50">
+                      <span className="flex-1 text-sm font-medium text-zinc-200">
                         Production Log
                       </span>
                       <ChevronRight
                         size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-emerald-50"
+                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-zinc-400"
                       />
                     </Link>
                     <Link
                       to="/enterprise/invoices/create"
-                      className="quick-link-item group flex items-center p-2 rounded-lg hover:bg-white/5 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-zinc-800/50 transition-colors"
                     >
-                      <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 group-hover:bg-purple-500/20 group-hover:text-purple-300 transition-colors mr-3">
+                      <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 group-hover:bg-purple-500/20 transition-colors mr-3">
                         <FileText size={16} />
                       </div>
-                      <span className="flex-1 text-sm font-medium text-emerald-50">
+                      <span className="flex-1 text-sm font-medium text-zinc-200">
                         New Invoice
                       </span>
                       <ChevronRight
                         size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-emerald-50"
+                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-zinc-400"
                       />
                     </Link>
                   </div>
@@ -368,17 +401,19 @@ const Dashboard = () => {
           title="Total Sales"
           value={`₹ ${data.cards.balance.toLocaleString()}`}
           icon={ShoppingCart}
-          color="emerald"
+          color="blue"
           trend="Overall Dispatch"
           trendUp={true}
+          isTransport={isTransport}
         />
         <StatCard
           title="Stock Value"
           value={`₹ ${data.cards.stockValue.toLocaleString()}`}
           icon={Package}
-          color="blue"
+          color="indigo"
           trend={`${data.cards.lowStock} Low Stock Items`}
           trendUp={data.cards.lowStock === 0}
+          isTransport={isTransport}
         />
         <StatCard
           title="Invoice Billed"
@@ -387,14 +422,16 @@ const Dashboard = () => {
           color="purple"
           trend={`${data.cards.pendingInvoices} Pending Invoices`}
           trendUp={true}
+          isTransport={isTransport}
         />
         <StatCard
           title="Workforce"
           value={data.cards.activeEmployees}
           icon={Users}
-          color="amber"
+          color="sky"
           trend="Active Personnel"
           trendUp={true}
+          isTransport={isTransport}
         />
       </div>
 
@@ -402,32 +439,36 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* ========================================== */}
           {/* PRODUCTION CHART */}
-          {/* Height badha di h-[450px] tak jisse proper space mile */}
           {/* ========================================== */}
-          <div className="lg:col-span-2 p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-emerald-900/30 shadow-lg relative flex flex-col w-full h-[450px] overflow-hidden group">
-            <div className="absolute -left-10 -top-10 w-40 h-40 bg-emerald-500/5 blur-[80px] rounded-full group-hover:bg-emerald-500/10 transition-colors duration-700 pointer-events-none" />
+          <div
+            className={`lg:col-span-2 p-6 md:p-8 rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-lg relative flex flex-col w-full h-[450px] overflow-hidden group ${theme.primaryHoverBorder} transition-all duration-500`}
+          >
+            <div
+              className={`absolute -left-10 -top-10 w-40 h-40 blur-[80px] rounded-full transition-colors duration-700 pointer-events-none ${theme.glowOrb}`}
+            />
 
             <div className="flex justify-between items-center shrink-0 relative z-10 mb-6">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Activity size={20} className="text-emerald-500" /> Production
-                Trend
+              <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${theme.primaryBg}`}>
+                  <Activity size={18} className={theme.primaryText} />
+                </div>
+                Production Trend
               </h3>
-              <span className="text-xs text-emerald-100/40 font-mono bg-emerald-900/20 px-3 py-1.5 rounded-lg border border-emerald-900/30">
+              <span className="text-xs text-zinc-400 font-mono bg-zinc-800/30 px-3 py-1.5 rounded-lg border border-zinc-800/80">
                 Last 7 Days
               </span>
             </div>
 
-            {/* 🔥 MAGIC CLASSES FOR CHART JS: [&>div]:!h-full forces the canvas wrapper to fill up completely */}
             <div className="relative flex-1 w-full min-h-0 [&>div]:!h-full [&>div]:!w-full [&_canvas]:!h-full [&_canvas]:!w-full">
               {data.charts.production.length > 0 ? (
                 <Suspense fallback={<ChartSkeleton />}>
                   <BarChart
                     data={productionChartData}
-                    options={emeraldChartOptions}
+                    options={productionChartOptions}
                   />
                 </Suspense>
               ) : (
-                <div className="flex h-full items-center justify-center text-emerald-100/30 text-sm">
+                <div className="flex h-full items-center justify-center text-zinc-500 text-sm">
                   No production data in last 7 days
                 </div>
               )}
@@ -436,24 +477,29 @@ const Dashboard = () => {
 
           {/* ========================================== */}
           {/* RECENT ACTIVITY */}
-          {/* Same h-[450px] to match perfectly */}
           {/* ========================================== */}
-          <div className="p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-emerald-900/30 shadow-lg flex flex-col w-full h-[450px] overflow-hidden">
-            <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2 shrink-0">
-              <Activity size={20} className="text-emerald-500" /> Recent
-              Activity
-              <span className="text-xs font-normal text-emerald-100/40 ml-2">
-                (Top 10)
+          <div className="p-6 md:p-8 rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-lg flex flex-col w-full h-[450px] overflow-hidden hover:border-zinc-700 transition-all duration-500">
+            <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-3 shrink-0">
+              <div className="p-2 rounded-lg bg-zinc-800/50">
+                <Activity size={18} className="text-zinc-300" />
+              </div>
+              Recent Activity
+              <span className="text-xs font-normal text-zinc-500 ml-auto">
+                Top 10
               </span>
             </h3>
 
-            <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar min-h-0">
+            <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar min-h-0">
               {data.recentActivity.length > 0 ? (
                 data.recentActivity.map((activity, index) => (
-                  <ActivityItem key={index} data={activity} />
+                  <ActivityItem
+                    key={index}
+                    data={activity}
+                    isTransport={isTransport}
+                  />
                 ))
               ) : (
-                <p className="text-center text-emerald-200/30 text-sm py-10 italic">
+                <p className="text-center text-zinc-500 text-sm py-10 italic">
                   No recent activity found.
                 </p>
               )}
@@ -463,29 +509,29 @@ const Dashboard = () => {
 
         {/* ========================================== */}
         {/* SALES CHART */}
-        {/* Same h-[450px] and same aggressive chart fix */}
         {/* ========================================== */}
-        <div className="w-full p-6 md:p-8 rounded-[32px] bg-[#050a08] border border-blue-900/30 shadow-lg relative flex flex-col h-[450px] overflow-hidden group">
+        <div className="w-full p-6 md:p-8 rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-lg relative flex flex-col h-[450px] overflow-hidden group hover:border-blue-500/30 transition-all duration-500">
           <div className="absolute -left-10 -top-10 w-40 h-40 bg-blue-500/5 blur-[80px] rounded-full group-hover:bg-blue-500/10 transition-colors duration-700 pointer-events-none" />
 
           <div className="flex justify-between items-center shrink-0 relative z-10 mb-6">
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <TrendingUp size={20} className="text-blue-500" /> Sales Revenue
-              Trend
+            <h3 className="text-xl font-bold text-white flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-500/10">
+                <TrendingUp size={18} className="text-blue-400" />
+              </div>
+              Sales Revenue Trend
             </h3>
-            <span className="text-xs text-blue-100/40 font-mono bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-900/30">
+            <span className="text-xs text-zinc-400 font-mono bg-zinc-800/30 px-3 py-1.5 rounded-lg border border-zinc-800/80">
               Last 7 Days
             </span>
           </div>
 
-          {/* 🔥 MAGIC CLASSES FOR SALES CHART */}
           <div className="relative flex-1 w-full min-h-0 [&>div]:!h-full [&>div]:!w-full [&_canvas]:!h-full [&_canvas]:!w-full">
             {data.charts.sales.length > 0 ? (
               <Suspense fallback={<ChartSkeleton />}>
                 <LineChart data={salesChartData} options={blueChartOptions} />
               </Suspense>
             ) : (
-              <div className="flex h-full items-center justify-center text-blue-100/30 text-sm">
+              <div className="flex h-full items-center justify-center text-zinc-500 text-sm">
                 No sales data in last 7 days
               </div>
             )}
@@ -496,29 +542,58 @@ const Dashboard = () => {
   );
 };
 
-const StatCard = ({ title, value, icon: Icon, color, trend, trendUp }) => {
-  const colors = {
-    emerald: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-    blue: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-    purple: "text-purple-400 bg-purple-500/10 border-purple-500/20",
-    amber: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-    red: "text-rose-400 bg-rose-500/10 border-rose-500/20",
-  };
-  const theme = colors[color] || colors.emerald;
+const StatCard = ({
+  title,
+  value,
+  icon: Icon,
+  color,
+  trend,
+  trendUp,
+  isTransport,
+}) => {
+  const colors = isTransport
+    ? {
+        indigo: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
+        blue: "text-blue-400 bg-blue-500/10 border-blue-500/20",
+        purple: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+        sky: "text-sky-400 bg-sky-500/10 border-sky-500/20",
+        zinc: "text-zinc-400 bg-zinc-800/50 border-zinc-700",
+      }
+    : {
+        indigo: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+        blue: "text-blue-400 bg-blue-500/10 border-blue-500/20",
+        purple: "text-purple-400 bg-purple-500/10 border-purple-500/20",
+        sky: "text-sky-400 bg-sky-500/10 border-sky-500/20",
+        zinc: "text-zinc-400 bg-zinc-800/50 border-zinc-700",
+      };
+
+  const theme = colors[color] || colors.zinc;
+  const hoverClass = isTransport
+    ? "hover:border-blue-500/30 hover:shadow-[0_8px_24px_-6px_rgba(59,130,246,0.15)]"
+    : "hover:border-indigo-500/30 hover:shadow-[0_8px_24px_-6px_rgba(99,102,241,0.15)]";
+
   return (
-    <div className="bg-[#050a08] border border-emerald-900/30 p-6 rounded-[32px] hover:border-emerald-500/30 transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden">
+    <div
+      className={`bg-[#09090B] border border-zinc-800/60 p-6 rounded-2xl ${hoverClass} transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden shadow-sm`}
+    >
       <div className="flex justify-between items-start mb-4 relative z-10">
-        <div className={`p-3.5 rounded-2xl border shadow-lg ${theme}`}>
-          <Icon size={24} />
+        <div className={`p-3.5 rounded-xl border ${theme}`}>
+          <Icon size={22} />
         </div>
         <span
-          className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border ${trendUp ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20"}`}
+          className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border ${
+            trendUp
+              ? isTransport
+                ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+              : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+          }`}
         >
           {trend}
         </span>
       </div>
       <div className="relative z-10 mt-6">
-        <p className="text-emerald-100/40 text-xs font-bold uppercase tracking-wider mb-1">
+        <p className="text-zinc-400 text-xs font-bold uppercase tracking-wider mb-1">
           {title}
         </p>
         <h3 className="text-3xl font-bold text-white tracking-tight">
@@ -529,9 +604,11 @@ const StatCard = ({ title, value, icon: Icon, color, trend, trendUp }) => {
   );
 };
 
-const ActivityItem = ({ data }) => {
+const ActivityItem = ({ data, isTransport }) => {
   let Icon = Factory;
-  let colorTheme = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+  let colorTheme = isTransport
+    ? "text-cyan-400 bg-cyan-500/10 border-cyan-500/20"
+    : "text-indigo-400 bg-indigo-500/10 border-indigo-500/20";
   let title = `Production: ${data.productName || "Product"}`;
   let desc = `${Number(data.quantity || 0).toLocaleString()} Units Produced`;
   let amount = null;
@@ -544,29 +621,31 @@ const ActivityItem = ({ data }) => {
     amount = `₹${Number(data.amount || 0).toLocaleString("en-IN")}`;
   } else if (data.activityType === "Invoice") {
     Icon = FileText;
-    colorTheme = "text-purple-400 bg-purple-500/10 border-purple-500/20";
+    colorTheme = isTransport
+      ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/20"
+      : "text-purple-400 bg-purple-500/10 border-purple-500/20";
     title = `Invoice: ${data.invoiceNumber || "INV"}`;
     desc = `Billed to ${data.clientName || "Client"}`;
     amount = `₹${Number(data.grandTotal || 0).toLocaleString("en-IN")}`;
   }
 
   return (
-    <div className="flex items-start gap-4 p-3 rounded-2xl hover:bg-emerald-900/20 transition-colors border border-transparent hover:border-emerald-900/30">
-      <div className={`p-2 rounded-xl border shrink-0 ${colorTheme}`}>
+    <div className="flex items-start gap-4 p-3 rounded-xl hover:bg-zinc-800/40 transition-colors border border-transparent hover:border-zinc-700/50">
+      <div className={`p-2 rounded-lg border shrink-0 ${colorTheme}`}>
         <Icon size={16} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-start">
-          <p className="text-sm font-bold text-white truncate">{title}</p>
+          <p className="text-sm font-bold text-zinc-100 truncate">{title}</p>
           {amount && (
-            <p className="text-xs font-bold text-white font-mono ml-2">
+            <p className="text-xs font-bold text-zinc-300 font-mono ml-2">
               {amount}
             </p>
           )}
         </div>
-        <p className="text-xs text-emerald-100/50 truncate mt-0.5">{desc}</p>
-        <p className="text-[10px] text-emerald-100/30 mt-1 font-mono">
-          <Calendar size={10} className="inline mr-1" />
+        <p className="text-xs text-zinc-400 truncate mt-0.5">{desc}</p>
+        <p className="text-[10px] text-zinc-500 mt-1.5 font-mono flex items-center gap-1">
+          <Calendar size={10} />
           {new Date(data.date || data.createdAt).toLocaleDateString("en-GB")}
         </p>
       </div>
