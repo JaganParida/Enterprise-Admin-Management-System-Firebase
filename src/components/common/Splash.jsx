@@ -49,14 +49,14 @@ const Splash = ({ onComplete }) => {
           initial={{ opacity: 1 }}
           exit={{ opacity: 0, scale: 1.05 }} // Subtle zoom-in as it fades out
           transition={{ duration: 0.8, ease: "easeInOut" }}
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#020403] overflow-hidden"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#09090B] overflow-hidden"
         >
           {/* 1. Background Ambient Glow */}
           <motion.div
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 2, ease: "easeOut" }}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-500/10 blur-[120px] rounded-full pointer-events-none"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/10 blur-[120px] rounded-full pointer-events-none"
           />
 
           <div className="relative flex flex-col items-center z-10">
@@ -76,7 +76,7 @@ const Splash = ({ onComplete }) => {
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-0 border-[2px] border-dashed border-emerald-500/20 rounded-full"
+                className="absolute inset-0 border-[2px] border-dashed border-indigo-500/20 rounded-full"
               />
 
               {/* Inner Glowing Diamond */}
@@ -84,7 +84,7 @@ const Splash = ({ onComplete }) => {
                 initial={{ rotate: 0 }}
                 animate={{ rotate: 45 }}
                 transition={{ duration: 1, delay: 0.2, type: "spring" }}
-                className="absolute w-16 h-16 bg-gradient-to-br from-emerald-400 to-teal-700 rounded-xl flex items-center justify-center shadow-[0_0_40px_rgba(16,185,129,0.5)]"
+                className="absolute w-16 h-16 bg-gradient-to-br from-indigo-500 to-violet-700 rounded-xl flex items-center justify-center shadow-[0_0_40px_rgba(99,102,241,0.5)]"
               >
                 {/* The Letter 'E' */}
                 <motion.span
@@ -109,7 +109,7 @@ const Splash = ({ onComplete }) => {
                 <motion.span
                   key={index}
                   variants={textLetter}
-                  className="text-2xl md:text-3xl font-black text-white tracking-[0.4em] font-sans drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+                  className="text-2xl md:text-3xl font-black text-white tracking-[0.4em] font-sans drop-shadow-[0_0_10px_rgba(255,255,255,0.1)]"
                 >
                   {letter}
                 </motion.span>
@@ -117,12 +117,12 @@ const Splash = ({ onComplete }) => {
             </motion.div>
 
             {/* 4. Modern Loading Progress Bar */}
-            <div className="w-56 h-[3px] bg-emerald-900/40 rounded-full overflow-hidden relative shadow-inner">
+            <div className="w-56 h-[3px] bg-indigo-900/40 rounded-full overflow-hidden relative shadow-inner">
               <motion.div
                 initial={{ width: "0%" }}
                 animate={{ width: "100%" }}
                 transition={{ duration: 2.2, ease: "easeInOut", delay: 0.2 }}
-                className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-500 to-teal-300 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.8)]"
+                className="absolute inset-y-0 left-0 bg-gradient-to-r from-indigo-500 to-violet-400 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.8)]"
               />
             </div>
 
@@ -131,7 +131,7 @@ const Splash = ({ onComplete }) => {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 0.6, y: 0 }}
               transition={{ delay: 1.5, duration: 0.5 }}
-              className="mt-6 text-[10px] font-bold text-emerald-100 uppercase tracking-[0.3em]"
+              className="mt-6 text-[10px] font-bold text-indigo-100 uppercase tracking-[0.3em]"
             >
               Initializing System Modules
             </motion.p>
