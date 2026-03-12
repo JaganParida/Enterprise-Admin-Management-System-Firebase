@@ -26,10 +26,11 @@ import {
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const ProductionReport = () => {
+  const location = useLocation();
   const { toast } = useUI();
   const { admin } = useAuth();
   const [logs, setLogs] = useState([]);
@@ -37,6 +38,31 @@ const ProductionReport = () => {
   const [loading, setLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState("production");
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryTextMuted: isTransport ? "text-cyan-500" : "text-indigo-500",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryHoverBorder: isTransport
+      ? "hover:border-cyan-500/30"
+      : "hover:border-indigo-500/30",
+    primaryHoverBg: isTransport
+      ? "hover:bg-cyan-500/20"
+      : "hover:bg-indigo-500/20",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+    primaryTabBg: isTransport ? "bg-cyan-600" : "bg-indigo-600",
+    indicatorLine: isTransport ? "bg-cyan-500" : "bg-indigo-500",
+  };
 
   const [searchTerm, setSearchTerm] = useState("");
   const [filterProduct, setFilterProduct] = useState("All");
@@ -226,7 +252,6 @@ const ProductionReport = () => {
     setTimeout(() => setWarningTooltip(null), 2500);
   };
 
-  // Full Database Backup Logic
   const handleFullBackup = () => {
     try {
       if (logs.length === 0 && labourLogs.length === 0)
@@ -263,7 +288,6 @@ const ProductionReport = () => {
     }
   };
 
-  // Wipe All Logic - Securely verify password
   const handleWipeAll = async () => {
     if (isManager || !deletePassword)
       return toast.error("Verification failed.");
@@ -375,43 +399,9 @@ const ProductionReport = () => {
 
   if (loading) return <Loader />;
 
-  // Theme configuration based on active tab for professional UI
-  const theme = {
-    color:
-      activeTab === "production"
-        ? "emerald"
-        : activeTab === "labour"
-          ? "blue"
-          : "rose",
-    bgClass:
-      activeTab === "production"
-        ? "bg-emerald-500"
-        : activeTab === "labour"
-          ? "bg-blue-500"
-          : "bg-rose-500",
-    textClass:
-      activeTab === "production"
-        ? "text-emerald-500"
-        : activeTab === "labour"
-          ? "text-blue-500"
-          : "text-rose-500",
-    borderClass:
-      activeTab === "production"
-        ? "border-emerald-500/30 hover:border-emerald-500/60 focus:border-emerald-500"
-        : activeTab === "labour"
-          ? "border-blue-500/30 hover:border-blue-500/60 focus:border-blue-500"
-          : "border-rose-500/30 hover:border-rose-500/60 focus:border-rose-500",
-    focusRing:
-      activeTab === "production"
-        ? "focus:ring-emerald-500/20"
-        : activeTab === "labour"
-          ? "focus:ring-blue-500/20"
-          : "focus:ring-rose-500/20",
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      {/* 🚀 HEADER SECTION (Tabs Moved Here) */}
+      {/* HEADER SECTION */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">
@@ -420,14 +410,14 @@ const ProductionReport = () => {
         </div>
 
         <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
-          {/* 🚀 NO SCROLLBAR PILL TABS */}
-          <div className="w-full md:w-auto bg-[#020403] p-1.5 rounded-2xl md:rounded-full border border-emerald-900/30 shadow-inner grid grid-cols-3 md:flex md:items-center gap-1">
+          {/* PILL TABS */}
+          <div className="w-full md:w-auto bg-[#09090B] p-1.5 rounded-2xl md:rounded-full border border-zinc-800/60 grid grid-cols-3 md:flex md:items-center gap-1">
             <button
               onClick={() => setActiveTab("production")}
               className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
                 activeTab === "production"
-                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
-                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+                  ? `${theme.primaryTabBg} text-white`
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
               }`}
             >
               Output
@@ -436,8 +426,8 @@ const ProductionReport = () => {
               onClick={() => setActiveTab("labour")}
               className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
                 activeTab === "labour"
-                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
-                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+                  ? `${theme.primaryTabBg} text-white`
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
               }`}
             >
               Payouts
@@ -446,8 +436,8 @@ const ProductionReport = () => {
               onClick={() => setActiveTab("dues")}
               className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
                 activeTab === "dues"
-                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
-                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+                  ? `${theme.primaryTabBg} text-white`
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
               }`}
             >
               Dues
@@ -457,23 +447,22 @@ const ProductionReport = () => {
           {/* Action Buttons */}
           <div className="flex gap-3 w-full md:w-auto ml-auto md:ml-0">
             <div className="relative w-full md:w-auto">
-              <button
+              <Button
+                variant="module"
                 onClick={() =>
                   isManager
                     ? handleDisabledClick("wipe-all")
                     : setIsDeleteAllOpen(true)
                 }
-                className={`flex w-full md:w-auto items-center justify-center gap-2 px-4 py-2.5 rounded-xl transition-all text-xs font-bold shadow-lg ${
-                  isManager
-                    ? "bg-red-500/5 text-red-500/50 border border-red-500/10 opacity-50 cursor-not-allowed"
-                    : "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white hover:shadow-[0_0_20px_rgba(220,38,38,0.4)]"
+                className={`h-11 px-5 w-full md:w-auto border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${
+                  isManager ? "opacity-50 !cursor-not-allowed" : ""
                 }`}
               >
                 <AlertOctagon size={16} /> Wipe DB
-              </button>
+              </Button>
               {warningTooltip === "wipe-all" && (
                 <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
-                  <div className="bg-[#050a08] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                  <div className="bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                     <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
                       🚫
                     </span>{" "}
@@ -482,10 +471,17 @@ const ProductionReport = () => {
                 </div>
               )}
             </div>
-            <Link to="/enterprise/production" className="w-full md:w-auto">
+            <Link
+              to={
+                isTransport
+                  ? "/transportation/production"
+                  : "/enterprise/production"
+              }
+              className="w-full md:w-auto"
+            >
               <Button
                 variant="primary"
-                className="w-full md:w-auto text-xs px-6 py-2.5 shadow-lg flex items-center justify-center bg-emerald-600 hover:bg-emerald-500 text-white"
+                className="w-full md:w-auto text-xs px-6 h-11 rounded-xl shadow-lg flex items-center justify-center text-white"
               >
                 + Log New Entry
               </Button>
@@ -497,20 +493,28 @@ const ProductionReport = () => {
       {/* STATS CARDS */}
       {activeTab === "production" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-          <div className="p-6 rounded-2xl bg-gradient-to-br from-[#050a08] to-[#020403] border border-emerald-900/30 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <Factory size={80} className="text-emerald-500" />
+          <div
+            className={`p-6 rounded-2xl bg-[#09090B] border border-zinc-800/60 relative overflow-hidden group ${theme.primaryHoverBorder} transition-all`}
+          >
+            <div
+              className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity ${theme.primaryTextMuted}`}
+            >
+              <Factory size={80} />
             </div>
-            <p className="text-emerald-100/50 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
+            <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
               Total Output
             </p>
-            <h3 className="text-3xl font-bold text-emerald-400 relative z-10">
+            <h3 className="text-3xl font-bold text-white relative z-10">
               {totalOutput.toLocaleString()}{" "}
-              <span className="text-sm text-emerald-100/40">Pcs</span>
+              <span className="text-sm text-zinc-500">Pcs</span>
             </h3>
           </div>
-          <div className="p-6 rounded-2xl bg-[#050a08] border border-emerald-900/30">
-            <div className="flex items-center gap-3 mb-2 text-emerald-400">
+          <div
+            className={`p-6 rounded-2xl bg-[#09090B] border border-zinc-800/60 ${theme.primaryHoverBorder} transition-all`}
+          >
+            <div
+              className={`flex items-center gap-3 mb-2 ${theme.primaryText}`}
+            >
               <BarChart size={20} />
               <span className="font-bold">Total Batches</span>
             </div>
@@ -521,19 +525,19 @@ const ProductionReport = () => {
         </div>
       ) : activeTab === "labour" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-          <div className="p-6 rounded-2xl bg-gradient-to-br from-[#050a08] to-[#020403] border border-blue-900/30 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+          <div className="p-6 rounded-2xl bg-[#09090B] border border-zinc-800/60 relative overflow-hidden group hover:border-blue-500/30 transition-all">
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
               <IndianRupee size={80} className="text-blue-500" />
             </div>
-            <p className="text-blue-100/50 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
+            <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
               Total Paid Out
             </p>
-            <h3 className="text-3xl font-bold text-blue-400 relative z-10">
+            <h3 className="text-3xl font-bold text-white relative z-10">
               ₹ {totalPaidOut.toLocaleString()}{" "}
-              <span className="text-sm text-blue-100/40">INR</span>
+              <span className="text-sm text-zinc-500">INR</span>
             </h3>
           </div>
-          <div className="p-6 rounded-2xl bg-[#050a08] border border-blue-900/30">
+          <div className="p-6 rounded-2xl bg-[#09090B] border border-zinc-800/60 hover:border-blue-500/30 transition-all">
             <div className="flex items-center gap-3 mb-2 text-blue-400">
               <Users size={20} />
               <span className="font-bold">Total Payout Records</span>
@@ -545,11 +549,11 @@ const ProductionReport = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 animate-in fade-in duration-300">
-          <div className="p-6 rounded-2xl bg-gradient-to-br from-[#050a08] to-[#020403] border border-rose-900/30 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+          <div className="p-6 rounded-2xl bg-[#09090B] border border-zinc-800/60 relative overflow-hidden group hover:border-rose-500/30 transition-all">
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
               <AlertCircle size={80} className="text-rose-500" />
             </div>
-            <p className="text-rose-100/50 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
+            <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
               Total Pending Dues
             </p>
             <h3 className="text-4xl font-bold text-rose-400 relative z-10">
@@ -560,18 +564,18 @@ const ProductionReport = () => {
       )}
 
       {/* MAIN DATA SECTION */}
-      <div className="bg-[#050a08] rounded-2xl border border-white/5 overflow-visible shadow-2xl transition-colors duration-500">
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-visible transition-colors duration-500">
         {/* SEARCH & EXPORT BAR */}
-        <div className="p-5 border-b border-white/5 bg-[#020403]/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-2xl">
+        <div className="p-5 border-b border-zinc-800/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5">
           <div className="relative w-full sm:max-w-md group">
             <Search
               size={16}
-              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${searchTerm ? theme.textClass : "text-gray-500 group-hover:text-gray-400"}`}
+              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${searchTerm ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
             <input
               type="text"
               placeholder={`Search ${activeTab === "production" ? "product" : "name or category"}...`}
-              className={`w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none transition-all shadow-inner focus:ring-2 ${theme.focusRing} ${theme.borderClass}`}
+              className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -579,7 +583,7 @@ const ProductionReport = () => {
           <div className="w-full sm:w-auto">
             <Button
               variant="outline"
-              className="gap-2 w-full sm:w-auto text-xs font-bold tracking-widest border-white/10 py-2.5 bg-black/40 hover:bg-white/5 flex items-center justify-center"
+              className="h-11 px-5 gap-2 w-full sm:w-auto rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors text-xs"
               onClick={handleExport}
             >
               <Download size={16} /> Export View
@@ -587,14 +591,14 @@ const ProductionReport = () => {
           </div>
         </div>
 
-        {/* 🚀 PROFESSIONAL FILTRATION UI 🚀 */}
-        <div className="p-4 border-b border-white/5 bg-[#050a08] flex flex-wrap items-center gap-4 relative z-20">
-          <div
-            className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest ${theme.textClass} px-3 py-1 border-r border-white/10 mr-1`}
-          >
+        {/* FILTERS */}
+        <div className="p-4 border-b border-zinc-800/60 bg-zinc-900/20 flex flex-wrap items-center gap-4 relative z-20">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 px-3 py-1 border-r border-zinc-800 mr-1">
             <Filter size={16} /> Filters
             {activeFiltersCount > 0 && (
-              <span className={`ml-1 px-1.5 rounded bg-white/10 text-white`}>
+              <span
+                className={`ml-1 px-1.5 rounded border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+              >
                 {activeFiltersCount}
               </span>
             )}
@@ -602,105 +606,104 @@ const ProductionReport = () => {
 
           {activeTab === "production" && (
             <>
-              {/* Product Filter Wrapper */}
               <div className="relative group">
                 <select
                   value={filterProduct}
                   onChange={(e) => setFilterProduct(e.target.value)}
-                  className={`appearance-none bg-black/30 border border-white/10 rounded-xl pl-4 pr-10 py-2 text-xs font-medium text-gray-300 outline-none cursor-pointer transition-all focus:ring-2 ${theme.focusRing} ${theme.borderClass}`}
+                  className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
                 >
-                  <option value="All" className="bg-[#050a08] text-gray-300">
+                  <option value="All" className="bg-[#09090B] text-zinc-300">
                     All Products
                   </option>
                   <optgroup
                     label="Bricks"
-                    className="bg-[#020403] text-emerald-500 font-bold"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                   >
                     <option
                       value="Bricks (10 inch)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       Bricks (10 inch)
                     </option>
                     <option
                       value="Bricks (9 inch)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       Bricks (9 inch)
                     </option>
                     <option
                       value="Bricks (8 inch)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       Bricks (8 inch)
                     </option>
                   </optgroup>
                   <optgroup
                     label="Paver Blocks"
-                    className="bg-[#020403] text-emerald-500 font-bold"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                   >
                     <option
                       value="Zig Zag (60mm)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       Zig Zag (60mm)
                     </option>
                     <option
                       value="Zig Zag (80mm)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       Zig Zag (80mm)
                     </option>
                     <option
                       value="6-12 Brick (60mm)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       6-12 Brick (60mm)
                     </option>
                     <option
                       value="6-12 Brick (80mm)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       6-12 Brick (80mm)
                     </option>
                     <option
                       value="6/6 Brick (60mm)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       6/6 Brick 60mm
                     </option>
                     <option
                       value="6/6 Brick (80mm)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       6/6 Brick (80mm)
                     </option>
                   </optgroup>
                   <optgroup
                     label="Chequered Tiles"
-                    className="bg-[#020403] text-emerald-500 font-bold"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                   >
                     <option
                       value="Hexagon"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       Hexagon
                     </option>
                     <option
                       value="Brick Design (9inch)"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       Brick Design (9inch)
                     </option>
                     <option
                       value="Curve Stone"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       Curve Stone
                     </option>
                     <option
                       value="Cover Block"
-                      className="text-gray-300 font-normal"
+                      className="text-zinc-300 font-normal"
                     >
                       Cover Block
                     </option>
@@ -708,33 +711,32 @@ const ProductionReport = () => {
                 </select>
                 <ChevronDown
                   size={14}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-emerald-500 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
                 />
               </div>
 
-              {/* Quantity Filter Wrapper */}
               <div className="relative group">
                 <select
                   value={filterQuantity}
                   onChange={(e) => setFilterQuantity(e.target.value)}
-                  className={`appearance-none bg-black/30 border border-white/10 rounded-xl pl-4 pr-10 py-2 text-xs font-medium text-gray-300 outline-none cursor-pointer transition-all focus:ring-2 ${theme.focusRing} ${theme.borderClass}`}
+                  className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
                 >
-                  <option value="All" className="bg-[#050a08]">
+                  <option value="All" className="bg-[#09090B]">
                     Any Quantity
                   </option>
-                  <option value="Under5k" className="bg-[#050a08]">
+                  <option value="Under5k" className="bg-[#09090B]">
                     &lt; 5,000 pcs
                   </option>
-                  <option value="5k-15k" className="bg-[#050a08]">
+                  <option value="5k-15k" className="bg-[#09090B]">
                     5k - 15k pcs
                   </option>
-                  <option value="Above15k" className="bg-[#050a08]">
+                  <option value="Above15k" className="bg-[#09090B]">
                     &gt; 15,000 pcs
                   </option>
                 </select>
                 <ChevronDown
                   size={14}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-emerald-500 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
                 />
               </div>
             </>
@@ -748,31 +750,31 @@ const ProductionReport = () => {
                 setFilterDate(e.target.value);
                 if (e.target.value !== "All") setFilterExactDate("");
               }}
-              className={`appearance-none bg-black/30 border border-white/10 rounded-xl pl-4 pr-10 py-2 text-xs font-medium text-gray-300 outline-none cursor-pointer transition-all focus:ring-2 ${theme.focusRing} ${theme.borderClass}`}
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
-              <option value="All" className="bg-[#050a08]">
+              <option value="All" className="bg-[#09090B]">
                 Timeline: All
               </option>
-              <option value="Today" className="bg-[#050a08]">
+              <option value="Today" className="bg-[#09090B]">
                 Today
               </option>
-              <option value="Last7Days" className="bg-[#050a08]">
+              <option value="Last7Days" className="bg-[#09090B]">
                 Last 7 Days
               </option>
-              <option value="ThisMonth" className="bg-[#050a08]">
+              <option value="ThisMonth" className="bg-[#09090B]">
                 This Month
               </option>
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-white transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
             />
           </div>
 
           {/* Exact Date Filter */}
           <div className="relative group flex items-center">
             <div
-              className={`absolute left-3 flex items-center justify-center text-gray-500 pointer-events-none transition-colors ${filterExactDate ? theme.textClass : ""}`}
+              className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filterExactDate ? theme.primaryText : "text-zinc-500"}`}
             >
               <Calendar size={14} />
             </div>
@@ -784,7 +786,7 @@ const ProductionReport = () => {
                 if (e.target.value) setFilterDate("All");
               }}
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-black/30 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs font-medium ${filterExactDate ? "text-white" : "text-gray-400"} outline-none cursor-pointer transition-all focus:ring-2 ${theme.focusRing} ${theme.borderClass}`}
+              className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryText} ${theme.primaryBg} ${theme.primaryBorder}` : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"}`}
             />
           </div>
 
@@ -798,7 +800,7 @@ const ProductionReport = () => {
                 setFilterExactDate("");
                 setSearchTerm("");
               }}
-              className="text-xs font-bold text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 px-3 py-2 rounded-lg transition-all flex items-center gap-1.5 ml-auto md:ml-2"
+              className="text-xs font-bold text-zinc-500 hover:text-white underline underline-offset-2 flex items-center gap-1.5 ml-auto md:ml-2 transition-colors"
             >
               <X size={14} /> Clear All
             </button>
@@ -810,7 +812,7 @@ const ProductionReport = () => {
           {/* PRODUCTION TAB */}
           {activeTab === "production" && (
             <table className="w-full text-left min-w-[600px] animate-in fade-in duration-300">
-              <thead className="bg-[#020403] text-emerald-100/40 text-xs uppercase font-bold tracking-wider">
+              <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                 <tr>
                   <th className="p-4 md:pl-6">Date</th>
                   <th className="p-4">Item Name</th>
@@ -819,10 +821,9 @@ const ProductionReport = () => {
                   <th className="p-4 text-right md:pr-6">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-emerald-900/20 text-sm">
+              <tbody className="divide-y divide-zinc-800/60 text-sm">
                 {filteredLogs.map((log) => {
                   const { name, size } = parseProduct(log.productName);
-
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
                   const historyCount = hasEdits ? log.editHistory.length : 0;
@@ -833,10 +834,10 @@ const ProductionReport = () => {
                   return (
                     <tr
                       key={log._id}
-                      className="hover:bg-emerald-900/10 transition-colors group"
+                      className="hover:bg-zinc-800/30 transition-colors group"
                     >
                       <td className="p-4 md:pl-6 align-middle">
-                        <div className="text-emerald-100/70 font-mono text-xs mb-2">
+                        <div className="text-zinc-400 font-mono text-xs mb-2">
                           {log.date
                             ? new Date(log.date).toLocaleDateString("en-GB")
                             : "N/A"}
@@ -850,44 +851,46 @@ const ProductionReport = () => {
                                 tabType: "production",
                               })
                             }
-                            className="mt-2 flex flex-col items-start bg-[#020403] border border-emerald-900/30 rounded-lg py-1.5 px-2.5 hover:border-emerald-500/50 transition-colors w-max group/btn"
+                            className="mt-2 flex flex-col items-start bg-zinc-800/50 border border-zinc-700/50 rounded-lg py-1.5 px-2.5 hover:bg-zinc-800 transition-colors w-max group/btn"
                           >
                             <div className="flex items-center gap-1.5">
                               <History
                                 size={12}
-                                className="text-emerald-500 group-hover/btn:-rotate-12 transition-transform"
+                                className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
                               />
-                              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+                              <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
                                 {latestLog.role || "ADMIN"}
                               </span>
                               {historyCount > 1 && (
-                                <span className="bg-emerald-900/40 text-emerald-400 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
                                   +{historyCount - 1} MORE
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] text-emerald-100/40 font-mono mt-1 pl-[18px]">
+                            <div className="text-[10px] text-zinc-500 font-mono mt-1 pl-[18px]">
                               {formatLogDate(latestLog.at)}
                             </div>
                           </button>
                         )}
                       </td>
                       <td className="p-4 align-middle">
-                        <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest inline-flex items-center gap-2 w-max">
+                        <span
+                          className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest inline-flex items-center gap-2 w-max`}
+                        >
                           <Layers size={12} /> {name}
                         </span>
                       </td>
-                      <td className="p-4 align-middle text-emerald-100 font-medium tracking-wide">
+                      <td className="p-4 align-middle text-zinc-300 font-medium tracking-wide">
                         {size}
                       </td>
-                      <td className="p-4 text-right align-middle font-bold text-emerald-400 tracking-wider">
+                      <td className="p-4 text-right align-middle font-bold text-white tracking-wider">
                         {Number(log.quantity).toLocaleString()}
                       </td>
                       <td className="p-4 md:pr-6 text-right align-middle overflow-visible">
                         <div className="flex justify-end gap-2 items-center relative">
                           <Link
-                            to={`/enterprise/production/edit/${log._id}`}
-                            className="p-2 text-emerald-100/40 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                            to={`${isTransport ? `/transportation/production/edit/${log._id}` : `/enterprise/production/edit/${log._id}`}`}
+                            className={`p-2 text-zinc-500 hover:${theme.primaryText} ${theme.primaryHoverBg} rounded-lg transition-colors`}
                           >
                             <Edit size={16} />
                           </Link>
@@ -897,12 +900,16 @@ const ProductionReport = () => {
                                 ? handleDisabledClick(log._id)
                                 : handleDeleteClick(log, "production")
                             }
-                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-emerald-100/20 opacity-50 cursor-not-allowed" : "text-emerald-100/40 hover:text-red-400 hover:bg-red-500/10"}`}
+                            className={`p-2 rounded-lg transition-colors ${
+                              isManager
+                                ? "text-zinc-600 opacity-50 cursor-not-allowed"
+                                : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                            }`}
                           >
                             <Trash2 size={16} />
                           </button>
                           {warningTooltip === log._id && (
-                            <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#050a08] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                            <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                               🚫 Access Denied
                             </div>
                           )}
@@ -915,7 +922,7 @@ const ProductionReport = () => {
                   <tr>
                     <td
                       colSpan="5"
-                      className="p-10 text-center text-emerald-100/30 italic"
+                      className="p-10 text-center text-zinc-500 italic"
                     >
                       No production logs found.
                     </td>
@@ -928,7 +935,7 @@ const ProductionReport = () => {
           {/* LABOUR PAYOUTS TAB */}
           {activeTab === "labour" && (
             <table className="w-full text-left min-w-[600px] animate-in fade-in duration-300">
-              <thead className="bg-[#020403] text-blue-100/40 text-xs uppercase font-bold tracking-wider">
+              <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                 <tr>
                   <th className="p-4 md:pl-6">Date</th>
                   <th className="p-4">Party Name</th>
@@ -938,7 +945,7 @@ const ProductionReport = () => {
                   <th className="p-4 text-right md:pr-6">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-blue-900/20 text-sm">
+              <tbody className="divide-y divide-zinc-800/60 text-sm">
                 {filteredLabourLogs.map((log) => {
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
@@ -950,10 +957,10 @@ const ProductionReport = () => {
                   return (
                     <tr
                       key={log._id}
-                      className="hover:bg-blue-900/10 transition-colors group"
+                      className="hover:bg-zinc-800/30 transition-colors group"
                     >
                       <td className="p-4 md:pl-6 align-middle">
-                        <div className="text-blue-100/70 font-mono text-xs mb-2">
+                        <div className="text-zinc-400 font-mono text-xs mb-2">
                           {log.date
                             ? new Date(log.date).toLocaleDateString("en-GB")
                             : "N/A"}
@@ -967,41 +974,43 @@ const ProductionReport = () => {
                                 tabType: "labour",
                               })
                             }
-                            className="mt-2 flex flex-col items-start bg-[#020403] border border-blue-900/30 rounded-lg py-1.5 px-2.5 hover:border-blue-500/50 transition-colors w-max group/btn"
+                            className="mt-2 flex flex-col items-start bg-zinc-800/50 border border-zinc-700/50 rounded-lg py-1.5 px-2.5 hover:bg-zinc-800 transition-colors w-max group/btn"
                           >
                             <div className="flex items-center gap-1.5">
                               <History
                                 size={12}
-                                className="text-blue-500 group-hover/btn:-rotate-12 transition-transform"
+                                className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
                               />
-                              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">
+                              <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
                                 {latestLog.role || "ADMIN"}
                               </span>
                               {historyCount > 1 && (
-                                <span className="bg-blue-900/40 text-blue-400 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
                                   +{historyCount - 1} MORE
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] text-blue-100/40 font-mono mt-1 pl-[18px]">
+                            <div className="text-[10px] text-zinc-500 font-mono mt-1 pl-[18px]">
                               {formatLogDate(latestLog.at)}
                             </div>
                           </button>
                         )}
                       </td>
                       <td className="p-4 align-middle">
-                        <div className="font-bold text-blue-100/90 flex items-center gap-2 whitespace-nowrap tracking-wide">
-                          <Users size={12} className="text-blue-500/50" />{" "}
+                        <div className="font-bold text-zinc-100 flex items-center gap-2 whitespace-nowrap tracking-wide">
+                          <Users size={12} className="text-zinc-500" />{" "}
                           {log.labourName}
                         </div>
-                        <div className="text-[9px] text-blue-400 mt-1.5 uppercase tracking-widest font-bold bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded w-max">
+                        <div
+                          className={`text-[9px] ${theme.primaryText} mt-1.5 uppercase tracking-widest font-bold ${theme.primaryBg} border ${theme.primaryBorder} px-2 py-0.5 rounded w-max`}
+                        >
                           {log.payoutCategory || "Labour"}
                         </div>
                       </td>
-                      <td className="p-4 align-middle text-right font-mono text-blue-100/60">
+                      <td className="p-4 align-middle text-right font-mono text-zinc-400">
                         ₹ {Number(log.cost || 0).toLocaleString()}
                       </td>
-                      <td className="p-4 align-middle text-right font-mono text-emerald-400 font-bold">
+                      <td className="p-4 align-middle text-right font-mono text-white font-bold">
                         ₹ {Number(log.amountPaid || 0).toLocaleString()}
                       </td>
                       <td className="p-4 align-middle text-right font-mono font-bold text-rose-400">
@@ -1010,8 +1019,8 @@ const ProductionReport = () => {
                       <td className="p-4 md:pr-6 text-right align-middle overflow-visible">
                         <div className="flex justify-end gap-2 items-center relative">
                           <Link
-                            to={`/enterprise/labour/edit/${log._id}`}
-                            className="p-2 text-blue-100/40 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                            to={`${isTransport ? `/transportation/labour/edit/${log._id}` : `/enterprise/labour/edit/${log._id}`}`}
+                            className={`p-2 text-zinc-500 hover:${theme.primaryText} ${theme.primaryHoverBg} rounded-lg transition-colors`}
                           >
                             <Edit size={16} />
                           </Link>
@@ -1021,12 +1030,16 @@ const ProductionReport = () => {
                                 ? handleDisabledClick(log._id)
                                 : handleDeleteClick(log, "labour")
                             }
-                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-blue-100/20 opacity-50 cursor-not-allowed" : "text-blue-100/40 hover:text-red-400 hover:bg-red-500/10"}`}
+                            className={`p-2 rounded-lg transition-colors ${
+                              isManager
+                                ? "text-zinc-600 opacity-50 cursor-not-allowed"
+                                : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                            }`}
                           >
                             <Trash2 size={16} />
                           </button>
                           {warningTooltip === log._id && (
-                            <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#050a08] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                            <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                               🚫 Access Denied
                             </div>
                           )}
@@ -1038,7 +1051,9 @@ const ProductionReport = () => {
                 {filteredLabourLogs.length === 0 && (
                   <tr>
                     <td colSpan="6" className="p-16 text-center">
-                      <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 mx-auto mb-4 shadow-inner">
+                      <div
+                        className={`w-16 h-16 rounded-full bg-zinc-800/50 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto mb-4`}
+                      >
                         <IndianRupee size={28} />
                       </div>
                       <h3 className="text-white font-bold text-lg mb-1">
@@ -1054,7 +1069,7 @@ const ProductionReport = () => {
           {/* DUES TAB */}
           {activeTab === "dues" && (
             <table className="w-full text-left min-w-[600px] animate-in fade-in duration-300">
-              <thead className="bg-[#020403] text-rose-100/40 text-xs uppercase font-bold tracking-wider">
+              <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                 <tr>
                   <th className="p-4 md:pl-6">Date</th>
                   <th className="p-4">Party Name</th>
@@ -1062,7 +1077,7 @@ const ProductionReport = () => {
                   <th className="p-4 text-right md:pr-6">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-rose-900/10 text-sm">
+              <tbody className="divide-y divide-zinc-800/60 text-sm">
                 {filteredDuesLogs.map((log) => {
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
@@ -1074,10 +1089,10 @@ const ProductionReport = () => {
                   return (
                     <tr
                       key={log._id}
-                      className="hover:bg-rose-900/10 transition-colors group"
+                      className="hover:bg-zinc-800/30 transition-colors group"
                     >
                       <td className="p-4 md:pl-6 align-middle">
-                        <div className="text-rose-100/70 font-mono text-xs mb-2">
+                        <div className="text-zinc-400 font-mono text-xs mb-2">
                           {log.date
                             ? new Date(log.date).toLocaleDateString("en-GB")
                             : "N/A"}
@@ -1091,45 +1106,47 @@ const ProductionReport = () => {
                                 tabType: "dues",
                               })
                             }
-                            className="mt-2 flex flex-col items-start bg-[#020403] border border-rose-900/30 rounded-lg py-1.5 px-2.5 hover:border-rose-500/50 transition-colors w-max group/btn"
+                            className="mt-2 flex flex-col items-start bg-zinc-800/50 border border-zinc-700/50 rounded-lg py-1.5 px-2.5 hover:bg-zinc-800 transition-colors w-max group/btn"
                           >
                             <div className="flex items-center gap-1.5">
                               <History
                                 size={12}
-                                className="text-rose-500 group-hover/btn:-rotate-12 transition-transform"
+                                className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
                               />
-                              <span className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">
+                              <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
                                 {latestLog.role || "ADMIN"}
                               </span>
                               {historyCount > 1 && (
-                                <span className="bg-rose-900/40 text-rose-400 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
                                   +{historyCount - 1} MORE
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] text-rose-100/40 font-mono mt-1 pl-[18px]">
+                            <div className="text-[10px] text-zinc-500 font-mono mt-1 pl-[18px]">
                               {formatLogDate(latestLog.at)}
                             </div>
                           </button>
                         )}
                       </td>
                       <td className="p-4 align-middle">
-                        <div className="font-bold text-rose-100/90 flex items-center gap-2 whitespace-nowrap tracking-wide">
+                        <div className="font-bold text-zinc-100 flex items-center gap-2 whitespace-nowrap tracking-wide">
                           <AlertCircle size={14} className="text-rose-500/50" />{" "}
                           {log.labourName}
                         </div>
-                        <div className="text-[9px] text-rose-400 mt-1.5 uppercase tracking-widest font-bold bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded w-max">
+                        <div
+                          className={`text-[9px] ${theme.primaryText} mt-1.5 uppercase tracking-widest font-bold ${theme.primaryBg} border ${theme.primaryBorder} px-2 py-0.5 rounded w-max`}
+                        >
                           {log.payoutCategory || "Labour"}
                         </div>
                       </td>
-                      <td className="p-4 text-right md:pr-6 align-middle font-mono font-bold text-rose-400 text-lg">
+                      <td className="p-4 md:pr-6 align-middle text-right whitespace-nowrap font-mono font-bold text-rose-400 text-lg">
                         ₹ {Number(log.amountDue || 0).toLocaleString()}
                       </td>
                       <td className="p-4 md:pr-6 text-right align-middle overflow-visible">
                         <div className="flex justify-end gap-2 items-center relative">
                           <Link
-                            to={`/enterprise/labour/edit/${log._id}`}
-                            className="p-2 text-rose-100/40 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                            to={`${isTransport ? `/transportation/labour/edit/${log._id}` : `/enterprise/labour/edit/${log._id}`}`}
+                            className={`p-2 text-zinc-500 hover:${theme.primaryText} ${theme.primaryHoverBg} rounded-lg transition-colors`}
                           >
                             <Edit size={16} />
                           </Link>
@@ -1139,12 +1156,16 @@ const ProductionReport = () => {
                                 ? handleDisabledClick(log._id)
                                 : handleDeleteClick(log, "labour")
                             }
-                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-rose-100/20 opacity-50 cursor-not-allowed" : "text-rose-100/40 hover:text-red-400 hover:bg-red-500/10"}`}
+                            className={`p-2 rounded-lg transition-colors ${
+                              isManager
+                                ? "text-zinc-600 opacity-50 cursor-not-allowed"
+                                : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                            }`}
                           >
                             <Trash2 size={16} />
                           </button>
                           {warningTooltip === log._id && (
-                            <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#050a08] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                            <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                               🚫 Access Denied
                             </div>
                           )}
@@ -1156,13 +1177,13 @@ const ProductionReport = () => {
                 {filteredDuesLogs.length === 0 && (
                   <tr>
                     <td colSpan="4" className="p-16 text-center">
-                      <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 mx-auto mb-4 shadow-inner">
+                      <div className="w-16 h-16 rounded-full bg-zinc-800/50 border border-zinc-800 flex items-center justify-center text-zinc-400 mx-auto mb-4">
                         <AlertCircle size={28} />
                       </div>
                       <h3 className="text-white font-bold text-lg mb-1">
                         No Pending Dues!
                       </h3>
-                      <p className="text-emerald-100/40 text-sm max-w-sm mx-auto">
+                      <p className="text-zinc-500 text-sm max-w-sm mx-auto">
                         All accounts are settled. Great job!
                       </p>
                     </td>
@@ -1174,7 +1195,99 @@ const ProductionReport = () => {
         </div>
       </div>
 
-      {/* 🚨 DELETE CONFIRMATION MODAL 🚨 */}
+      {/* MULTIPLE LOG HISTORY MODAL UI */}
+      {logModalInfo.isOpen && logModalInfo.data && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div
+            className="absolute inset-0"
+            onClick={() =>
+              setLogModalInfo({
+                isOpen: false,
+                data: null,
+                tabType: "production",
+              })
+            }
+          />
+          <div className="bg-[#09090B] border border-zinc-800/60 rounded-2xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-5 border-b border-zinc-800/60 bg-[#09090B] shrink-0">
+              <div
+                className={`flex items-center gap-2 text-white font-bold tracking-wide text-sm`}
+              >
+                <History size={16} className={theme.primaryText} />
+                Log History:{" "}
+                <span className="text-zinc-400 font-normal">
+                  {logModalInfo.tabType === "production"
+                    ? logModalInfo.data.productName
+                    : logModalInfo.data.labourName}
+                </span>
+              </div>
+              <button
+                onClick={() =>
+                  setLogModalInfo({
+                    isOpen: false,
+                    data: null,
+                    tabType: "production",
+                  })
+                }
+                className="text-zinc-500 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
+              {(logModalInfo.data.editHistory
+                ? [...logModalInfo.data.editHistory].reverse()
+                : []
+              ).map((log, index) => (
+                <div
+                  key={index}
+                  className={`bg-zinc-900/30 border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                >
+                  {index === 0 && (
+                    <div
+                      className={`absolute left-0 top-0 w-1 h-full ${theme.indicatorLine}`}
+                    ></div>
+                  )}
+
+                  <div className="flex items-center gap-4 pl-1">
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
+                    >
+                      {(log.role || "A")[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <h4
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-400"}`}
+                      >
+                        {log.role || "ADMIN"}
+                      </h4>
+                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
+                        {log.email || "admin@system.com"}
+                      </p>
+                      <p
+                        className={`text-[10px] font-mono mt-1.5 ${index === 0 ? theme.primaryText : "text-zinc-500"}`}
+                      >
+                        {formatLogDateFull(log.at)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {index === 0 && (
+                    <div
+                      className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase`}
+                    >
+                      LATEST
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
       <ConfirmDialog
         isOpen={isDialogOpen}
         onClose={() => setIsDialogOpen(false)}
@@ -1185,14 +1298,14 @@ const ProductionReport = () => {
         isDestructive={true}
       />
 
-      {/* 🛑 SECURE WIPE DATA MODAL 🛑 */}
+      {/* SECURE WIPE DATA MODAL */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
             onClick={() => !wiping && setIsDeleteAllOpen(false)}
           />
-          <div className="bg-[#050a08] border border-red-900/50 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
+          <div className="bg-[#09090B] border border-red-900/50 rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
             <div className="flex items-center gap-3 text-red-500 mb-6">
               <AlertOctagon size={28} />
               <h2 className="text-xl font-bold tracking-wide">
@@ -1200,24 +1313,24 @@ const ProductionReport = () => {
               </h2>
             </div>
 
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-5 mb-6">
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
-                  className="text-yellow-500 shrink-0 mt-0.5"
+                  className="text-amber-500 shrink-0 mt-0.5"
                 />
                 <div>
-                  <h3 className="text-yellow-500 font-bold text-sm mb-1">
+                  <h3 className="text-amber-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-yellow-100/60 text-xs mb-4 leading-relaxed">
+                  <p className="text-amber-100/60 text-xs mb-4 leading-relaxed">
                     Before wiping the database, we highly recommend downloading
                     a complete CSV backup of all your current production and
                     payout records.
                   </p>
                   <button
                     onClick={handleFullBackup}
-                    className="w-full sm:w-auto px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2"
                   >
                     <Download size={14} /> Download Full Database Backup
                   </button>
@@ -1238,7 +1351,7 @@ const ProductionReport = () => {
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter your admin password..."
-                className="w-full bg-[#020403] border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
+                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
               />
               <button
                 type="button"
@@ -1250,179 +1363,32 @@ const ProductionReport = () => {
             </div>
 
             <div className="flex justify-end gap-3">
-              <button
+              <Button
+                variant="outline"
                 onClick={() => {
                   setIsDeleteAllOpen(false);
                   setDeletePassword("");
                 }}
                 disabled={wiping}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold text-red-100/50 hover:text-red-100 hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                className="border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
               >
                 Cancel
-              </button>
-
-              {/* Using RefreshCcw icon instead of Loader to prevent UI height glitch */}
-              <button
+              </Button>
+              <Button
+                variant="danger"
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-xl flex items-center gap-2"
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
                 ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
-
-      {/* 🚀 MULTIPLE LOG HISTORY MODAL UI */}
-      {logModalInfo.isOpen &&
-        logModalInfo.data &&
-        (() => {
-          const isProd = logModalInfo.tabType === "production";
-          const isLab = logModalInfo.tabType === "labour";
-
-          // Dynamic theme colors based on active tab
-          const modalBorder = isProd
-            ? "border-emerald-900/30"
-            : isLab
-              ? "border-blue-900/30"
-              : "border-rose-900/30";
-          const iconColor = isProd
-            ? "text-emerald-500"
-            : isLab
-              ? "text-blue-500"
-              : "text-rose-500";
-          const titleText = isProd
-            ? "text-emerald-400"
-            : isLab
-              ? "text-blue-400"
-              : "text-rose-400";
-          const borderColor = isProd
-            ? "border-emerald-900/20"
-            : isLab
-              ? "border-blue-900/20"
-              : "border-rose-900/20";
-
-          const activeBg = isProd
-            ? "bg-emerald-900/40 border-emerald-500/30 text-emerald-400"
-            : isLab
-              ? "bg-blue-900/40 border-blue-500/30 text-blue-400"
-              : "bg-rose-900/40 border-rose-500/30 text-rose-400";
-          const inactiveBg = isProd
-            ? "bg-emerald-900/10 border-emerald-900/20 text-emerald-100/40"
-            : isLab
-              ? "bg-blue-900/10 border-blue-900/20 text-blue-100/40"
-              : "bg-rose-900/10 border-rose-900/20 text-rose-100/40";
-          const badgeBg = isProd
-            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
-            : isLab
-              ? "bg-blue-500/10 border-blue-500/20 text-blue-500"
-              : "bg-rose-500/10 border-rose-500/20 text-rose-500";
-          const activeLine = isProd
-            ? "bg-emerald-500"
-            : isLab
-              ? "bg-blue-500"
-              : "bg-rose-500";
-
-          const logsList = logModalInfo.data.editHistory
-            ? [...logModalInfo.data.editHistory].reverse()
-            : [];
-
-          const titleName = isProd
-            ? logModalInfo.data.productName
-            : logModalInfo.data.labourName;
-
-          return (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-              <div
-                className="absolute inset-0"
-                onClick={() =>
-                  setLogModalInfo({
-                    isOpen: false,
-                    data: null,
-                    tabType: "production",
-                  })
-                }
-              />
-              <div
-                className={`bg-[#050a08] border ${modalBorder} rounded-2xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]`}
-              >
-                <div
-                  className={`flex items-center justify-between p-5 border-b ${borderColor} bg-[#020403]/50 shrink-0`}
-                >
-                  <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                    <History size={16} className={iconColor} />
-                    Log History:{" "}
-                    <span className={`${titleText} font-normal`}>
-                      {titleName}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() =>
-                      setLogModalInfo({
-                        isOpen: false,
-                        data: null,
-                        tabType: "production",
-                      })
-                    }
-                    className="text-gray-400 hover:text-white transition-colors"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
-                  {logsList.map((log, index) => (
-                    <div
-                      key={index}
-                      className={`bg-[#020403] border ${borderColor} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
-                    >
-                      {index === 0 && (
-                        <div
-                          className={`absolute left-0 top-0 w-1 h-full ${activeLine}`}
-                        ></div>
-                      )}
-
-                      <div className="flex items-center gap-4 pl-1">
-                        <div
-                          className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg ${index === 0 ? activeBg : inactiveBg}`}
-                        >
-                          {(log.role || "A")[0].toUpperCase()}
-                        </div>
-                        <div>
-                          <h4
-                            className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-gray-500"}`}
-                          >
-                            {log.role || "ADMIN"}
-                          </h4>
-                          <p className="text-gray-500 text-[10px] mt-0.5 font-mono">
-                            {log.email || "admin@system.com"}
-                          </p>
-                          <p
-                            className={`text-[10px] font-mono mt-1.5 ${index === 0 ? titleText : "text-gray-600"}`}
-                          >
-                            {formatLogDateFull(log.at)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {index === 0 && (
-                        <div
-                          className={`${badgeBg} text-[10px] font-bold px-3 py-1 rounded tracking-widest uppercase border`}
-                        >
-                          LATEST
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
     </div>
   );
 };
