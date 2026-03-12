@@ -31,7 +31,7 @@ const EditStock = () => {
   const [isCustomItem, setIsCustomItem] = useState(false);
   const [isCustomUnit, setIsCustomUnit] = useState(false);
 
-  // 🚀 Strict Predefined Items (Locked Units)
+  // Strict Predefined Items (Locked Units)
   const strictItems = {
     Cement: "bags",
     Chemical: "litre",
@@ -50,7 +50,6 @@ const EditStock = () => {
       try {
         const { data } = await stockService.getStockById(id);
 
-        // Convert old "Raw Material" to "Purchasing Item" safely
         const dbCategory =
           data.category === "Raw Material" ? "Purchasing Item" : data.category;
 
@@ -62,11 +61,9 @@ const EditStock = () => {
           price: data.price || "",
         });
 
-        // 🚀 Detect if the item is custom or predefined
         const fetchedName = data.name || "";
         if (allPredefined.includes(fetchedName)) {
           setIsCustomItem(false);
-          // Color, Sand, Gypsum, LDA require custom unit box (or specific dropdown)
           setIsCustomUnit(
             !Object.keys(strictItems).includes(fetchedName) &&
               fetchedName !== "Color",
@@ -158,7 +155,7 @@ const EditStock = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <Loader />
-        <span className="text-emerald-500/40 text-[10px] font-mono uppercase tracking-widest animate-pulse">
+        <span className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest animate-pulse">
           Decrypting Record...
         </span>
       </div>
@@ -168,7 +165,7 @@ const EditStock = () => {
     <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
       <button
         onClick={() => navigate("/enterprise/stock")}
-        className="group flex items-center text-emerald-100/50 hover:text-white mb-6 transition-colors"
+        className="group flex items-center text-zinc-500 hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft
           size={18}
@@ -177,18 +174,18 @@ const EditStock = () => {
         Return to Inventory List
       </button>
 
-      <div className="bg-[#050a08] rounded-2xl shadow-2xl border border-emerald-900/30 p-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-3xl rounded-full pointer-events-none"></div>
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-3xl rounded-full pointer-events-none"></div>
 
-        <div className="flex items-center gap-4 mb-8 border-b border-emerald-900/10 pb-6 relative z-10">
-          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shadow-inner">
+        <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6 relative z-10">
+          <div className="p-3 bg-indigo-500/10 rounded-xl text-indigo-400 border border-indigo-500/20">
             <Package size={28} />
           </div>
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">
               Edit Stock Item
             </h2>
-            <p className="text-emerald-100/30 text-[11px] uppercase tracking-widest font-semibold mt-1">
+            <p className="text-zinc-500 text-[11px] uppercase tracking-widest font-semibold mt-1">
               Ref ID: {id.slice(-8).toUpperCase()}
             </p>
           </div>
@@ -200,41 +197,47 @@ const EditStock = () => {
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-2 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">
                 Select Item Name
               </label>
               <div className="relative">
                 <select
                   onChange={handleItemSelect}
                   value={isCustomItem ? "Other" : formData.name}
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 appearance-none cursor-pointer"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 appearance-none cursor-pointer transition-all"
                 >
-                  <option value="Cement" className="bg-[#050a08]">
+                  <option value="Cement" className="bg-[#09090B] text-zinc-300">
                     Cement
                   </option>
-                  <option value="Chemical" className="bg-[#050a08]">
+                  <option
+                    value="Chemical"
+                    className="bg-[#09090B] text-zinc-300"
+                  >
                     Chemical
                   </option>
-                  <option value="Aggregate" className="bg-[#050a08]">
+                  <option
+                    value="Aggregate"
+                    className="bg-[#09090B] text-zinc-300"
+                  >
                     Aggregate
                   </option>
-                  <option value="Color" className="bg-[#050a08]">
+                  <option value="Color" className="bg-[#09090B] text-zinc-300">
                     Color
                   </option>
-                  <option value="Sand" className="bg-[#050a08]">
+                  <option value="Sand" className="bg-[#09090B] text-zinc-300">
                     Sand
                   </option>
-                  <option value="Gypsum" className="bg-[#050a08]">
+                  <option value="Gypsum" className="bg-[#09090B] text-zinc-300">
                     Gypsum
                   </option>
-                  <option value="LDA" className="bg-[#050a08]">
+                  <option value="LDA" className="bg-[#09090B] text-zinc-300">
                     LDA
                   </option>
-                  <option value="Other" className="bg-[#050a08]">
+                  <option value="Other" className="bg-[#09090B] text-zinc-300">
                     Other (Custom Item)
                   </option>
                 </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50">
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
                   ▼
                 </div>
               </div>
@@ -251,7 +254,7 @@ const EditStock = () => {
             )}
 
             <div className={`${isCustomItem ? "md:col-span-2" : ""}`}>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-2 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">
                 Category
               </label>
               <div className="relative">
@@ -259,19 +262,25 @@ const EditStock = () => {
                   name="category"
                   value={formData.category}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 appearance-none cursor-pointer"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 appearance-none cursor-pointer transition-all"
                 >
-                  <option value="Purchasing Item" className="bg-[#050a08]">
+                  <option
+                    value="Purchasing Item"
+                    className="bg-[#09090B] text-zinc-300"
+                  >
                     Purchasing Item
                   </option>
-                  <option value="Finished Good" className="bg-[#050a08]">
+                  <option
+                    value="Finished Good"
+                    className="bg-[#09090B] text-zinc-300"
+                  >
                     Finished Good
                   </option>
-                  <option value="Other" className="bg-[#050a08]">
+                  <option value="Other" className="bg-[#09090B] text-zinc-300">
                     Other
                   </option>
                 </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50">
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
                   ▼
                 </div>
               </div>
@@ -290,10 +299,10 @@ const EditStock = () => {
             />
 
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-2 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">
                 Unit{" "}
                 {isCustomUnit && (
-                  <span className="text-emerald-100/30 lowercase tracking-normal">
+                  <span className="text-zinc-600 lowercase tracking-normal">
                     (Optional)
                   </span>
                 )}
@@ -305,16 +314,16 @@ const EditStock = () => {
                     name="unit"
                     value={formData.unit}
                     onChange={handleChange}
-                    className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-400 font-bold outline-none cursor-pointer appearance-none"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 font-bold outline-none focus:border-indigo-500/50 appearance-none cursor-pointer transition-all"
                   >
-                    <option value="kg" className="bg-[#050a08]">
+                    <option value="kg" className="bg-[#09090B] text-zinc-300">
                       kg
                     </option>
-                    <option value="bags" className="bg-[#050a08]">
+                    <option value="bags" className="bg-[#09090B] text-zinc-300">
                       bags
                     </option>
                   </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50">
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
                     ▼
                   </div>
                 </div>
@@ -325,10 +334,10 @@ const EditStock = () => {
                   placeholder="e.g. tons"
                   value={formData.unit}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 placeholder:text-emerald-100/20"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 placeholder:text-zinc-600 transition-all"
                 />
               ) : (
-                <div className="w-full px-4 py-3 bg-emerald-900/10 border border-emerald-900/20 rounded-xl text-emerald-400 font-bold cursor-not-allowed h-[50px] flex items-center">
+                <div className="w-full px-4 py-3 bg-zinc-900/30 border border-zinc-800 rounded-xl text-zinc-500 font-bold cursor-not-allowed h-[50px] flex items-center">
                   {formData.unit || "-"}
                 </div>
               )}
@@ -346,27 +355,28 @@ const EditStock = () => {
           </div>
 
           {auditInfo && (
-            <div className="pt-2 text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-widest border-t border-emerald-900/10 mt-6 pt-4">
+            <div className="pt-2 text-center text-[10px] font-mono text-zinc-500 uppercase tracking-widest border-t border-zinc-800/60 mt-6 pt-4">
               Last updated by{" "}
-              <span className="text-emerald-400/70 font-bold">
+              <span className="text-indigo-400 font-bold">
                 {auditInfo.role}
               </span>{" "}
               on {auditInfo.at}
             </div>
           )}
 
-          <div className="pt-6 flex justify-end gap-4 mt-2">
+          <div className="pt-6 flex justify-end gap-3 mt-2">
             <Button
               type="button"
-              variant="secondary"
+              variant="outline"
               onClick={() => navigate("/enterprise/stock")}
-              className="px-6 border-emerald-900/30 text-emerald-100/50"
+              className="px-6 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
             >
               Discard Changes
             </Button>
             <Button
               type="submit"
-              className="px-10 shadow-xl shadow-emerald-900/20 gap-2 border border-emerald-500/30"
+              variant="primary"
+              className="px-10 gap-2 rounded-xl"
               disabled={saving || !formData.name}
             >
               {saving ? (
