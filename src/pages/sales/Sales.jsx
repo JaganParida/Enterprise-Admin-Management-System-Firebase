@@ -58,6 +58,7 @@ const Sales = () => {
     vehicleNo: "",
     productName: "",
     quantity: "",
+    pricePerQuantity: "",
     amount: "",
     amountPaid: "",
     amountDue: "",
@@ -83,14 +84,22 @@ const Sales = () => {
     const { name, value } = e.target;
     setFormData((prev) => {
       let newData = { ...prev, [name]: value };
+
+      // Auto-calculate Total Amount
+      if (name === "quantity" || name === "pricePerQuantity") {
+        const qty = Number(newData.quantity) || 0;
+        const rate = Number(newData.pricePerQuantity) || 0;
+        if (qty > 0 && rate > 0) {
+          newData.amount = (qty * rate).toString();
+        }
+      }
+
       const totalAmount = Number(newData.amount) || 0;
 
-      if (name === "amount") {
+      if (
+        ["amount", "quantity", "pricePerQuantity", "amountPaid"].includes(name)
+      ) {
         const paid = Number(newData.amountPaid) || 0;
-        newData.amountDue =
-          totalAmount > 0 ? Math.max(0, totalAmount - paid).toString() : "";
-      } else if (name === "amountPaid") {
-        const paid = Number(value) || 0;
         newData.amountDue =
           totalAmount > 0 ? Math.max(0, totalAmount - paid).toString() : "";
       } else if (name === "amountDue") {
@@ -124,6 +133,7 @@ const Sales = () => {
         vehicleNo: "",
         productName: "",
         quantity: "",
+        pricePerQuantity: "",
         amount: "",
         amountPaid: "",
         amountDue: "",
@@ -324,16 +334,16 @@ const Sales = () => {
                         Zig Zag (80mm)
                       </option>
                       <option
-                        value="6-12 Brick (60mm)"
+                        value="6/12 Brick (60mm)"
                         className="text-zinc-100 font-normal"
                       >
-                        6-12 Brick (60mm)
+                        6/12 Brick (60mm)
                       </option>
                       <option
-                        value="6-12 Brick (80mm)"
+                        value="6/12 Brick (80mm)"
                         className="text-zinc-100 font-normal"
                       >
-                        6-12 Brick (80mm)
+                        6/12 Brick (80mm)
                       </option>
                       <option
                         value="6/6 Brick (60mm)"
@@ -401,20 +411,37 @@ const Sales = () => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                Total Bill Amount (₹)
-              </label>
-              <input
-                type="number"
-                name="amount"
-                value={formData.amount}
-                onChange={handleChange}
-                onWheel={(e) => e.target.blur()}
-                required
-                placeholder="0.00"
-                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl ${theme.primaryText} font-bold text-lg outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
+                  Price per Qty (₹)
+                </label>
+                <input
+                  type="number"
+                  name="pricePerQuantity"
+                  value={formData.pricePerQuantity}
+                  onChange={handleChange}
+                  onWheel={(e) => e.target.blur()}
+                  required
+                  placeholder="0.00"
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
+                  Total Bill (₹)
+                </label>
+                <input
+                  type="number"
+                  name="amount"
+                  value={formData.amount}
+                  onChange={handleChange}
+                  onWheel={(e) => e.target.blur()}
+                  required
+                  placeholder="0.00"
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl ${theme.primaryText} font-bold text-lg outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
+                />
+              </div>
             </div>
 
             <div>
@@ -528,7 +555,7 @@ const Sales = () => {
                   <th className="p-5 pl-6">Date & Challan</th>
                   <th className="p-5">Buyer</th>
                   <th className="p-5">Item</th>
-                  <th className="p-5">Size</th>
+                  <th className="p-5">Size & Rate</th>
                   <th className="p-5 pr-6 text-right">Amount & Mode</th>
                 </tr>
               </thead>
@@ -597,6 +624,11 @@ const Sales = () => {
                       </td>
                       <td className="p-5 align-middle text-zinc-400 text-xs">
                         {size}
+                        {sale.pricePerQuantity && (
+                          <div className="text-[10px] text-zinc-500 mt-1">
+                            ₹{sale.pricePerQuantity} / qty
+                          </div>
+                        )}
                       </td>
                       <td className="p-5 pr-6 align-middle text-right">
                         <div className="font-bold text-white font-mono text-lg mb-1.5">
