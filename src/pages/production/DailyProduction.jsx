@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import productionService from "../../services/productionService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -18,10 +18,33 @@ import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const DailyProduction = () => {
+  const location = useLocation();
   const { toast } = useUI();
   const { admin } = useAuth();
 
-  // 🚀 GLOBAL MODULE TAB STATE
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryTextMuted: isTransport ? "text-cyan-500" : "text-indigo-500",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryHoverBorder: isTransport
+      ? "hover:border-cyan-500/30"
+      : "hover:border-indigo-500/30",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+    primaryTabBg: isTransport ? "bg-cyan-600" : "bg-indigo-600",
+    glowOrb: isTransport ? "bg-cyan-500/5" : "bg-indigo-500/5",
+  };
+
+  // GLOBAL MODULE TAB STATE
   const [activeModule, setActiveModule] = useState("production"); // 'production', 'payouts', 'dues'
 
   const [entries, setEntries] = useState([]);
@@ -30,7 +53,7 @@ const DailyProduction = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submittingLabour, setSubmittingLabour] = useState(false);
 
-  // 🚀 CONFIRM DIALOG STATE
+  // CONFIRM DIALOG STATE
   const [confirmDialog, setConfirmDialog] = useState({
     isOpen: false,
     type: "",
@@ -73,13 +96,12 @@ const DailyProduction = () => {
     fetchAllData();
   }, []);
 
-  // 🚀 ONLY TOP 10 RECENT ENTRIES
+  // ONLY TOP 10 RECENT ENTRIES
   const topProductionEntries = entries.slice(0, 10);
   const topLabourEntries = labourEntries.slice(0, 10);
   const duesEntries = labourEntries.filter((e) => Number(e.amountDue) > 0);
   const topDuesEntries = duesEntries.slice(0, 10);
 
-  // Dynamic count for the "VIEW ALL" button
   const getActiveTotalCount = () => {
     if (activeModule === "production") return entries.length;
     if (activeModule === "payouts") return labourEntries.length;
@@ -87,7 +109,6 @@ const DailyProduction = () => {
     return 0;
   };
 
-  // 🚀 SMART PARSER
   const parseProduct = (fullName) => {
     if (!fullName) return { name: "-", size: "-" };
     if (fullName.includes("(")) {
@@ -97,7 +118,6 @@ const DailyProduction = () => {
     return { name: fullName, size: "-" };
   };
 
-  // --- Handlers for Production ---
   const handleProdChange = (e) =>
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
@@ -126,7 +146,6 @@ const DailyProduction = () => {
     }
   };
 
-  // --- Handlers for Labour Payment ---
   const handleLabourChange = (e) => {
     const { name, value } = e.target;
 
@@ -179,7 +198,6 @@ const DailyProduction = () => {
     }
   };
 
-  // Dialog Confirm Router
   const handleDialogConfirm = () => {
     if (confirmDialog.type === "production") {
       executeProdSubmit();
@@ -197,28 +215,30 @@ const DailyProduction = () => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      {/* 🚀 TOP HEADER WITH RESPONSIVE PILL TABS */}
+      {/* TOP HEADER WITH RESPONSIVE PILL TABS */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
-            <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-lg">
-              <Factory size={24} />
+          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+            <div
+              className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+            >
+              <Factory size={28} />
             </div>
             Log Management
           </h1>
-          <p className="text-gray-400 text-sm mt-2">
+          <p className="text-zinc-400 mt-2 text-sm font-medium">
             Track daily output and manage payouts.
           </p>
         </div>
 
-        {/* 🚀 NO SCROLLBAR PILL TABS */}
-        <div className="w-full xl:w-auto bg-[#020403] p-1.5 rounded-2xl md:rounded-full border border-emerald-900/30 shadow-inner grid grid-cols-3 md:flex md:items-center gap-1">
+        {/* PILL TABS */}
+        <div className="w-full xl:w-auto bg-[#09090B] p-1.5 rounded-2xl md:rounded-full border border-zinc-800/60 grid grid-cols-3 md:flex md:items-center gap-1">
           <button
             onClick={() => setActiveModule("production")}
             className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
               activeModule === "production"
-                ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
-                : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+                ? `${theme.primaryTabBg} text-white`
+                : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
             }`}
           >
             Output
@@ -227,8 +247,8 @@ const DailyProduction = () => {
             onClick={() => setActiveModule("payouts")}
             className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
               activeModule === "payouts"
-                ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
-                : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+                ? `${theme.primaryTabBg} text-white`
+                : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
             }`}
           >
             Payouts
@@ -237,8 +257,8 @@ const DailyProduction = () => {
             onClick={() => setActiveModule("dues")}
             className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
               activeModule === "dues"
-                ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
-                : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+                ? `${theme.primaryTabBg} text-white`
+                : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
             }`}
           >
             Dues
@@ -247,25 +267,11 @@ const DailyProduction = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* 🚀 LEFT COLUMN: FORMS */}
+        {/* LEFT COLUMN: FORMS */}
         <div className="lg:col-span-1">
-          <div
-            className={`bg-[#050a08] rounded-2xl shadow-xl border p-6 md:p-8 relative overflow-hidden transition-colors duration-700 ${
-              activeModule === "production"
-                ? "border-emerald-900/30"
-                : activeModule === "payouts"
-                  ? "border-blue-900/30"
-                  : "border-rose-900/30"
-            }`}
-          >
+          <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden transition-colors duration-700">
             <div
-              className={`absolute top-0 right-0 w-40 h-40 blur-3xl rounded-full pointer-events-none transition-colors duration-700 ${
-                activeModule === "production"
-                  ? "bg-emerald-500/10"
-                  : activeModule === "payouts"
-                    ? "bg-blue-500/10"
-                    : "bg-rose-500/10"
-              }`}
+              className={`absolute top-0 right-0 w-40 h-40 blur-3xl rounded-full pointer-events-none transition-colors duration-700 ${theme.glowOrb}`}
             ></div>
 
             <div className="relative z-10">
@@ -275,7 +281,9 @@ const DailyProduction = () => {
                   className="animate-in fade-in slide-in-from-left-8 duration-300"
                 >
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl border border-emerald-500/20">
+                    <div
+                      className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+                    >
                       <FileText size={20} />
                     </div>
                     <div>
@@ -287,7 +295,7 @@ const DailyProduction = () => {
 
                   <form onSubmit={handleProdSubmit} className="space-y-4">
                     <div>
-                      <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                         Production Date
                       </label>
                       <input
@@ -296,13 +304,13 @@ const DailyProduction = () => {
                         value={formData.date}
                         onChange={handleProdChange}
                         required
-                        className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                        className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                         style={{ colorScheme: "dark" }}
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                         Brick Type / Product
                       </label>
                       <div className="relative">
@@ -311,103 +319,103 @@ const DailyProduction = () => {
                           value={formData.productName}
                           onChange={handleProdChange}
                           required
-                          className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner appearance-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 cursor-pointer"
+                          className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all appearance-none cursor-pointer ${theme.primaryFocus}`}
                         >
                           <option
                             value=""
-                            className="bg-[#050a08] text-emerald-100/30"
+                            className="bg-[#09090B] text-zinc-500"
                           >
                             Select Product...
                           </option>
                           <optgroup
                             label="Bricks"
-                            className="bg-[#020403] text-emerald-500 font-bold"
+                            className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                           >
                             <option
                               value="Bricks (10 inch)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               Bricks (10 inch)
                             </option>
                             <option
                               value="Bricks (9 inch)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               Bricks (9 inch)
                             </option>
                             <option
                               value="Bricks (8 inch)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               Bricks (8 inch)
                             </option>
                           </optgroup>
                           <optgroup
                             label="Paver Blocks"
-                            className="bg-[#020403] text-emerald-500 font-bold"
+                            className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                           >
                             <option
                               value="Zig Zag (60mm)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               Zig Zag (60mm)
                             </option>
                             <option
                               value="Zig Zag (80mm)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               Zig Zag (80mm)
                             </option>
                             <option
                               value="6-12 Brick (60mm)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               6-12 Brick (60mm)
                             </option>
                             <option
                               value="6-12 Brick (80mm)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               6-12 Brick (80mm)
                             </option>
                             <option
                               value="6/6 Brick (60mm)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               6/6 Brick 60mm
                             </option>
                             <option
                               value="6/6 Brick (80mm)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               6/6 Brick (80mm)
                             </option>
                           </optgroup>
                           <optgroup
                             label="Chequered Tiles"
-                            className="bg-[#020403] text-emerald-500 font-bold"
+                            className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                           >
                             <option
                               value="Hexagon"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               Hexagon
                             </option>
                             <option
                               value="Brick Design (9inch)"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               Brick Design (9inch)
                             </option>
                             <option
                               value="Curve Stone"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               Curve Stone
                             </option>
                             <option
                               value="Cover Block"
-                              className="bg-[#050a08] text-white font-normal"
+                              className="text-zinc-100 font-normal"
                             >
                               Cover Block
                             </option>
@@ -415,14 +423,14 @@ const DailyProduction = () => {
                         </select>
                         <ChevronDown
                           size={16}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50"
+                          className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
-                        Quantity Produced
+                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
+                        Output Quantity (Pcs)
                       </label>
                       <input
                         type="number"
@@ -432,13 +440,14 @@ const DailyProduction = () => {
                         onChange={handleProdChange}
                         onWheel={(e) => e.target.blur()}
                         required
-                        className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                        className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                       />
                     </div>
 
                     <Button
                       type="submit"
-                      className="w-full mt-2 shadow-lg shadow-emerald-900/20 bg-emerald-500 hover:bg-emerald-400 text-[#020403]"
+                      variant="primary"
+                      className="w-full mt-2 rounded-xl"
                       disabled={submitting}
                     >
                       <Save size={18} className="mr-2" />{" "}
@@ -452,7 +461,9 @@ const DailyProduction = () => {
                   className="animate-in fade-in slide-in-from-right-8 duration-300"
                 >
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2.5 bg-blue-500/10 text-blue-500 rounded-xl border border-blue-500/20">
+                    <div
+                      className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+                    >
                       <FileText size={20} />
                     </div>
                     <div>
@@ -464,7 +475,7 @@ const DailyProduction = () => {
 
                   <form onSubmit={handleLabourSubmit} className="space-y-4">
                     <div>
-                      <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-3 ml-1">
+                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 ml-1">
                         Party Category
                       </label>
                       <div className="flex flex-wrap gap-2">
@@ -478,10 +489,10 @@ const DailyProduction = () => {
                                 payoutCategory: cat,
                               })
                             }
-                            className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all ${
+                            className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                               labourData.payoutCategory === cat
-                                ? "bg-[#3b82f6] text-[#020617] shadow-[0_0_15px_rgba(59,130,246,0.3)]"
-                                : "bg-black/40 border border-white/10 text-blue-100/50 hover:border-blue-500/50 hover:text-white"
+                                ? `${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText}`
+                                : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-white"
                             }`}
                           >
                             {cat}
@@ -492,7 +503,7 @@ const DailyProduction = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                       <div>
-                        <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                           Record Date
                         </label>
                         <input
@@ -501,13 +512,13 @@ const DailyProduction = () => {
                           value={labourData.date}
                           onChange={handleLabourChange}
                           required
-                          className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50"
+                          className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                           style={{ colorScheme: "dark" }}
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
-                          Name (Contractor/Consumer)
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
+                          Name (Party)
                         </label>
                         <input
                           type="text"
@@ -516,14 +527,14 @@ const DailyProduction = () => {
                           value={labourData.labourName}
                           onChange={handleLabourChange}
                           required
-                          className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50"
+                          className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                         />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                           Qty Produced (Opt)
                         </label>
                         <input
@@ -533,11 +544,11 @@ const DailyProduction = () => {
                           value={labourData.quantityProduced}
                           onChange={handleLabourChange}
                           onWheel={(e) => e.target.blur()}
-                          className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50"
+                          className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                           Total Cost (Opt)
                         </label>
                         <input
@@ -547,14 +558,14 @@ const DailyProduction = () => {
                           value={labourData.cost}
                           onChange={handleLabourChange}
                           onWheel={(e) => e.target.blur()}
-                          className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50"
+                          className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                         />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                           Amount Paid (₹)
                         </label>
                         <input
@@ -565,11 +576,11 @@ const DailyProduction = () => {
                           onChange={handleLabourChange}
                           onWheel={(e) => e.target.blur()}
                           required
-                          className="w-full px-4 py-3 bg-black/40 border border-emerald-500/30 rounded-xl text-emerald-400 font-bold text-lg shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 outline-none transition-all"
+                          className={`w-full px-4 py-3 bg-zinc-900/50 border ${theme.primaryBorder} rounded-xl ${theme.primaryText} font-bold text-lg outline-none transition-all ${theme.primaryFocus}`}
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-blue-100/60 uppercase tracking-widest mb-1.5 ml-1">
+                        <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                           Amount Due (₹)
                         </label>
                         <input
@@ -580,14 +591,15 @@ const DailyProduction = () => {
                           onChange={handleLabourChange}
                           onWheel={(e) => e.target.blur()}
                           required
-                          className="w-full px-4 py-3 bg-black/40 border border-rose-500/30 rounded-xl text-rose-400 font-bold tracking-wider text-lg shadow-inner focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500/50 outline-none transition-all"
+                          className="w-full px-4 py-3 bg-zinc-900/50 border border-rose-500/30 rounded-xl text-rose-400 font-bold tracking-wider text-lg focus:ring-1 focus:ring-rose-500/50 focus:border-rose-500/50 outline-none transition-all"
                         />
                       </div>
                     </div>
 
                     <Button
                       type="submit"
-                      className="w-full mt-2 shadow-lg shadow-blue-900/20 bg-blue-500 hover:bg-blue-400 text-[#020617]"
+                      variant="primary"
+                      className="w-full mt-2 rounded-xl"
                       disabled={submittingLabour}
                     >
                       <Save size={18} className="mr-2" />{" "}
@@ -600,29 +612,25 @@ const DailyProduction = () => {
           </div>
         </div>
 
-        {/* 🚀 RIGHT COLUMN: TOP 10 RECENT LOGS (NO ACTIONS) */}
+        {/* RIGHT COLUMN: TOP 10 RECENT LOGS */}
         <div className="lg:col-span-2 space-y-6">
-          <div
-            className={`bg-[#050a08] rounded-2xl shadow-xl border overflow-visible transition-colors duration-500 ${
-              activeModule === "production"
-                ? "border-emerald-900/30"
-                : activeModule === "payouts"
-                  ? "border-blue-900/30"
-                  : "border-rose-900/30"
-            }`}
-          >
-            {/* 🚀 STRUCTURED RECENT LOGS HEADER */}
-            <div className="p-6 border-b border-white/5 flex items-center justify-between">
+          <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-visible transition-colors duration-500">
+            {/* STRUCTURED RECENT LOGS HEADER */}
+            <div className="p-6 border-b border-zinc-800/60 flex items-center justify-between">
               <h3 className="text-white font-bold text-lg flex items-center gap-2">
                 Recent Logs{" "}
-                <span className="text-gray-500 text-sm font-normal hidden sm:inline-block">
+                <span className="text-zinc-500 text-sm font-normal hidden sm:inline-block">
                   (Top 10)
                 </span>
               </h3>
 
               <Link
-                to="/enterprise/production/report"
-                className="text-[10px] sm:text-xs font-bold text-emerald-400 bg-emerald-950/30 border border-emerald-900/50 px-3 sm:px-4 py-1.5 rounded-lg hover:bg-emerald-900/40 transition-colors uppercase tracking-widest whitespace-nowrap"
+                to={
+                  isTransport
+                    ? "/transportation/production/report"
+                    : "/enterprise/production/report"
+                }
+                className={`text-[10px] sm:text-xs font-bold ${theme.primaryText} ${theme.primaryBg} border ${theme.primaryBorder} px-3 sm:px-4 py-1.5 rounded-lg hover:bg-${isTransport ? "cyan" : "indigo"}-500/20 transition-colors uppercase tracking-widest whitespace-nowrap`}
               >
                 VIEW ALL {getActiveTotalCount()}
               </Link>
@@ -631,7 +639,7 @@ const DailyProduction = () => {
             <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
               {activeModule === "production" && (
                 <table className="w-full text-left animate-in fade-in duration-300">
-                  <thead className="bg-[#020403] text-emerald-100/40 text-[10px] uppercase tracking-widest font-bold border-b border-emerald-900/20">
+                  <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                     <tr>
                       <th className="p-5 md:pl-6 whitespace-nowrap">Date</th>
                       <th className="p-5 whitespace-nowrap">Item Name</th>
@@ -641,29 +649,33 @@ const DailyProduction = () => {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-emerald-900/20 text-sm">
+                  <tbody className="divide-y divide-zinc-800/60 text-sm">
                     {topProductionEntries.map((entry) => {
                       const { name, size } = parseProduct(entry.productName);
                       return (
                         <tr
                           key={entry._id}
-                          className="hover:bg-emerald-900/10 transition-colors group"
+                          className="hover:bg-zinc-800/30 transition-colors group"
                         >
                           <td className="p-5 md:pl-6 align-middle">
-                            <div className="text-emerald-100/70 font-mono text-xs">
+                            <div className="text-zinc-400 font-mono text-xs">
                               {new Date(entry.date).toLocaleDateString("en-GB")}
                             </div>
                           </td>
                           <td className="p-5 align-middle">
-                            <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest inline-flex items-center gap-2 w-max">
+                            <span
+                              className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest inline-flex items-center gap-2 w-max`}
+                            >
                               <Layers size={12} /> {name}
                             </span>
                           </td>
-                          <td className="p-5 text-emerald-100 font-medium tracking-wide">
+                          <td className="p-5 text-zinc-300 font-medium tracking-wide">
                             {size}
                           </td>
                           <td className="p-5 align-middle text-right whitespace-nowrap md:pr-6">
-                            <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-lg text-xs font-bold border border-emerald-500/20 tracking-wider">
+                            <span
+                              className={`px-3 py-1 ${theme.primaryBg} ${theme.primaryText} rounded-lg text-xs font-bold border ${theme.primaryBorder} tracking-wider`}
+                            >
                               {Number(entry.quantity).toLocaleString()} pcs
                             </span>
                           </td>
@@ -674,7 +686,7 @@ const DailyProduction = () => {
                       <tr>
                         <td
                           colSpan="4"
-                          className="p-10 text-center text-emerald-100/30 italic"
+                          className="p-10 text-center text-zinc-500 italic"
                         >
                           No production logs found.
                         </td>
@@ -686,7 +698,7 @@ const DailyProduction = () => {
 
               {activeModule === "payouts" && (
                 <table className="w-full text-left animate-in fade-in duration-300">
-                  <thead className="bg-[#020403] text-blue-100/30 text-[10px] uppercase tracking-widest font-bold border-b border-blue-900/20">
+                  <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                     <tr>
                       <th className="p-5 md:pl-6 whitespace-nowrap">
                         Name & Date
@@ -698,30 +710,34 @@ const DailyProduction = () => {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-blue-900/10 text-sm">
+                  <tbody className="divide-y divide-zinc-800/60 text-sm">
                     {topLabourEntries.map((entry) => (
                       <tr
                         key={entry._id}
-                        className="hover:bg-blue-900/10 transition-colors group"
+                        className="hover:bg-zinc-800/30 transition-colors group"
                       >
                         <td className="p-5 md:pl-6 align-middle">
-                          <div className="font-bold text-blue-100/90 group-hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap tracking-wide">
-                            <Users size={14} className="text-blue-500/50" />{" "}
+                          <div className="font-bold text-zinc-100 group-hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap tracking-wide">
+                            <Users size={14} className="text-zinc-500" />{" "}
                             {entry.labourName}
                           </div>
                           <div className="mt-1.5 flex items-center gap-2">
-                            <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-[9px] uppercase font-bold tracking-widest">
+                            <span
+                              className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} px-2 py-0.5 rounded text-[9px] uppercase font-bold tracking-widest`}
+                            >
                               {entry.payoutCategory || "Labour"}
                             </span>
-                            <span className="text-[10px] text-blue-100/40 font-mono tracking-widest">
+                            <span className="text-[10px] text-zinc-500 font-mono tracking-widest">
                               {new Date(entry.date).toLocaleDateString("en-GB")}
                             </span>
                           </div>
                         </td>
-                        <td className="p-5 align-middle text-right whitespace-nowrap font-mono text-blue-100/60">
+                        <td className="p-5 align-middle text-right whitespace-nowrap font-mono text-zinc-400">
                           ₹ {Number(entry.cost || 0).toLocaleString()}
                         </td>
-                        <td className="p-5 align-middle text-right whitespace-nowrap font-mono text-emerald-400 font-bold">
+                        <td
+                          className={`p-5 align-middle text-right whitespace-nowrap font-mono ${theme.primaryText} font-bold`}
+                        >
                           ₹ {Number(entry.amountPaid || 0).toLocaleString()}
                         </td>
                         <td className="p-5 md:pr-6 align-middle text-right whitespace-nowrap font-mono font-bold text-rose-400">
@@ -732,7 +748,9 @@ const DailyProduction = () => {
                     {topLabourEntries.length === 0 && (
                       <tr>
                         <td colSpan="4" className="p-16 text-center">
-                          <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 mx-auto mb-4 shadow-inner">
+                          <div
+                            className={`w-16 h-16 rounded-full ${theme.primaryBg} border ${theme.primaryBorder} flex items-center justify-center ${theme.primaryText} mx-auto mb-4`}
+                          >
                             <IndianRupee size={28} />
                           </div>
                           <h3 className="text-white font-bold text-lg mb-1">
@@ -747,7 +765,7 @@ const DailyProduction = () => {
 
               {activeModule === "dues" && (
                 <table className="w-full text-left animate-in fade-in duration-300">
-                  <thead className="bg-[#020403] text-rose-100/30 text-[10px] uppercase tracking-widest font-bold border-b border-rose-900/20">
+                  <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                     <tr>
                       <th className="p-5 md:pl-6 whitespace-nowrap">
                         Party Name & Date
@@ -760,26 +778,28 @@ const DailyProduction = () => {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-rose-900/10 text-sm">
+                  <tbody className="divide-y divide-zinc-800/60 text-sm">
                     {topDuesEntries.map((entry) => (
                       <tr
                         key={entry._id}
-                        className="hover:bg-rose-900/10 transition-colors group"
+                        className="hover:bg-zinc-800/30 transition-colors group"
                       >
                         <td className="p-5 md:pl-6 align-middle">
-                          <div className="font-bold text-rose-100/90 group-hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap tracking-wide">
+                          <div className="font-bold text-zinc-100 group-hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap tracking-wide">
                             <AlertCircle
                               size={14}
                               className="text-rose-500/50"
                             />{" "}
                             {entry.labourName}
                           </div>
-                          <div className="text-[10px] text-rose-100/40 mt-1 font-mono tracking-widest">
+                          <div className="text-[10px] text-zinc-500 mt-1 font-mono tracking-widest">
                             {new Date(entry.date).toLocaleDateString("en-GB")}
                           </div>
                         </td>
                         <td className="p-5 align-middle text-right whitespace-nowrap">
-                          <span className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest">
+                          <span
+                            className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest`}
+                          >
                             {entry.payoutCategory || "Labour"}
                           </span>
                         </td>
@@ -791,13 +811,13 @@ const DailyProduction = () => {
                     {topDuesEntries.length === 0 && (
                       <tr>
                         <td colSpan="3" className="p-16 text-center">
-                          <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 mx-auto mb-4 shadow-inner">
+                          <div className="w-16 h-16 rounded-full bg-zinc-800/50 border border-zinc-800 flex items-center justify-center text-zinc-400 mx-auto mb-4">
                             <AlertCircle size={28} />
                           </div>
                           <h3 className="text-white font-bold text-lg mb-1">
                             No Pending Dues!
                           </h3>
-                          <p className="text-rose-100/40 text-sm max-w-sm mx-auto">
+                          <p className="text-zinc-500 text-sm max-w-sm mx-auto">
                             All accounts are settled. Great job!
                           </p>
                         </td>
@@ -810,7 +830,7 @@ const DailyProduction = () => {
           </div>
         </div>
 
-        {/* 🚀 CONFIRM DIALOG */}
+        {/* CONFIRM DIALOG */}
         <ConfirmDialog
           isOpen={confirmDialog.isOpen}
           onClose={() => setConfirmDialog({ isOpen: false, type: "" })}
