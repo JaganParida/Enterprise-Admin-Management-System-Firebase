@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import employeeService from "../../services/employeeService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -17,6 +17,7 @@ import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const EditEmployee = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const { toast } = useUI();
   const { admin } = useAuth();
@@ -25,6 +26,23 @@ const EditEmployee = () => {
   const [saving, setSaving] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [auditInfo, setAuditInfo] = useState(null);
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-blue-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-blue-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-blue-500/20" : "border-indigo-500/20",
+    primaryFocus: isTransport
+      ? "focus:border-blue-500/50 focus:ring-blue-500/50"
+      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+    glowOrb: isTransport ? "bg-blue-500/5" : "bg-indigo-500/5",
+  };
 
   const [formData, setFormData] = useState({
     name: "",
@@ -77,7 +95,7 @@ const EditEmployee = () => {
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  // 🚀 SMART ID VALIDATION
+  // SMART ID VALIDATION
   const handleIdChange = (e) => {
     let val = e.target.value.toUpperCase();
     if (formData.idType === "Aadhar") {
@@ -132,7 +150,7 @@ const EditEmployee = () => {
         admin || { email: "Unknown", role: "admin" };
       await employeeService.updateEmployee(id, formData, currentUser);
       toast.success("Employee profile updated successfully.");
-      navigate("/enterprise/employees");
+      navigate(-1); // Go back appropriately
     } catch (err) {
       console.error("Update Error:", err);
       toast.error("Failed to update employee.");
@@ -147,8 +165,8 @@ const EditEmployee = () => {
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
       <button
-        onClick={() => navigate("/enterprise/employees")}
-        className="group flex items-center text-emerald-100/50 hover:text-white mb-6 transition-colors"
+        onClick={() => navigate(-1)}
+        className="group flex items-center text-zinc-500 hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft
           size={18}
@@ -157,17 +175,21 @@ const EditEmployee = () => {
         Return to Directory
       </button>
 
-      <div className="bg-[#050a08] rounded-2xl shadow-2xl border border-emerald-900/30 p-6 md:p-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-3xl rounded-full pointer-events-none"></div>
-        <div className="flex items-center gap-4 mb-8 border-b border-emerald-900/10 pb-6 relative z-10">
-          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shadow-inner">
+      <div className="bg-[#09090B] rounded-2xl shadow-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden">
+        <div
+          className={`absolute top-0 right-0 w-64 h-64 blur-3xl rounded-full pointer-events-none ${theme.glowOrb}`}
+        ></div>
+        <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6 relative z-10">
+          <div
+            className={`p-3 rounded-xl border shadow-inner ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+          >
             <UserCheck size={28} />
           </div>
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">
               Edit Employee
             </h2>
-            <p className="text-emerald-100/30 text-[11px] uppercase tracking-widest font-semibold mt-1">
+            <p className="text-zinc-500 text-[11px] uppercase tracking-widest font-semibold mt-1">
               ID: {id.slice(-6).toUpperCase()}
             </p>
           </div>
@@ -195,7 +217,7 @@ const EditEmployee = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* 🚀 INDIAN PHONE VALIDATION */}
+            {/* INDIAN PHONE VALIDATION */}
             <Input
               label="Phone Number"
               name="phone"
@@ -209,7 +231,7 @@ const EditEmployee = () => {
               required
             />
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Status
               </label>
               <div className="relative">
@@ -217,7 +239,7 @@ const EditEmployee = () => {
                   name="status"
                   value={formData.status}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 appearance-none transition-all"
+                  className={`w-full px-4 py-3 bg-[#020403] border border-zinc-800 rounded-xl text-zinc-100 outline-none appearance-none transition-all cursor-pointer ${theme.primaryFocus}`}
                 >
                   <option value="Active">Active</option>
                   <option value="On Leave">On Leave</option>
@@ -225,15 +247,15 @@ const EditEmployee = () => {
                 </select>
                 <ChevronDown
                   size={16}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500"
                 />
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-emerald-950/20 p-5 rounded-2xl border border-emerald-900/30">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-900/30 p-5 rounded-2xl border border-zinc-800">
             <div className="md:col-span-1">
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Govt ID Type
               </label>
               <div className="relative">
@@ -241,7 +263,7 @@ const EditEmployee = () => {
                   name="idType"
                   value={formData.idType}
                   onChange={handleIdTypeChange}
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 appearance-none cursor-pointer"
+                  className={`w-full px-4 py-3 bg-[#020403] border border-zinc-800 rounded-xl text-zinc-100 outline-none appearance-none cursor-pointer transition-all ${theme.primaryFocus}`}
                 >
                   <option value="Aadhar">Aadhar Card</option>
                   <option value="PAN">PAN Card</option>
@@ -250,7 +272,7 @@ const EditEmployee = () => {
                 </select>
                 <ChevronDown
                   size={16}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500/50 pointer-events-none"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500"
                 />
               </div>
             </div>
@@ -274,7 +296,7 @@ const EditEmployee = () => {
             onChange={handleChange}
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-[#020403]/50 p-5 rounded-2xl border border-emerald-900/20">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-[#020403]/50 p-5 rounded-2xl border border-zinc-800/60">
             <Input
               label="Initial Salary (₹)"
               name="initialSalary"
@@ -282,8 +304,9 @@ const EditEmployee = () => {
               value={formData.initialSalary}
               onChange={handleChange}
               required
-              className="text-emerald-400 font-bold"
+              className={`${theme.primaryText} font-bold`}
             />
+            {/* SALARY TAKEN (OPTIONAL UI) */}
             <Input
               label="Salary Taken (₹) - Opt"
               name="salaryTaken"
@@ -300,33 +323,36 @@ const EditEmployee = () => {
               value={formData.joinDate}
               onChange={handleChange}
               required
-              className="text-emerald-100"
+              className="text-zinc-100"
               style={{ colorScheme: "dark" }}
             />
           </div>
 
           {auditInfo && (
-            <div className="pt-2 text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-widest border-t border-emerald-900/10 mt-6 pt-4">
+            <div className="pt-2 text-center text-[10px] font-mono text-zinc-500 uppercase tracking-widest border-t border-zinc-800/60 mt-6 pt-4">
               Last updated by{" "}
-              <span className="text-emerald-400/70 font-bold tracking-widest">
+              <span
+                className={`${theme.primaryText} font-bold tracking-widest`}
+              >
                 {auditInfo.role}
               </span>{" "}
               on {auditInfo.at}
             </div>
           )}
 
-          <div className="pt-6 flex justify-end gap-4 border-t border-emerald-900/10 mt-2">
+          <div className="pt-6 flex justify-end gap-3 border-t border-zinc-800/60 mt-2">
             <Button
               type="button"
-              variant="secondary"
-              onClick={() => navigate("/enterprise/employees")}
-              className="px-6 border-emerald-900/30 text-emerald-100/50 hover:bg-emerald-900/20"
+              variant="outline"
+              onClick={() => navigate(-1)}
+              className="px-6 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
             >
               Discard Changes
             </Button>
             <Button
               type="submit"
-              className="px-10 shadow-xl shadow-emerald-900/20 gap-2 border border-emerald-500/30"
+              variant="primary"
+              className="px-10 gap-2 rounded-xl"
               disabled={saving}
             >
               {saving ? (
