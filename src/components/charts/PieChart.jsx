@@ -12,7 +12,7 @@ const PieChart = ({ data, title }) => {
       legend: {
         position: "bottom",
         labels: {
-          color: "rgba(236, 253, 245, 0.7)",
+          color: "rgba(161, 161, 170, 0.8)", // zinc-400
           usePointStyle: true,
           padding: 20,
           font: { family: "'Inter', sans-serif", size: 12, weight: "500" },
@@ -21,34 +21,34 @@ const PieChart = ({ data, title }) => {
       title: {
         display: !!title,
         text: title,
-        color: "rgba(255, 255, 255, 0.9)",
+        color: "rgba(244, 244, 245, 0.9)", // zinc-100
         font: { size: 16, family: "'Inter', sans-serif", weight: "bold" },
         padding: { top: 10, bottom: 20 },
       },
       tooltip: {
-        backgroundColor: "rgba(2, 4, 3, 0.8)",
-        titleColor: "#34d399",
-        bodyColor: "#e5e7eb",
-        borderColor: "rgba(16, 185, 129, 0.2)",
+        backgroundColor: "rgba(9, 9, 11, 0.95)", // #09090B
+        titleColor: "#818cf8", // indigo-400
+        bodyColor: "#f4f4f5", // zinc-100
+        borderColor: "rgba(39, 39, 42, 1)", // zinc-800
         borderWidth: 1,
         padding: 12,
         usePointStyle: true,
-        cornerRadius: 12,
+        cornerRadius: 8,
       },
     },
     elements: {
       arc: {
         borderWidth: 2,
-        borderColor: "#0A0F0D", // Dark border between pie slices for seamless look
+        borderColor: "#09090B", // Dark border between pie slices for seamless look
         hoverOffset: 10, // Pops out slightly on hover
       },
     },
   };
 
   return (
-    <div className="relative p-6 w-full h-[350px] md:h-[400px] rounded-[32px] bg-[#0A0F0D]/60 backdrop-blur-xl border border-white/5 shadow-2xl overflow-hidden group transition-all duration-500 hover:border-emerald-500/20">
+    <div className="relative p-6 w-full h-[350px] md:h-[400px] rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-xl overflow-hidden group transition-all duration-500 hover:border-indigo-500/30">
       {/* Decorative Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-emerald-500/5 blur-[80px] rounded-full pointer-events-none transition-opacity duration-700 opacity-50 group-hover:opacity-100" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-indigo-500/5 blur-[80px] rounded-full pointer-events-none transition-opacity duration-700 opacity-50 group-hover:opacity-100" />
 
       <div className="relative z-10 w-full h-full flex justify-center pb-4">
         <Pie options={options} data={data} />
