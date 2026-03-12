@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import productionService from "../../services/productionService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -16,6 +16,7 @@ import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const EditProduction = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const { toast } = useUI();
   const { admin } = useAuth();
@@ -24,6 +25,23 @@ const EditProduction = () => {
   const [saving, setSaving] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [auditInfo, setAuditInfo] = useState(null);
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+    glowOrb: isTransport ? "bg-cyan-500/5" : "bg-indigo-500/5",
+  };
 
   const [formData, setFormData] = useState({
     date: "",
@@ -80,7 +98,7 @@ const EditProduction = () => {
         admin || { email: "Unknown", role: "admin" };
       await productionService.updateProduction(id, formData, currentUser);
       toast.success("Production record synchronized successfully.");
-      navigate("/enterprise/production/report");
+      navigate(-1);
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to update record.");
     } finally {
@@ -99,8 +117,8 @@ const EditProduction = () => {
   return (
     <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
       <button
-        onClick={() => navigate("/enterprise/production/report")}
-        className="group flex items-center text-emerald-100/50 hover:text-white mb-6 transition-colors"
+        onClick={() => navigate(-1)}
+        className="group flex items-center text-zinc-500 hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft
           size={18}
@@ -109,18 +127,22 @@ const EditProduction = () => {
         Return to Logs
       </button>
 
-      <div className="bg-[#050a08] rounded-2xl shadow-2xl border border-emerald-900/30 p-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-3xl rounded-full pointer-events-none"></div>
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-8 relative overflow-hidden">
+        <div
+          className={`absolute top-0 right-0 w-64 h-64 blur-3xl rounded-full pointer-events-none ${theme.glowOrb}`}
+        ></div>
 
-        <div className="flex items-center gap-4 mb-8 border-b border-emerald-900/10 pb-6 relative z-10">
-          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shadow-inner">
+        <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6 relative z-10">
+          <div
+            className={`p-3 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+          >
             <Factory size={28} />
           </div>
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">
               Edit Production Log
             </h2>
-            <p className="text-emerald-100/30 text-[11px] uppercase tracking-widest font-semibold mt-1">
+            <p className="text-zinc-500 text-[11px] uppercase tracking-widest font-semibold mt-1">
               Ref ID: {id.slice(-8).toUpperCase()}
             </p>
           </div>
@@ -133,9 +155,8 @@ const EditProduction = () => {
           }}
           className="space-y-6 relative z-10"
         >
-          {/* Fixed Date Input */}
           <div>
-            <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+            <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
               Production Date
             </label>
             <input
@@ -144,14 +165,14 @@ const EditProduction = () => {
               value={formData.date}
               onChange={handleChange}
               required
-              className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+              className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               style={{ colorScheme: "dark" }}
             />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-[0.2em] mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em] mb-1.5 ml-1">
                 Product Classification
               </label>
               <div className="relative">
@@ -159,98 +180,101 @@ const EditProduction = () => {
                   name="productName"
                   value={formData.productName}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner appearance-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 cursor-pointer"
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all appearance-none cursor-pointer ${theme.primaryFocus}`}
                   required
                 >
-                  <option value="" className="bg-[#050a08] text-emerald-100/30">
+                  <option value="" className="bg-[#09090B] text-zinc-500">
                     Select Product...
                   </option>
                   <optgroup
                     label="Bricks"
-                    className="bg-[#020403] text-emerald-500 font-bold"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                   >
                     <option
                       value="Bricks (10 inch)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Bricks (10 inch)
                     </option>
                     <option
                       value="Bricks (9 inch)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Bricks (9 inch)
                     </option>
                     <option
                       value="Bricks (8 inch)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Bricks (8 inch)
                     </option>
                   </optgroup>
                   <optgroup
                     label="Paver Blocks"
-                    className="bg-[#020403] text-emerald-500 font-bold"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                   >
                     <option
                       value="Zig Zag (60mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Zig Zag (60mm)
                     </option>
                     <option
                       value="Zig Zag (80mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Zig Zag (80mm)
                     </option>
                     <option
                       value="6-12 Brick (60mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       6-12 Brick (60mm)
                     </option>
                     <option
                       value="6-12 Brick (80mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       6-12 Brick (80mm)
                     </option>
                     <option
                       value="6/6 Brick (60mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       6/6 Brick 60mm
                     </option>
                     <option
                       value="6/6 Brick (80mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       6/6 Brick (80mm)
                     </option>
                   </optgroup>
                   <optgroup
                     label="Chequered Tiles"
-                    className="bg-[#020403] text-emerald-500 font-bold"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                   >
-                    <option value="Hexagon" className="text-white font-normal">
+                    <option
+                      value="Hexagon"
+                      className="text-zinc-100 font-normal"
+                    >
                       Hexagon
                     </option>
                     <option
                       value="Brick Design (9inch)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Brick Design (9inch)
                     </option>
                     <option
                       value="Curve Stone"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Curve Stone
                     </option>
                     <option
                       value="Cover Block"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Cover Block
                     </option>
@@ -258,14 +282,13 @@ const EditProduction = () => {
                 </select>
                 <ChevronDown
                   size={16}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500"
                 />
               </div>
             </div>
 
-            {/* Fixed Qty Input */}
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Output Quantity (Pcs)
               </label>
               <input
@@ -276,23 +299,24 @@ const EditProduction = () => {
                 onChange={handleChange}
                 onWheel={(e) => e.target.blur()}
                 required
-                className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               />
             </div>
           </div>
 
-          <div className="pt-6 flex justify-end gap-4 mt-2 border-b border-emerald-900/10 pb-6">
+          <div className="pt-6 flex justify-end gap-3 mt-2 border-b border-zinc-800/60 pb-6">
             <Button
               type="button"
-              variant="secondary"
-              onClick={() => navigate("/enterprise/production/report")}
-              className="px-6 border-emerald-900/30 text-emerald-100/50 hover:bg-emerald-900/20"
+              variant="outline"
+              onClick={() => navigate(-1)}
+              className="px-6 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
             >
-              Discard
+              Discard Changes
             </Button>
             <Button
               type="submit"
-              className="px-10 shadow-xl shadow-emerald-900/20 gap-2 bg-emerald-500 hover:bg-emerald-400 text-[#020403] border-none"
+              variant="primary"
+              className="px-10 gap-2 rounded-xl"
               disabled={saving}
             >
               {saving ? (
@@ -305,9 +329,9 @@ const EditProduction = () => {
           </div>
 
           {auditInfo && (
-            <div className="text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-[0.1em] opacity-80 pt-2">
+            <div className="text-center text-[10px] font-mono text-zinc-500 uppercase tracking-widest pt-2">
               {auditInfo.type}{" "}
-              <span className="text-emerald-400 font-bold mx-1">
+              <span className={`${theme.primaryText} font-bold mx-1`}>
                 {auditInfo.role}
               </span>{" "}
               ON {auditInfo.at}
