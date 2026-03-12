@@ -26,14 +26,12 @@ import {
   Save,
   Eye,
   EyeOff,
-  Check,
-  AlertCircle,
-  Fuel,
-  AlertTriangle,
-  Home,
   ShieldCheck,
   Timer,
   RefreshCcw,
+  AlertTriangle,
+  Home,
+  Fuel,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useUI } from "../../context/UIProvider";
@@ -42,55 +40,63 @@ import Input from "../common/Input";
 
 const useThemeColors = () => {
   const location = useLocation();
-  const isTransport = location.pathname.includes("/transportation");
+
+  // 🔥 FIX 1: Instantly read the actual URL before React Router hydrates
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+
+  const isTransport = currentPath.includes("/transportation");
+
   return {
     isTransport,
     colors: isTransport
       ? {
-          bgMain: "bg-[#020617]",
-          border: "border-blue-900/30",
-          textSubtle: "text-blue-200/50",
+          bgMain: "bg-zinc-950",
+          border: "border-zinc-800/80",
+          textSubtle: "text-zinc-400",
           textHighlight: "text-blue-400",
           icon: "text-blue-500",
-          hoverBg: "hover:bg-blue-900/30",
-          hoverText: "hover:text-blue-300",
-          activeBg: "bg-blue-600/15",
-          activeBorder: "border-blue-500/40",
+          hoverBg: "hover:bg-zinc-900",
+          hoverText: "hover:text-zinc-200",
+          activeBg: "bg-blue-500/10",
+          activeBorder: "border-blue-500/20",
           activeText: "text-blue-400",
-          toggleBtn: "bg-blue-600 hover:bg-blue-500",
+          toggleBtn: "bg-zinc-800 hover:bg-zinc-700",
           logoBg:
-            "bg-gradient-to-br from-blue-500 to-indigo-600 shadow-blue-900/50",
-          scrollThumb: "bg-blue-900/50 hover:bg-blue-600",
-          modalBorder: "border-blue-900/40",
+            "bg-gradient-to-br from-blue-500 to-cyan-600 shadow-blue-900/20",
+          scrollThumb: "bg-zinc-800 hover:bg-zinc-700",
+          modalBorder: "border-zinc-800",
           strengthGood: "text-blue-400",
           strengthStrong: "bg-blue-500",
-          inputIcon: "text-blue-200/30 hover:text-blue-400",
+          inputIcon: "text-zinc-500 hover:text-zinc-300",
           gradientBtn:
-            "from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500",
-          shadowGlow: "shadow-[0_0_30px_rgba(59,130,246,0.15)]",
+            "from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500",
+          shadowGlow: "shadow-[0_0_30px_rgba(59,130,246,0.1)]",
         }
       : {
-          bgMain: "bg-[#050a08]",
-          border: "border-emerald-900/20",
-          textSubtle: "text-emerald-100/60",
-          textHighlight: "text-emerald-400",
-          icon: "text-emerald-500",
-          hoverBg: "hover:bg-emerald-500/10",
-          hoverText: "hover:text-emerald-400",
-          activeBg: "bg-emerald-500/10",
-          activeBorder: "border-emerald-500/20",
-          activeText: "text-emerald-400",
-          toggleBtn: "bg-emerald-700 hover:bg-emerald-600",
+          bgMain: "bg-zinc-950",
+          border: "border-zinc-800/80",
+          textSubtle: "text-zinc-400",
+          textHighlight: "text-indigo-400",
+          icon: "text-indigo-500",
+          hoverBg: "hover:bg-zinc-900",
+          hoverText: "hover:text-zinc-200",
+          activeBg: "bg-indigo-500/10",
+          activeBorder: "border-indigo-500/20",
+          activeText: "text-indigo-400",
+          toggleBtn: "bg-zinc-800 hover:bg-zinc-700",
           logoBg:
-            "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-900/50",
-          scrollThumb: "bg-emerald-900/50 hover:bg-emerald-600",
-          modalBorder: "border-emerald-900/40",
-          strengthGood: "text-emerald-400",
-          strengthStrong: "bg-emerald-500",
-          inputIcon: "text-emerald-100/20 hover:text-emerald-400",
+            "bg-gradient-to-br from-indigo-500 to-violet-600 shadow-indigo-900/20",
+          scrollThumb: "bg-zinc-800 hover:bg-zinc-700",
+          modalBorder: "border-zinc-800",
+          strengthGood: "text-indigo-400",
+          strengthStrong: "bg-indigo-500",
+          inputIcon: "text-zinc-500 hover:text-zinc-300",
           gradientBtn:
-            "from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500",
-          shadowGlow: "shadow-[0_0_30px_rgba(16,185,129,0.1)]",
+            "from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500",
+          shadowGlow: "shadow-[0_0_30px_rgba(99,102,241,0.1)]",
         },
   };
 };
@@ -138,7 +144,7 @@ const GoogleTranslate = ({ isCollapsed }) => {
         />
         {!isCollapsed && (
           <span
-            className={`text-sm font-medium ${colors.textSubtle} group-hover:text-white transition-colors`}
+            className={`text-sm font-medium ${colors.textSubtle} group-hover:text-zinc-100 transition-colors`}
           >
             Translate Page
           </span>
@@ -148,7 +154,6 @@ const GoogleTranslate = ({ isCollapsed }) => {
   );
 };
 
-// --- FIXED SECURITY MODAL (LOGIC & ERROR HANDLING) ---
 const ChangePasswordModal = ({ isOpen, onClose }) => {
   const { toast } = useUI();
   const { colors, isTransport } = useThemeColors();
@@ -175,15 +180,12 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
     { label: "Very Weak", color: "bg-red-900" },
     { label: "Weak", color: "bg-red-500" },
     { label: "Fair", color: "bg-amber-500" },
-    { label: "Good", color: isTransport ? "bg-blue-400" : "bg-emerald-400" },
-    { label: "Strong", color: isTransport ? "bg-indigo-500" : "bg-teal-500" },
+    { label: "Good", color: isTransport ? "bg-blue-400" : "bg-indigo-400" },
+    { label: "Strong", color: isTransport ? "bg-cyan-500" : "bg-violet-500" },
   ];
 
-  // 🚀 LOGIC FIX: Comprehensive Validation & Error Reporting
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    // 1. Client-side Validations
     if (formData.newPassword !== formData.confirmPassword) {
       return toast.error("Confirmation password does not match.");
     }
@@ -201,15 +203,11 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
 
     try {
       if (!user) throw new Error("No active user session.");
-
-      // 🛡️ Step 1: Re-authenticate to prove identity
       const credential = EmailAuthProvider.credential(
         user.email,
         formData.oldPassword,
       );
       await reauthenticateWithCredential(user, credential);
-
-      // 🛡️ Step 2: Perform the Update
       await updatePassword(user, formData.newPassword);
 
       toast.success("Security credentials updated successfully!");
@@ -217,7 +215,6 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
       onClose();
     } catch (error) {
       console.error("Firebase Auth Error Code:", error.code);
-      // 🚀 ERROR LOGIC: Mapping Firebase codes to UI Toast
       if (error.code === "auth/wrong-password") {
         toast.error("Current password is incorrect.");
       } else if (error.code === "auth/too-many-requests") {
@@ -244,7 +241,7 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            className={`w-full max-w-md ${colors.bgMain}/90 backdrop-blur-2xl border ${colors.modalBorder} p-8 rounded-3xl shadow-2xl relative z-10`}
+            className={`w-full max-w-md bg-zinc-900/95 backdrop-blur-2xl border ${colors.modalBorder} p-8 rounded-3xl shadow-2xl relative z-10`}
           >
             <button
               onClick={onClose}
@@ -316,7 +313,7 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
                       {[1, 2, 3, 4].map((i) => (
                         <div
                           key={i}
-                          className={`flex-1 rounded-full transition-all duration-500 ${strength >= i ? strengthData[strength].color : "bg-white/10"}`}
+                          className={`flex-1 rounded-full transition-all duration-500 ${strength >= i ? strengthData[strength].color : "bg-zinc-800"}`}
                         />
                       ))}
                     </div>
@@ -345,8 +342,6 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
                   {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
-
-              {/* 🚀 LOGIC FIX: Button uses spinning icon to prevent blank screen crash */}
               <button
                 type="submit"
                 disabled={loading}
@@ -431,7 +426,7 @@ const Sidebar = ({
             </div>
             {!isCollapsed && (
               <div>
-                <h1 className="font-bold text-base text-white tracking-tight">
+                <h1 className="font-bold text-base text-zinc-100 tracking-tight">
                   {isTransport ? "Transport" : "Enterprise"}
                 </h1>
                 <p
@@ -452,7 +447,7 @@ const Sidebar = ({
 
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className={`hidden md:flex absolute -right-3 top-24 w-6 h-6 rounded-full items-center justify-center shadow-lg border ${colors.bgMain} z-50 transition-all text-white ${colors.toggleBtn}`}
+          className={`hidden md:flex absolute -right-3 top-24 w-6 h-6 rounded-full items-center justify-center shadow-lg border border-zinc-700 z-50 transition-all text-white ${colors.toggleBtn}`}
         >
           {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
@@ -474,7 +469,8 @@ const Sidebar = ({
                         <motion.div
                           layoutId="active-nav-bg"
                           className={`absolute inset-0 rounded-xl ${colors.activeBg} border ${colors.activeBorder}`}
-                          initial={false}
+                          initial={{ opacity: 1, scale: 1 }} // 🔥 FIX 2: Added initial values here
+                          animate={{ opacity: 1, scale: 1 }} // Added animate values here
                           transition={{
                             type: "spring",
                             stiffness: 300,
