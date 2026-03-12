@@ -15,7 +15,7 @@ const AddStock = () => {
 
   const [formData, setFormData] = useState({
     name: "",
-    category: "Purchasing Item", // 🚀 Updated Default Category
+    category: "Purchasing Item",
     quantity: "",
     unit: "",
     price: "",
@@ -24,20 +24,19 @@ const AddStock = () => {
   const [isCustomItem, setIsCustomItem] = useState(false);
   const [isCustomUnit, setIsCustomUnit] = useState(false);
 
-  // 🚀 Strict Predefined Items (Locked Units)
+  // Strict Predefined Items (Locked Units)
   const strictItems = {
     Cement: "bags",
     Chemical: "litre",
     Aggregate: "cum",
   };
 
-  // 🚀 Items with Optional/Custom Units
+  // Items with Optional/Custom Units
   const optionalUnitItems = ["Sand", "Gypsum", "LDA"];
 
   const handleItemSelect = (e) => {
     const selectedItem = e.target.value;
 
-    // 1. If "Other" is selected (Fully Custom)
     if (selectedItem === "Other") {
       setIsCustomItem(true);
       setIsCustomUnit(true);
@@ -45,23 +44,20 @@ const AddStock = () => {
       return;
     }
 
-    // 2. Specific case for "Color" (Dropdown Unit)
     if (selectedItem === "Color") {
       setIsCustomItem(false);
       setIsCustomUnit(false);
-      setFormData({ ...formData, name: selectedItem, unit: "kg" }); // Default to kg
+      setFormData({ ...formData, name: selectedItem, unit: "kg" });
       return;
     }
 
-    // 3. If Sand, Gypsum, or LDA is selected (Optional Unit)
     if (optionalUnitItems.includes(selectedItem)) {
       setIsCustomItem(false);
-      setIsCustomUnit(true); // Open the input box
-      setFormData({ ...formData, name: selectedItem, unit: "" }); // Leave blank initially
+      setIsCustomUnit(true);
+      setFormData({ ...formData, name: selectedItem, unit: "" });
       return;
     }
 
-    // 4. Strict items (Cement, Chemical, Aggregate) -> Locked Units
     if (strictItems[selectedItem]) {
       setIsCustomItem(false);
       setIsCustomUnit(false);
@@ -99,23 +95,23 @@ const AddStock = () => {
     <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <button
         onClick={() => navigate("/enterprise/stock")}
-        className="flex items-center text-emerald-100/50 hover:text-white mb-6 transition-colors"
+        className="flex items-center text-zinc-500 hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft size={18} className="mr-2" /> Back to List
       </button>
 
-      <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 p-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-3xl rounded-full pointer-events-none"></div>
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-3xl rounded-full pointer-events-none"></div>
 
-        <div className="flex items-center gap-4 mb-8 border-b border-emerald-900/20 pb-6 relative z-10">
-          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20">
+        <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6 relative z-10">
+          <div className="p-3 bg-indigo-500/10 rounded-xl text-indigo-400 border border-indigo-500/20">
             <Package size={28} />
           </div>
           <div>
             <h2 className="text-xl font-bold text-white">
               Add New Stock Entry
             </h2>
-            <p className="text-emerald-100/40 text-sm">
+            <p className="text-zinc-500 text-sm mt-1">
               Log incoming materials and supplies
             </p>
           </div>
@@ -124,7 +120,7 @@ const AddStock = () => {
         <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-2 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">
                 Select Item Name
               </label>
               <div className="relative">
@@ -132,69 +128,47 @@ const AddStock = () => {
                   onChange={handleItemSelect}
                   defaultValue=""
                   required
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 appearance-none transition-all cursor-pointer"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 appearance-none transition-all cursor-pointer"
                 >
                   <option
                     value=""
                     disabled
-                    className="bg-[#050a08] text-emerald-100/30"
+                    className="bg-[#09090B] text-zinc-500"
                   >
                     -- Choose Material --
                   </option>
-
-                  {/* Strict Items */}
-                  <option
-                    value="Cement"
-                    className="bg-[#050a08] text-emerald-100"
-                  >
+                  <option value="Cement" className="bg-[#09090B] text-zinc-300">
                     Cement
                   </option>
                   <option
                     value="Chemical"
-                    className="bg-[#050a08] text-emerald-100"
+                    className="bg-[#09090B] text-zinc-300"
                   >
                     Chemical
                   </option>
                   <option
                     value="Aggregate"
-                    className="bg-[#050a08] text-emerald-100"
+                    className="bg-[#09090B] text-zinc-300"
                   >
                     Aggregate
                   </option>
-
-                  {/* Specific Dropdown Item */}
-                  <option
-                    value="Color"
-                    className="bg-[#050a08] text-emerald-100"
-                  >
+                  <option value="Color" className="bg-[#09090B] text-zinc-300">
                     Color
                   </option>
-
-                  {/* Optional Unit Items */}
-                  <option
-                    value="Sand"
-                    className="bg-[#050a08] text-emerald-100"
-                  >
+                  <option value="Sand" className="bg-[#09090B] text-zinc-300">
                     Sand
                   </option>
-                  <option
-                    value="Gypsum"
-                    className="bg-[#050a08] text-emerald-100"
-                  >
+                  <option value="Gypsum" className="bg-[#09090B] text-zinc-300">
                     Gypsum
                   </option>
-                  <option value="LDA" className="bg-[#050a08] text-emerald-100">
+                  <option value="LDA" className="bg-[#09090B] text-zinc-300">
                     LDA
                   </option>
-
-                  <option
-                    value="Other"
-                    className="bg-[#050a08] text-emerald-100"
-                  >
+                  <option value="Other" className="bg-[#09090B] text-zinc-300">
                     Other (Custom Item)
                   </option>
                 </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50">
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
                   ▼
                 </div>
               </div>
@@ -212,7 +186,7 @@ const AddStock = () => {
             )}
 
             <div className={`${isCustomItem ? "md:col-span-2" : ""}`}>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-2 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">
                 Category
               </label>
               <div className="relative">
@@ -220,29 +194,25 @@ const AddStock = () => {
                   name="category"
                   value={formData.category}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 appearance-none transition-all cursor-pointer"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 appearance-none transition-all cursor-pointer"
                 >
-                  {/* 🚀 Updated Categories */}
                   <option
                     value="Purchasing Item"
-                    className="bg-[#050a08] text-emerald-100"
+                    className="bg-[#09090B] text-zinc-300"
                   >
                     Purchasing Item
                   </option>
                   <option
                     value="Finished Good"
-                    className="bg-[#050a08] text-emerald-100"
+                    className="bg-[#09090B] text-zinc-300"
                   >
                     Finished Good
                   </option>
-                  <option
-                    value="Other"
-                    className="bg-[#050a08] text-emerald-100"
-                  >
+                  <option value="Other" className="bg-[#09090B] text-zinc-300">
                     Other
                   </option>
                 </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50">
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
                   ▼
                 </div>
               </div>
@@ -262,10 +232,10 @@ const AddStock = () => {
             />
 
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-2 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">
                 Unit{" "}
                 {isCustomUnit && (
-                  <span className="text-emerald-100/30 lowercase tracking-normal">
+                  <span className="text-zinc-600 lowercase tracking-normal">
                     (Optional)
                   </span>
                 )}
@@ -277,22 +247,16 @@ const AddStock = () => {
                     name="unit"
                     value={formData.unit}
                     onChange={handleChange}
-                    className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-400 font-bold outline-none focus:border-emerald-500/50 appearance-none cursor-pointer"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 font-bold outline-none focus:border-indigo-500/50 appearance-none cursor-pointer"
                   >
-                    <option
-                      value="kg"
-                      className="bg-[#050a08] text-emerald-400"
-                    >
+                    <option value="kg" className="bg-[#09090B] text-zinc-300">
                       kg
                     </option>
-                    <option
-                      value="bags"
-                      className="bg-[#050a08] text-emerald-400"
-                    >
+                    <option value="bags" className="bg-[#09090B] text-zinc-300">
                       bags
                     </option>
                   </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50">
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
                     ▼
                   </div>
                 </div>
@@ -303,10 +267,10 @@ const AddStock = () => {
                   placeholder="e.g. tons, cum"
                   value={formData.unit}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 bg-[#020403] border border-emerald-900/40 rounded-xl text-emerald-100 outline-none focus:border-emerald-500/50 placeholder:text-emerald-100/20"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 placeholder:text-zinc-600"
                 />
               ) : (
-                <div className="w-full px-4 py-3 bg-emerald-900/10 border border-emerald-900/20 rounded-xl text-emerald-400 font-bold cursor-not-allowed flex items-center h-[50px]">
+                <div className="w-full px-4 py-3 bg-zinc-900/30 border border-zinc-800 rounded-xl text-zinc-500 font-bold cursor-not-allowed flex items-center h-[50px]">
                   {formData.unit || "-"}
                 </div>
               )}
@@ -324,18 +288,19 @@ const AddStock = () => {
             />
           </div>
 
-          <div className="pt-6 flex justify-end gap-3 border-t border-emerald-900/20 mt-2">
+          <div className="pt-6 flex justify-end gap-3 border-t border-zinc-800/60 mt-2">
             <Button
               type="button"
-              variant="secondary"
+              variant="outline"
               onClick={() => navigate("/enterprise/stock")}
-              className="text-emerald-100/50 hover:text-white"
+              className="border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              className="px-8 shadow-lg shadow-emerald-900/20"
+              variant="primary"
+              className="px-8 rounded-xl"
               disabled={loading || !formData.name}
             >
               <Save size={18} className="mr-2" />{" "}
