@@ -12,34 +12,47 @@ import {
   X,
   Package,
   ArrowRightCircle,
-  FileText,
   Edit2,
   Map,
   Receipt,
+  Search,
+  Filter,
+  ChevronDown,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  AlertOctagon,
+  ShieldAlert,
+  Download,
+  Eye,
+  EyeOff,
+  RefreshCcw,
 } from "lucide-react";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
-import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 
-// 🚀 CUSTOM GLASSY INPUT COMPONENT
+// 🚀 CUSTOM GLASSY INPUT COMPONENT FOR DYNAMIC THEME
 const GlassInput = ({
   label,
   icon: Icon,
   type = "text",
   required,
   className = "",
+  theme,
   ...props
 }) => (
   <div className="flex flex-col gap-1.5 w-full">
     {label && (
-      <label className="text-[10px] font-bold tracking-widest uppercase text-blue-100/50 ml-1">
+      <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-400 ml-1">
         {label} {required && <span className="text-rose-500">*</span>}
       </label>
     )}
     <div className="relative group">
       {Icon && (
-        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-blue-400/40 group-focus-within:text-blue-400 transition-colors pointer-events-none z-10">
+        <div
+          className={`absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:${theme.primaryText} transition-colors pointer-events-none z-10`}
+        >
           <Icon size={16} />
         </div>
       )}
@@ -47,7 +60,7 @@ const GlassInput = ({
         type={type}
         autoComplete="new-password"
         onWheel={(e) => e.target.blur()}
-        className={`w-full bg-[#060d1f] border border-blue-900/30 rounded-xl ${Icon ? "pl-10" : "pl-4"} pr-4 py-2.5 text-sm text-blue-50 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-blue-100/20 shadow-inner [color-scheme:dark] ${className}`}
+        className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl ${Icon ? "pl-10" : "pl-4"} pr-4 py-3 text-sm text-zinc-100 outline-none ${theme.primaryFocus} transition-all placeholder:text-zinc-600 [color-scheme:dark] shadow-inner ${className}`}
         required={required}
         {...props}
       />
@@ -61,6 +74,30 @@ const VehicleLog = () => {
   const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("trips");
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-[#38bdf8]" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-[#0c4a6e]/30" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-[#0284c7]/30" : "border-indigo-500/20",
+    primaryFocus: isTransport
+      ? "focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
+      : "focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50",
+    glowOrb: isTransport ? "bg-[#0ea5e9]/5" : "bg-indigo-500/5",
+    tabActive: isTransport
+      ? "bg-[#0ea5e9] text-white shadow-lg shadow-[#0ea5e9]/20"
+      : "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20",
+    iconColor: isTransport ? "text-[#38bdf8]" : "text-indigo-400",
+    gradientBtn: isTransport
+      ? "bg-[#0ea5e9] hover:bg-[#0284c7] text-white"
+      : "bg-indigo-600 hover:bg-indigo-500 text-white",
+  };
 
   const [logs, setLogs] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -255,26 +292,30 @@ const VehicleLog = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-2 sm:px-4">
-      {/* HEADER & TABS */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="p-2.5 bg-blue-500/10 rounded-xl border border-blue-500/20">
-              <Truck className="text-blue-500" size={24} />
-            </div>
-            Log Management
-          </h1>
-          <p className="text-blue-100/40 text-sm mt-1 ml-1">
-            Track shipments and manage expenses.
-          </p>
+      {/* HEADER SECTION MATCHING THE IMAGE EXACTLY */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div className="flex items-center gap-4">
+          <div
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+          >
+            <Truck size={24} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-white tracking-tight">
+              Vehicle Logs
+            </h1>
+            <p className="text-[10px] uppercase font-bold tracking-[0.2em] mt-1 text-zinc-500">
+              Track shipments and manage expenses.
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto bg-[#030816] p-1.5 rounded-2xl border border-blue-900/30">
+        <div className="flex items-center gap-3 w-full md:w-auto bg-[#09090B] p-1.5 rounded-2xl border border-zinc-800/60 shadow-inner h-[44px]">
           <button
             onClick={() => {
               setActiveTab("trips");
               cancelEdit();
             }}
-            className={`flex-1 md:flex-none px-6 py-2.5 text-xs font-bold rounded-xl transition-all ${activeTab === "trips" ? "bg-blue-600 text-white shadow-lg" : "text-blue-100/40 hover:text-white"}`}
+            className={`flex-1 md:flex-none px-6 h-full text-xs font-bold rounded-xl transition-all ${activeTab === "trips" ? theme.tabActive : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
           >
             Trips Data
           </button>
@@ -283,7 +324,7 @@ const VehicleLog = () => {
               setActiveTab("expenses");
               cancelEdit();
             }}
-            className={`flex-1 md:flex-none px-6 py-2.5 text-xs font-bold rounded-xl transition-all ${activeTab === "expenses" ? "bg-rose-600 text-white shadow-lg" : "text-blue-100/40 hover:text-white"}`}
+            className={`flex-1 md:flex-none px-6 h-full text-xs font-bold rounded-xl transition-all ${activeTab === "expenses" ? "bg-rose-600 text-white shadow-lg shadow-rose-900/20" : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
           >
             Expenses
           </button>
@@ -291,41 +332,30 @@ const VehicleLog = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-        {/* FORM SECTION */}
+        {/* 🚀 LEFT COLUMN: FORM */}
         <div className="xl:col-span-5">
           <div
-            className={`bg-[#030816] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? (activeTab === "trips" ? "border-blue-500/50 ring-1 ring-blue-500/20" : "border-rose-500/50 ring-1 ring-rose-500/20") : "border-blue-900/30"}`}
+            className={`bg-[#09090B] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? (activeTab === "trips" ? (isTransport ? "border-[#0ea5e9]/50 ring-1 ring-[#0ea5e9]/20" : "border-indigo-500/50 ring-1 ring-indigo-500/20") : "border-rose-500/50 ring-1 ring-rose-500/20") : "border-zinc-800/60"}`}
           >
             <div
-              className={`absolute top-0 right-0 w-64 h-64 blur-[80px] rounded-full pointer-events-none ${activeTab === "trips" ? "bg-blue-500/5" : "bg-rose-500/5"}`}
+              className={`absolute top-0 right-0 w-64 h-64 blur-[80px] rounded-full pointer-events-none ${activeTab === "trips" ? theme.glowOrb : "bg-rose-500/5"}`}
             ></div>
 
-            <div className="flex justify-between items-center mb-6 relative z-10">
+            <div className="flex justify-between items-center mb-8 relative z-10">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                {editId ? (
-                  <Edit2
-                    size={18}
-                    className={
-                      activeTab === "trips" ? "text-blue-400" : "text-rose-400"
-                    }
-                  />
+                {activeTab === "trips" ? (
+                  <Truck size={18} className={theme.iconColor} />
                 ) : (
-                  <Save
-                    size={18}
-                    className={
-                      activeTab === "trips" ? "text-blue-400" : "text-rose-400"
-                    }
-                  />
+                  <Receipt size={18} className="text-rose-400" />
                 )}
                 {editId
-                  ? `Edit ${activeTab === "trips" ? "Trip" : "Expense"}`
-                  : `Log New ${activeTab === "trips" ? "Trip" : "Expense"}`}
+                  ? `Edit ${activeTab === "trips" ? "Trip Log" : "Expense"}`
+                  : `Log ${activeTab === "trips" ? "New Trip" : "Expense"}`}
               </h3>
               {editId && (
                 <button
-                  type="button"
                   onClick={cancelEdit}
-                  className="text-xs text-rose-400 hover:text-rose-300 font-bold tracking-widest uppercase"
+                  className="px-3 py-1.5 text-[10px] text-rose-400 hover:text-rose-300 tracking-widest uppercase font-bold border border-rose-500/30 rounded-lg hover:bg-rose-500/10 transition-colors"
                 >
                   Cancel Edit
                 </button>
@@ -340,6 +370,7 @@ const VehicleLog = () => {
               >
                 <div className="grid grid-cols-2 gap-4">
                   <GlassInput
+                    theme={theme}
                     label="Date"
                     type="date"
                     value={formData.date}
@@ -350,6 +381,7 @@ const VehicleLog = () => {
                     required
                   />
                   <GlassInput
+                    theme={theme}
                     label="Vehicle No."
                     placeholder="OD-02-AX-1234"
                     value={formData.vehicleNo}
@@ -359,6 +391,7 @@ const VehicleLog = () => {
                   />
                 </div>
                 <GlassInput
+                  theme={theme}
                   label="Driver Name"
                   placeholder="e.g. Ramesh Kumar"
                   value={formData.driverName}
@@ -370,6 +403,7 @@ const VehicleLog = () => {
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <GlassInput
+                    theme={theme}
                     label="Loading Point"
                     placeholder="City/Hub"
                     value={formData.loadingPoint}
@@ -380,6 +414,7 @@ const VehicleLog = () => {
                     required
                   />
                   <GlassInput
+                    theme={theme}
                     label="Unloading Site"
                     placeholder="Destination"
                     value={formData.unloadingSite}
@@ -393,6 +428,7 @@ const VehicleLog = () => {
                     required
                   />
                   <GlassInput
+                    theme={theme}
                     label="Distance (km)"
                     type="number"
                     placeholder="e.g. 150"
@@ -410,6 +446,7 @@ const VehicleLog = () => {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="col-span-1">
                     <GlassInput
+                      theme={theme}
                       label="Item"
                       placeholder="Cement.."
                       value={formData.items}
@@ -421,6 +458,7 @@ const VehicleLog = () => {
                     />
                   </div>
                   <GlassInput
+                    theme={theme}
                     label="Qty"
                     type="number"
                     placeholder="0"
@@ -431,6 +469,7 @@ const VehicleLog = () => {
                     required
                   />
                   <GlassInput
+                    theme={theme}
                     label="Rate (₹)"
                     type="number"
                     step="any"
@@ -443,8 +482,9 @@ const VehicleLog = () => {
                     required
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4 p-5 bg-blue-950/20 rounded-2xl border border-blue-900/30">
+                <div className="grid grid-cols-2 gap-4 p-5 bg-zinc-900/30 rounded-2xl border border-zinc-800/60">
                   <GlassInput
+                    theme={theme}
                     label="Food Charge (₹)"
                     type="number"
                     placeholder="0"
@@ -455,6 +495,7 @@ const VehicleLog = () => {
                     icon={IndianRupee}
                   />
                   <GlassInput
+                    theme={theme}
                     label="Amount Paid (₹)"
                     type="number"
                     placeholder="0"
@@ -463,12 +504,13 @@ const VehicleLog = () => {
                       setFormData({ ...formData, amountPaid: e.target.value })
                     }
                     icon={IndianRupee}
-                    className="text-emerald-400 font-bold"
+                    className={`${theme.primaryText} font-bold`}
                   />
                 </div>
-                <div className="flex items-center gap-4 bg-[#0a1222] p-4 rounded-xl border border-blue-900/30">
+                <div className="flex items-center gap-4 bg-[#09090B] p-5 rounded-2xl border border-zinc-800/60">
                   <div className="flex-1">
                     <GlassInput
+                      theme={theme}
                       label="Amount Due (₹) - Opt"
                       type="number"
                       placeholder="0 (Optional)"
@@ -480,26 +522,31 @@ const VehicleLog = () => {
                     />
                   </div>
                   <div className="flex-1 text-right pr-2">
-                    <p className="text-blue-100/40 uppercase tracking-widest text-[10px] font-bold mb-1">
+                    <p className="text-zinc-500 uppercase tracking-widest text-[10px] font-bold mb-1">
                       Calculated Total
                     </p>
-                    <p className="text-2xl font-black text-white font-mono">
-                      <span className="text-sm mr-1 text-blue-500">₹</span>
+                    <p className="text-3xl font-black text-white font-mono">
+                      <span className={`text-sm mr-1 ${theme.primaryText}`}>
+                        ₹
+                      </span>
                       {formData.totalAmount.toLocaleString("en-IN")}
                     </p>
                   </div>
                 </div>
-                <Button
+                <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full h-12 shadow-xl shadow-blue-900/20 text-sm tracking-widest uppercase font-black bg-blue-600 hover:bg-blue-500 border-none mt-2"
+                  className={`w-full mt-4 py-3.5 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 ${theme.gradientBtn}`}
                 >
+                  {submitting ? (
+                    <RefreshCcw className="animate-spin" size={18} />
+                  ) : null}
                   {submitting
                     ? "Processing..."
                     : editId
                       ? "Update Trip Entry"
-                      : "Confirm & Save Trip"}
-                </Button>
+                      : "Save Record"}
+                </button>
               </form>
             )}
 
@@ -510,6 +557,11 @@ const VehicleLog = () => {
                 className="space-y-5 relative z-10 animate-in fade-in zoom-in-95 duration-300"
               >
                 <GlassInput
+                  theme={{
+                    primaryFocus:
+                      "focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50",
+                    primaryText: "text-rose-400",
+                  }}
                   label="Date"
                   type="date"
                   value={expenseData.date}
@@ -520,6 +572,11 @@ const VehicleLog = () => {
                   required
                 />
                 <GlassInput
+                  theme={{
+                    primaryFocus:
+                      "focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50",
+                    primaryText: "text-rose-400",
+                  }}
                   label="Expense Reason"
                   placeholder="e.g. Fuel, Toll, Repairs..."
                   value={expenseData.reason}
@@ -530,6 +587,11 @@ const VehicleLog = () => {
                   required
                 />
                 <GlassInput
+                  theme={{
+                    primaryFocus:
+                      "focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50",
+                    primaryText: "text-rose-400",
+                  }}
                   label="Amount (₹)"
                   type="number"
                   placeholder="0.00"
@@ -541,55 +603,74 @@ const VehicleLog = () => {
                   className="text-rose-400 font-bold text-lg"
                   required
                 />
-                <Button
+                <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full h-12 shadow-xl shadow-rose-900/20 text-sm tracking-widest uppercase font-black bg-rose-600 hover:bg-rose-500 border-none mt-4"
+                  className="w-full mt-4 bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-rose-900/20 transition-all flex items-center justify-center gap-2"
                 >
+                  {submitting ? (
+                    <RefreshCcw className="animate-spin" size={18} />
+                  ) : null}
                   {submitting
                     ? "Processing..."
                     : editId
                       ? "Update Expense"
-                      : "Confirm & Save Expense"}
-                </Button>
+                      : "Save Record"}
+                </button>
               </form>
             )}
           </div>
         </div>
 
-        {/* LIST SECTION */}
+        {/* 🚀 RIGHT COLUMN: LIST SECTION */}
         <div className="xl:col-span-7">
           <div
-            className={`bg-[#030816] border rounded-3xl overflow-hidden shadow-xl transition-colors duration-300 ${activeTab === "trips" ? "border-blue-900/30" : "border-rose-900/30"}`}
+            className={`bg-[#09090B] border rounded-3xl overflow-hidden shadow-2xl transition-colors duration-300 ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/30"}`}
           >
             <div
-              className={`p-6 border-b flex justify-between items-center ${activeTab === "trips" ? "border-blue-900/20 bg-blue-950/10" : "border-rose-900/20 bg-rose-950/10"}`}
+              className={`p-6 border-b flex justify-between items-center ${activeTab === "trips" ? "border-zinc-800/60 bg-zinc-900/10" : "border-rose-900/20 bg-rose-900/10"}`}
             >
               <h3 className="font-bold text-white">
-                Recent {activeTab === "trips" ? "Logs" : "Expenses"}{" "}
-                <span className="text-xs font-normal text-blue-100/40 ml-2">
+                Recent {activeTab === "trips" ? "Working Logs" : "Expenses"}{" "}
+                <span className="text-xs font-normal text-zinc-400 ml-2">
                   (Top 10)
                 </span>
               </h3>
               <Link
-                to="/transportation/logs/report"
-                className={`text-[10px] font-bold px-3 py-1.5 rounded-lg uppercase tracking-widest border transition-colors ${activeTab === "trips" ? "bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20"}`}
+                to={
+                  isTransport
+                    ? "/transportation/logs/report"
+                    : "/enterprise/logs/report"
+                }
               >
-                View All {activeTab === "trips" ? logs.length : expenses.length}
+                <button
+                  className={`h-9 px-4 rounded-xl text-[10px] font-bold uppercase tracking-[0.15em] border transition-colors ${activeTab === "trips" ? `border-zinc-800 text-zinc-300 bg-transparent hover:text-white hover:bg-zinc-800/50` : "text-rose-400 bg-transparent border-rose-900/40 hover:bg-rose-500/10"}`}
+                >
+                  View All{" "}
+                  <span
+                    className={
+                      activeTab === "trips"
+                        ? theme.primaryText
+                        : "text-rose-300"
+                    }
+                  >
+                    {activeTab === "trips" ? logs.length : expenses.length}
+                  </span>
+                </button>
               </Link>
             </div>
 
             <div className="overflow-x-auto max-h-[700px] custom-scrollbar p-2">
               {activeTab === "trips" ? (
-                <table className="w-full text-left min-w-[550px] animate-in fade-in">
-                  <thead className="sticky top-0 bg-[#060d1f] text-[10px] uppercase font-bold text-blue-100/40 tracking-[0.15em] z-10 shadow-sm border-b border-blue-900/20">
+                <table className="w-full text-left min-w-[550px] animate-in fade-in duration-300">
+                  <thead className="sticky top-0 bg-transparent text-[10px] uppercase font-bold text-zinc-500 tracking-[0.15em] z-10 border-b border-zinc-800/60">
                     <tr>
-                      <th className="py-3 px-3 w-[40%]">Shipment Details</th>
-                      <th className="py-3 px-3 w-[35%]">Route & Site</th>
-                      <th className="py-3 px-3 text-right w-[25%]">Payment</th>
+                      <th className="py-4 px-4 w-[40%]">Shipment Details</th>
+                      <th className="py-4 px-4 w-[35%]">Route & Site</th>
+                      <th className="py-4 px-4 text-right w-[25%]">Payment</th>
                     </tr>
                   </thead>
-                  <tbody className="text-sm divide-y divide-blue-900/10">
+                  <tbody className="text-sm divide-y divide-zinc-800/60">
                     {logs.slice(0, 10).map((log) => {
                       const hasEdits =
                         log.editHistory && log.editHistory.length > 0;
@@ -600,23 +681,24 @@ const VehicleLog = () => {
                       return (
                         <tr
                           key={log._id}
-                          className="hover:bg-blue-900/10 transition-colors group"
+                          className="hover:bg-zinc-800/30 transition-colors group"
                         >
-                          <td className="p-3">
-                            <p className="text-[11px] font-mono text-blue-400 mb-1">
+                          <td className="p-4 align-top">
+                            <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
                               {new Date(log.date).toLocaleDateString("en-GB")}
                             </p>
-                            <p className="font-bold text-white text-md uppercase tracking-wide">
+                            <p className="font-bold text-white text-md uppercase tracking-wider flex items-center gap-2">
+                              <Truck size={14} className="text-zinc-500" />{" "}
                               {log.vehicleNo}
                             </p>
-                            <p className="text-[11px] text-blue-100/40 mt-1 uppercase tracking-widest font-semibold flex items-center gap-1.5">
-                              <User size={12} className="text-blue-500/50" />{" "}
+                            <p className="text-[11px] text-zinc-500 mt-1.5 uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                              <User size={12} className="text-zinc-600" />{" "}
                               {log.driverName}
                             </p>
-                            <div className="text-[11px] text-blue-200 mt-2 flex items-center gap-1.5 bg-blue-900/20 w-max px-2 py-1 rounded font-medium border border-blue-900/30">
-                              <Package size={12} className="text-blue-400" />{" "}
+                            <div className="text-[11px] text-zinc-300 mt-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2.5 py-1 rounded-md font-medium border border-zinc-800/60">
+                              <Package size={12} className={theme.iconColor} />{" "}
                               {log.items}{" "}
-                              <span className="text-blue-100/30">|</span>{" "}
+                              <span className="text-zinc-600">|</span>{" "}
                               {log.quantity} Qty
                             </div>
                             {hasEdits && (
@@ -624,21 +706,21 @@ const VehicleLog = () => {
                                 onClick={() => openHistory(log, "trips")}
                                 className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                               >
-                                <div className="flex items-center gap-1.5 bg-blue-950/30 border border-blue-900/50 px-2 py-1 rounded-lg">
+                                <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
                                   <History
                                     size={10}
-                                    className="text-blue-500"
+                                    className="text-zinc-400"
                                   />
-                                  <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">
+                                  <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
                                     {latestLog.role || "ADMIN"}
                                   </span>
                                   {log.editHistory.length > 1 && (
-                                    <span className="bg-blue-900/80 text-blue-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                    <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
                                       +{log.editHistory.length - 1} MORE
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[9px] text-blue-100/40 font-mono mt-1 pl-1">
+                                <div className="text-[9px] text-zinc-500 font-mono mt-1.5 pl-1">
                                   {new Date(latestLog.at).toLocaleString(
                                     "en-GB",
                                     {
@@ -652,17 +734,22 @@ const VehicleLog = () => {
                               </div>
                             )}
                           </td>
-                          <td className="p-3">
-                            <div className="flex flex-col gap-2">
+                          <td className="p-4 align-top">
+                            <div className="flex flex-col gap-2.5">
                               <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 shrink-0">
-                                  <MapPin size={12} className="text-blue-400" />
+                                <div
+                                  className={`w-6 h-6 rounded-full ${theme.primaryBg} flex items-center justify-center border ${theme.primaryBorder} shrink-0`}
+                                >
+                                  <MapPin
+                                    size={12}
+                                    className={theme.iconColor}
+                                  />
                                 </div>
-                                <span className="text-xs font-semibold text-blue-50">
+                                <span className="text-xs font-semibold text-zinc-300">
                                   {log.loadingPoint}
                                 </span>
                               </div>
-                              <div className="w-0.5 h-3 bg-blue-900/40 ml-3"></div>
+                              <div className="w-0.5 h-3 bg-zinc-800 ml-3"></div>
                               <div className="flex items-center gap-2">
                                 <div className="w-6 h-6 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shrink-0">
                                   <ArrowRightCircle
@@ -670,23 +757,25 @@ const VehicleLog = () => {
                                     className="text-rose-400"
                                   />
                                 </div>
-                                <span className="text-xs font-semibold text-blue-50">
+                                <span className="text-xs font-semibold text-zinc-300">
                                   {log.unloadingSite}
                                 </span>
                                 {log.distanceTravelled && (
-                                  <span className="text-[10px] text-blue-100/40 font-mono ml-1">
+                                  <span className="text-[10px] text-zinc-500 font-mono ml-1">
                                     ({log.distanceTravelled} km)
                                   </span>
                                 )}
                               </div>
                             </div>
                           </td>
-                          <td className="p-3 text-right">
+                          <td className="p-4 align-top text-right">
                             <p className="text-lg font-black text-white font-mono drop-shadow-sm">
                               ₹{log.totalAmount?.toLocaleString("en-IN")}
                             </p>
-                            <div className="flex flex-col items-end gap-1 mt-1">
-                              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+                            <div className="flex flex-col items-end gap-1.5 mt-2">
+                              <span
+                                className={`text-[10px] font-bold ${theme.primaryText} uppercase tracking-widest`}
+                              >
                                 Paid: ₹
                                 {Number(log.amountPaid || 0).toLocaleString(
                                   "en-IN",
@@ -706,7 +795,7 @@ const VehicleLog = () => {
                       <tr>
                         <td
                           colSpan="3"
-                          className="p-10 text-center text-blue-100/30 italic"
+                          className="p-12 text-center text-zinc-500 italic"
                         >
                           No trip records found.
                         </td>
@@ -715,12 +804,12 @@ const VehicleLog = () => {
                   </tbody>
                 </table>
               ) : (
-                <table className="w-full text-left min-w-[500px] animate-in fade-in">
-                  <thead className="sticky top-0 bg-[#060d1f] text-[10px] uppercase font-bold text-rose-100/40 tracking-[0.15em] z-10 shadow-sm border-b border-rose-900/20">
+                <table className="w-full text-left min-w-[500px] animate-in fade-in duration-300">
+                  <thead className="sticky top-0 bg-transparent text-[10px] uppercase font-bold text-rose-100/40 tracking-[0.15em] z-10 border-b border-rose-900/20">
                     <tr>
-                      <th className="py-3 px-4 w-[30%]">Date</th>
-                      <th className="py-3 px-4 w-[45%]">Reason</th>
-                      <th className="py-3 px-4 text-right w-[25%]">Amount</th>
+                      <th className="py-4 px-4 w-[30%]">Date</th>
+                      <th className="py-4 px-4 w-[45%]">Reason</th>
+                      <th className="py-4 px-4 text-right w-[25%]">Amount</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm divide-y divide-rose-900/10">
@@ -737,13 +826,13 @@ const VehicleLog = () => {
                           className="hover:bg-rose-900/10 transition-colors group"
                         >
                           <td className="p-4 align-top">
-                            <div className="text-[11px] font-mono text-rose-400 mb-1">
+                            <div className="text-[11px] font-mono text-rose-400 mb-1.5">
                               {new Date(exp.date).toLocaleDateString("en-GB")}
                             </div>
                             {hasEdits && (
                               <div
                                 onClick={() => openHistory(exp, "expenses")}
-                                className="mt-2 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                                className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                               >
                                 <div className="flex items-center gap-1.5 bg-rose-950/30 border border-rose-900/50 px-2 py-1 rounded-lg">
                                   <History
@@ -759,7 +848,7 @@ const VehicleLog = () => {
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[9px] text-rose-100/40 font-mono mt-1 pl-1">
+                                <div className="text-[9px] text-rose-100/40 font-mono mt-1.5 pl-1">
                                   {new Date(latestLog.at).toLocaleString(
                                     "en-GB",
                                     {
@@ -777,7 +866,7 @@ const VehicleLog = () => {
                             {exp.reason}
                           </td>
                           <td className="p-4 align-top text-right">
-                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-3 py-1 rounded-lg font-mono font-bold">
+                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-3 py-1.5 rounded-lg font-mono font-bold">
                               ₹{Number(exp.amount).toLocaleString("en-IN")}
                             </span>
                           </td>
@@ -788,7 +877,7 @@ const VehicleLog = () => {
                       <tr>
                         <td
                           colSpan="3"
-                          className="p-10 text-center text-rose-100/30 italic"
+                          className="p-12 text-center text-rose-100/30 italic"
                         >
                           No expenses recorded yet.
                         </td>
@@ -802,25 +891,40 @@ const VehicleLog = () => {
         </div>
       </div>
 
-      {/* 🚀 HISTORY MODAL REFINED UI (Matches Screenshot!) */}
+      {/* 🚀 HISTORY MODAL REFINED UI */}
       {historyModal.isOpen && historyModal.data && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
             className="absolute inset-0 cursor-pointer"
-            onClick={() => setHistoryModal({ isOpen: false, data: null })}
+            onClick={() =>
+              setHistoryModal({ isOpen: false, data: null, itemName: "" })
+            }
           />
-          <div className="bg-[#030816] border border-emerald-900/30 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-            <div className="flex items-center justify-between p-5 border-b border-emerald-900/20 bg-[#060d1f]/50 shrink-0">
+          <div
+            className={`bg-[#09090B] border ${activeTab === "trips" ? theme.primaryBorder : "border-rose-900/30"} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200`}
+          >
+            <div
+              className={`flex items-center justify-between p-5 border-b ${activeTab === "trips" ? `${theme.primaryBorder} ${theme.primaryBg}` : "border-rose-900/20 bg-rose-900/10"} shrink-0`}
+            >
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className="text-emerald-500" />
+                <History
+                  size={16}
+                  className={
+                    activeTab === "trips" ? theme.primaryText : "text-rose-400"
+                  }
+                />
                 Log History:{" "}
-                <span className="text-emerald-400 font-normal">
+                <span
+                  className={`${activeTab === "trips" ? theme.primaryText : "text-rose-400"} font-normal`}
+                >
                   {historyModal.itemName}
                 </span>
               </div>
               <button
-                onClick={() => setHistoryModal({ isOpen: false, data: null })}
-                className="text-blue-100/40 hover:text-white transition-colors"
+                onClick={() =>
+                  setHistoryModal({ isOpen: false, data: null, itemName: "" })
+                }
+                className="text-zinc-500 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
@@ -830,29 +934,30 @@ const VehicleLog = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-[#060d1f] border ${index === 0 ? "border-emerald-500/30" : "border-blue-900/20"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-[#09090B] border ${index === 0 ? (activeTab === "trips" ? theme.primaryBorder : "border-rose-500/30") : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
-                    <div className="absolute left-0 top-0 w-1 h-full bg-emerald-500"></div>
+                    <div
+                      className={`absolute left-0 top-0 w-1 h-full ${activeTab === "trips" ? theme.primaryBg : "bg-rose-500"}`}
+                    ></div>
                   )}
-
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-blue-900/10 text-blue-100/40"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? (activeTab === "trips" ? `${theme.primaryBg} ${theme.primaryText}` : "bg-rose-500/10 text-rose-400") : "bg-zinc-800 text-zinc-500"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-blue-100/50"}`}
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-500"}`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
-                      <p className="text-blue-100/40 text-[10px] mt-0.5 font-mono">
+                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
                         {log.by || "admin@system.com"}
                       </p>
                       <p
-                        className={`text-[10px] font-mono mt-1 ${index === 0 ? "text-emerald-400" : "text-blue-100/30"}`}
+                        className={`text-[10px] font-mono mt-1 ${index === 0 ? (activeTab === "trips" ? theme.primaryText : "text-rose-400") : "text-zinc-600"}`}
                       >
                         {new Date(log.at).toLocaleString("en-GB", {
                           day: "2-digit",
@@ -865,9 +970,10 @@ const VehicleLog = () => {
                       </p>
                     </div>
                   </div>
-
                   {index === 0 && (
-                    <div className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
+                    <div
+                      className={`${activeTab === "trips" ? `${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText}` : "bg-rose-500/10 border-rose-500/20 text-rose-400"} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                    >
                       LATEST
                     </div>
                   )}
