@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import salesService from "../../services/salesService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -19,6 +19,7 @@ import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const EditSale = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const { toast } = useUI();
   const { admin } = useAuth();
@@ -27,6 +28,29 @@ const EditSale = () => {
   const [saving, setSaving] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [auditInfo, setAuditInfo] = useState(null);
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+    glowOrb: isTransport ? "bg-cyan-500/5" : "bg-indigo-500/5",
+    paymentOnline: isTransport
+      ? "bg-cyan-500 text-white border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+      : "bg-blue-500 text-white border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]",
+    paymentCash: isTransport
+      ? "bg-blue-500 text-white border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]"
+      : "bg-indigo-500 text-white border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.3)]",
+  };
 
   const [formData, setFormData] = useState({
     date: "",
@@ -116,7 +140,7 @@ const EditSale = () => {
         admin || { email: "Unknown", role: "admin" };
       await salesService.updateSale(id, formData, currentUser);
       toast.success("Sales record updated successfully.");
-      navigate("/enterprise/sales/report");
+      navigate(-1);
     } catch (err) {
       toast.error("Failed to update record.");
     } finally {
@@ -135,8 +159,8 @@ const EditSale = () => {
   return (
     <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
       <button
-        onClick={() => navigate("/enterprise/sales/report")}
-        className="group flex items-center text-emerald-100/50 hover:text-white mb-6 transition-colors"
+        onClick={() => navigate(-1)}
+        className="group flex items-center text-zinc-500 hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft
           size={18}
@@ -145,18 +169,22 @@ const EditSale = () => {
         Return to Report
       </button>
 
-      <div className="bg-[#050a08] rounded-2xl shadow-2xl border border-emerald-900/30 p-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-3xl rounded-full pointer-events-none"></div>
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-8 relative overflow-hidden">
+        <div
+          className={`absolute top-0 right-0 w-64 h-64 blur-3xl rounded-full pointer-events-none ${theme.glowOrb}`}
+        ></div>
 
-        <div className="flex items-center gap-4 mb-8 border-b border-emerald-900/10 pb-6 relative z-10">
-          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 border border-emerald-500/20 shadow-inner">
+        <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6 relative z-10">
+          <div
+            className={`p-3 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+          >
             <ShoppingCart size={28} />
           </div>
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">
               Edit Sale Record
             </h2>
-            <p className="text-emerald-100/30 text-[11px] uppercase tracking-widest font-semibold mt-1">
+            <p className="text-zinc-500 text-[11px] uppercase tracking-widest font-semibold mt-1">
               Ref ID: {id.slice(-8).toUpperCase()}
             </p>
           </div>
@@ -171,7 +199,7 @@ const EditSale = () => {
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Sale Date
               </label>
               <input
@@ -180,12 +208,12 @@ const EditSale = () => {
                 value={formData.date}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                 style={{ colorScheme: "dark" }}
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Challan No. (Opt)
               </label>
               <input
@@ -193,14 +221,15 @@ const EditSale = () => {
                 name="challanNo"
                 value={formData.challanNo}
                 onChange={handleChange}
-                className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                placeholder="e.g. CH-101"
+                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Buyer Name
               </label>
               <input
@@ -209,15 +238,18 @@ const EditSale = () => {
                 value={formData.buyerName}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                placeholder="e.g. Ramesh Textiles"
+                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Vehicle Number
               </label>
-              <div className="relative">
-                <div className="absolute top-1/2 -translate-y-1/2 left-4 text-emerald-100/30">
+              <div className="relative group">
+                <div
+                  className={`absolute top-1/2 -translate-y-1/2 left-4 text-zinc-500 transition-colors ${theme.primaryText}`}
+                >
                   <Truck size={16} />
                 </div>
                 <input
@@ -226,14 +258,15 @@ const EditSale = () => {
                   value={formData.vehicleNo}
                   onChange={handleChange}
                   required
-                  className="w-full pl-11 pr-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                  placeholder="e.g. OD 02 AB 1234"
+                  className={`w-full pl-11 pr-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
                 />
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+            <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
               Delivery Address
             </label>
             <input
@@ -242,14 +275,15 @@ const EditSale = () => {
               value={formData.address}
               onChange={handleChange}
               required
-              className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+              placeholder="Full site address"
+              className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
-                Product Description
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
+                Product
               </label>
               <div className="relative">
                 <select
@@ -257,168 +291,113 @@ const EditSale = () => {
                   value={formData.productName}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner appearance-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 cursor-pointer"
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all appearance-none cursor-pointer ${theme.primaryFocus}`}
                 >
-                  <option value="" className="bg-[#050a08] text-emerald-100/30">
-                    Select Material...
+                  <option value="" className="bg-[#09090B] text-zinc-500">
+                    Select...
                   </option>
                   <optgroup
                     label="Bricks"
-                    className="bg-[#020403] text-emerald-500 font-bold"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                   >
                     <option
                       value="Bricks (10 inch)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Bricks (10 inch)
                     </option>
                     <option
                       value="Bricks (9 inch)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Bricks (9 inch)
                     </option>
                     <option
                       value="Bricks (8 inch)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Bricks (8 inch)
                     </option>
                   </optgroup>
                   <optgroup
                     label="Paver Blocks"
-                    className="bg-[#020403] text-emerald-500 font-bold"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                   >
                     <option
                       value="Zig Zag (60mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Zig Zag (60mm)
                     </option>
                     <option
                       value="Zig Zag (80mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Zig Zag (80mm)
                     </option>
                     <option
                       value="6-12 Brick (60mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       6-12 Brick (60mm)
                     </option>
                     <option
                       value="6-12 Brick (80mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       6-12 Brick (80mm)
                     </option>
                     <option
                       value="6/6 Brick (60mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       6/6 Brick 60mm
                     </option>
                     <option
                       value="6/6 Brick (80mm)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       6/6 Brick (80mm)
                     </option>
                   </optgroup>
                   <optgroup
                     label="Chequered Tiles"
-                    className="bg-[#020403] text-emerald-500 font-bold"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                   >
-                    <option value="Hexagon" className="text-white font-normal">
+                    <option
+                      value="Hexagon"
+                      className="text-zinc-100 font-normal"
+                    >
                       Hexagon
                     </option>
                     <option
                       value="Brick Design (9inch)"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Brick Design (9inch)
                     </option>
                     <option
                       value="Curve Stone"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Curve Stone
                     </option>
                     <option
                       value="Cover Block"
-                      className="text-white font-normal"
+                      className="text-zinc-100 font-normal"
                     >
                       Cover Block
-                    </option>
-                  </optgroup>
-                  <optgroup
-                    label="Raw Materials"
-                    className="bg-[#020403] text-teal-500 font-bold"
-                  >
-                    <option
-                      value="Cement (Bags)"
-                      className="text-white font-normal"
-                    >
-                      Cement (Bags)
-                    </option>
-                    <option value="Sand" className="text-white font-normal">
-                      Sand
-                    </option>
-                  </optgroup>
-                  <optgroup
-                    label="Aggregate"
-                    className="bg-[#020403] text-amber-500 font-bold"
-                  >
-                    <option
-                      value="Aggregate (60mm)"
-                      className="text-white font-normal"
-                    >
-                      Aggregate (60mm)
-                    </option>
-                    <option
-                      value="Aggregate (40mm)"
-                      className="text-white font-normal"
-                    >
-                      Aggregate (40mm)
-                    </option>
-                    <option
-                      value="Aggregate (20mm)"
-                      className="text-white font-normal"
-                    >
-                      Aggregate (20mm)
-                    </option>
-                    <option
-                      value="Aggregate (10mm)"
-                      className="text-white font-normal"
-                    >
-                      Aggregate (10mm)
-                    </option>
-                    <option
-                      value="Aggregate (6mm)"
-                      className="text-white font-normal"
-                    >
-                      Aggregate (6mm)
-                    </option>
-                    <option value="Dust" className="text-white font-normal">
-                      Dust
-                    </option>
-                    <option value="GSP" className="text-white font-normal">
-                      GSP
-                    </option>
-                    <option value="WMM" className="text-white font-normal">
-                      WMM
                     </option>
                   </optgroup>
                 </select>
                 <ChevronDown
                   size={16}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Quantity
               </label>
               <input
@@ -428,14 +407,15 @@ const EditSale = () => {
                 onChange={handleChange}
                 onWheel={(e) => e.target.blur()}
                 required
-                className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                placeholder="0"
+                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Total Bill Amount (₹)
               </label>
               <input
@@ -445,12 +425,13 @@ const EditSale = () => {
                 onChange={handleChange}
                 onWheel={(e) => e.target.blur()}
                 required
-                className="w-full px-4 py-3 bg-black/40 border border-emerald-500/30 rounded-xl text-emerald-400 font-bold text-lg outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                placeholder="0.00"
+                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl ${theme.primaryText} font-bold text-lg outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-3 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 ml-1">
                 Payment Mode
               </label>
               <div className="flex gap-3">
@@ -459,7 +440,11 @@ const EditSale = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Cash" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Cash" ? "bg-emerald-500 text-[#020403] border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]" : "bg-black/40 border-white/10 text-emerald-100/50 hover:border-emerald-500/50 hover:text-white"}`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${
+                    formData.paymentMode === "Cash"
+                      ? theme.paymentCash
+                      : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`
+                  }`}
                 >
                   <Banknote size={16} /> Cash
                 </button>
@@ -468,7 +453,11 @@ const EditSale = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Online" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Online" ? "bg-blue-500 text-white border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]" : "bg-black/40 border-white/10 text-emerald-100/50 hover:border-blue-500/50 hover:text-white"}`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${
+                    formData.paymentMode === "Online"
+                      ? theme.paymentOnline
+                      : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`
+                  }`}
                 >
                   <CreditCard size={16} /> Online
                 </button>
@@ -476,9 +465,9 @@ const EditSale = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-emerald-900/10 p-4 rounded-xl border border-emerald-900/20">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800">
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Amount Paid (₹)
               </label>
               <input
@@ -488,11 +477,11 @@ const EditSale = () => {
                 onChange={handleChange}
                 onWheel={(e) => e.target.blur()}
                 placeholder="0.00"
-                className="w-full px-4 py-3 bg-black/40 border border-emerald-500/30 rounded-xl text-emerald-400 font-bold outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+                className={`w-full px-4 py-3 bg-zinc-900/50 border ${theme.primaryBorder} rounded-xl ${theme.primaryText} font-bold outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-emerald-100/60 uppercase tracking-widest mb-1.5 ml-1">
+              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Amount Due (₹)
               </label>
               <input
@@ -502,23 +491,24 @@ const EditSale = () => {
                 onChange={handleChange}
                 onWheel={(e) => e.target.blur()}
                 placeholder="0.00"
-                className="w-full px-4 py-3 bg-black/40 border border-rose-500/30 rounded-xl text-rose-400 font-bold outline-none transition-all shadow-inner focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500/50"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-rose-500/30 rounded-xl text-rose-400 font-bold outline-none transition-all focus:ring-1 focus:ring-rose-500/50 focus:border-rose-500/50 placeholder:text-zinc-600"
               />
             </div>
           </div>
 
-          <div className="pt-6 flex justify-end gap-4 mt-2 border-b border-emerald-900/10 pb-6">
+          <div className="pt-6 flex justify-end gap-3 mt-2 border-b border-zinc-800/60 pb-6">
             <Button
               type="button"
-              variant="secondary"
-              onClick={() => navigate("/enterprise/sales/report")}
-              className="px-6 border-emerald-900/30 text-emerald-100/50 hover:bg-emerald-900/20"
+              variant="outline"
+              onClick={() => navigate(-1)}
+              className="px-6 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 rounded-xl"
             >
               Discard
             </Button>
             <Button
               type="submit"
-              className="px-10 shadow-xl shadow-emerald-900/20 gap-2 bg-emerald-500 hover:bg-emerald-400 text-[#020403] border-none"
+              variant="primary"
+              className="px-10 gap-2 rounded-xl"
               disabled={saving}
             >
               {saving ? (
@@ -531,9 +521,9 @@ const EditSale = () => {
           </div>
 
           {auditInfo && (
-            <div className="text-center text-[10px] font-mono text-emerald-100/30 uppercase tracking-[0.1em] opacity-80 pt-2">
+            <div className="text-center text-[10px] font-mono text-zinc-500 uppercase tracking-[0.1em] pt-2">
               LAST UPDATED BY{" "}
-              <span className="text-emerald-400 font-bold mx-1">
+              <span className={`${theme.primaryText} font-bold mx-1`}>
                 {auditInfo.role}
               </span>{" "}
               ON {auditInfo.at}
