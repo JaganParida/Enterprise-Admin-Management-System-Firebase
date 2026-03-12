@@ -3,11 +3,10 @@ import { Languages } from "lucide-react";
 
 const GoogleTranslate = () => {
   useEffect(() => {
-    // 1. Add the init function to the window object
     window.googleTranslateElementInit = () => {
       new window.google.translate.TranslateElement(
         {
-          pageLanguage: "en", // Set your app's default language
+          pageLanguage: "en",
           layout: window.google.translate.TranslateElement.InlineLayout.SIMPLE,
           autoDisplay: false,
         },
@@ -15,7 +14,6 @@ const GoogleTranslate = () => {
       );
     };
 
-    // 2. Inject the Google Translate Script
     const scriptId = "google-translate-script";
     if (!document.getElementById(scriptId)) {
       const script = document.createElement("script");
@@ -28,24 +26,23 @@ const GoogleTranslate = () => {
   }, []);
 
   return (
-    <div className="px-4 py-6 mt-auto border-t border-emerald-900/20 no-print">
+    <div className="px-4 py-6 mt-auto border-t border-[#1E293B] no-print">
       <div className="flex items-center gap-2 mb-3 px-2">
-        <div className="p-1.5 bg-emerald-500/10 rounded-lg text-emerald-500">
-          <Languages size={14} />
+        <div className="text-blue-500">
+          <Languages size={16} />
         </div>
-        <p className="text-[10px] uppercase font-bold text-emerald-100/30 tracking-widest">
+        <p className="text-xs font-semibold text-slate-400 tracking-wide">
           Translate Page
         </p>
       </div>
 
-      {/* The actual widget mounts here */}
       <div
         id="google_translate_element"
-        className="custom-google-translate"
+        className="custom-google-translate opacity-90"
       ></div>
 
-      <p className="text-[9px] text-emerald-100/20 mt-2 px-2 italic">
-        * Powered by Google Translate
+      <p className="text-[10px] text-slate-500 mt-2 px-2">
+        Powered by Google Translate
       </p>
     </div>
   );
