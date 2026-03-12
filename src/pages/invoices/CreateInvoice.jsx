@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import invoiceService from "../../services/invoiceService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -9,9 +9,27 @@ import Button from "../../components/common/Button";
 
 const CreateInvoice = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useUI();
   const { admin } = useAuth();
   const [loading, setLoading] = useState(false);
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+    indicatorLine: isTransport ? "bg-cyan-500" : "bg-indigo-500",
+  };
 
   // Form States
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -191,7 +209,7 @@ const CreateInvoice = () => {
         admin || { email: "Unknown", role: "admin" };
       await invoiceService.createInvoice(invoiceData, currentUser);
       toast.success("Invoice generated successfully!");
-      navigate("/enterprise/invoices");
+      navigate(-1); // Use relative navigation to support both transport and enterprise
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to create invoice");
     } finally {
@@ -205,12 +223,14 @@ const CreateInvoice = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20">
+            <div
+              className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+            >
               <FileText size={24} />
             </div>
             Create Tax Invoice
           </h1>
-          <p className="text-emerald-100/40 text-sm mt-1 ml-1">
+          <p className="text-zinc-500 text-sm mt-1 ml-1">
             Generate a standardized bill.
           </p>
         </div>
@@ -218,7 +238,7 @@ const CreateInvoice = () => {
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            className="bg-[#050a08] border border-emerald-900/30 text-emerald-100 text-sm rounded-xl px-4 py-3 outline-none focus:border-emerald-500/50 w-full sm:w-auto cursor-pointer"
+            className={`bg-[#09090B] border border-zinc-800 text-zinc-100 text-sm rounded-xl px-4 py-3 outline-none w-full sm:w-auto cursor-pointer transition-all ${theme.primaryFocus}`}
           >
             <option value="Pending">Status: Pending</option>
             <option value="Paid">Status: Paid</option>
@@ -228,16 +248,18 @@ const CreateInvoice = () => {
             value={invoiceDate}
             onChange={(e) => setInvoiceDate(e.target.value)}
             style={{ colorScheme: "dark" }}
-            className="bg-[#050a08] border border-emerald-900/30 text-emerald-400 font-bold text-sm rounded-xl px-4 py-3 outline-none focus:border-emerald-500/50 w-full sm:w-auto cursor-pointer"
+            className={`bg-[#09090B] border border-zinc-800 font-bold text-sm rounded-xl px-4 py-3 outline-none w-full sm:w-auto cursor-pointer transition-all ${theme.primaryText} ${theme.primaryFocus}`}
           />
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Client Details */}
-        <div className="bg-[#050a08] p-6 md:p-8 rounded-2xl border border-emerald-900/30 shadow-lg relative overflow-hidden print:shadow-none print:border-none print:bg-transparent print:p-0">
-          <h3 className="text-lg font-bold text-white mb-6 border-b border-emerald-900/20 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
-            <span className="w-1.5 h-6 bg-emerald-500 rounded-full print:hidden"></span>{" "}
+        <div className="bg-[#09090B] p-6 md:p-8 rounded-2xl border border-zinc-800/60 shadow-lg relative overflow-hidden print:shadow-none print:border-none print:bg-transparent print:p-0">
+          <h3 className="text-lg font-bold text-white mb-6 border-b border-zinc-800/60 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
+            <span
+              className={`w-1.5 h-6 rounded-full print:hidden ${theme.indicatorLine}`}
+            ></span>{" "}
             Purchaser Details
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -256,10 +278,14 @@ const CreateInvoice = () => {
                     setErrors(newErrors);
                   }
                 }}
-                className={errors.invoiceNumber ? "border-rose-500/50" : ""}
+                className={
+                  errors.invoiceNumber
+                    ? "border-rose-500/50 focus:ring-rose-500"
+                    : ""
+                }
               />
               {errors.invoiceNumber && (
-                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1">
+                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1 mt-1">
                   <AlertCircle size={10} /> {errors.invoiceNumber}
                 </p>
               )}
@@ -271,10 +297,12 @@ const CreateInvoice = () => {
                 placeholder="e.g. Ramesh Textiles"
                 value={client.name}
                 onChange={(e) => handleClientChange("name", e.target.value)}
-                className={errors.name ? "border-rose-500/50" : ""}
+                className={
+                  errors.name ? "border-rose-500/50 focus:ring-rose-500" : ""
+                }
               />
               {errors.name && (
-                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1">
+                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1 mt-1">
                   <AlertCircle size={10} /> {errors.name}
                 </p>
               )}
@@ -299,10 +327,12 @@ const CreateInvoice = () => {
                     .replace(/[^A-Z0-9]/g, "");
                   if (val.length <= 15) handleClientChange("gst", val);
                 }}
-                className={errors.gst ? "border-rose-500/50" : ""}
+                className={
+                  errors.gst ? "border-rose-500/50 focus:ring-rose-500" : ""
+                }
               />
               {errors.gst && (
-                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1">
+                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1 mt-1">
                   <AlertCircle size={10} /> {errors.gst}
                 </p>
               )}
@@ -311,15 +341,17 @@ const CreateInvoice = () => {
         </div>
 
         {/* Items Table */}
-        <div className="bg-[#050a08] p-6 md:p-8 rounded-2xl border border-emerald-900/30 shadow-lg print:shadow-none print:border-none print:bg-transparent print:p-0">
-          <h3 className="text-lg font-bold text-white mb-6 border-b border-emerald-900/20 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
-            <span className="w-1.5 h-6 bg-teal-500 rounded-full print:hidden"></span>{" "}
+        <div className="bg-[#09090B] p-6 md:p-8 rounded-2xl border border-zinc-800/60 shadow-lg print:shadow-none print:border-none print:bg-transparent print:p-0">
+          <h3 className="text-lg font-bold text-white mb-6 border-b border-zinc-800/60 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
+            <span
+              className={`w-1.5 h-6 rounded-full print:hidden ${theme.indicatorLine}`}
+            ></span>{" "}
             Description of Goods
           </h3>
           <div className="overflow-x-auto pb-4 custom-scrollbar print:overflow-visible print:w-full">
             <table className="w-full text-left mb-4 min-w-[800px] print:min-w-0">
               <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-emerald-100/40 border-b border-emerald-900/20 font-bold print:text-gray-500">
+                <tr className="text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800/60 font-bold print:text-gray-500">
                   <th className="pb-3 w-[35%] pl-2">Product Name</th>
                   <th className="pb-3 w-[15%]">HSN Code</th>
                   <th className="pb-3 w-20 text-center">Qnty</th>
@@ -328,14 +360,14 @@ const CreateInvoice = () => {
                   <th className="pb-3 w-10 text-center print:hidden"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-emerald-900/10 print:divide-gray-200">
+              <tbody className="divide-y divide-zinc-800/60 print:divide-gray-200">
                 {items.map((item) => (
                   <tr key={item.id} className="group">
                     <td className="py-4 pr-3 pl-2">
                       {!item.isCustom ? (
                         <div className="relative">
                           <select
-                            className={`w-full bg-[#020403] border ${errors[`item_${item.id}_name`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm cursor-pointer appearance-none print:bg-transparent print:text-black`}
+                            className={`w-full bg-zinc-900/50 border ${errors[`item_${item.id}_name`] ? "border-rose-500/50 focus:border-rose-500" : `border-zinc-800 ${theme.primaryFocus}`} rounded-lg px-3 py-2.5 text-zinc-100 outline-none text-sm cursor-pointer appearance-none transition-all print:bg-transparent print:text-black`}
                             value={item.isCustom ? "Custom" : item.name || ""}
                             onChange={(e) =>
                               handleItemChange(
@@ -348,117 +380,117 @@ const CreateInvoice = () => {
                             <option
                               value=""
                               disabled
-                              className="bg-[#050a08] text-emerald-100/30"
+                              className="bg-[#09090B] text-zinc-500"
                             >
                               Select Product...
                             </option>
                             <optgroup
                               label="Bricks"
-                              className="bg-[#020403] text-emerald-500 font-bold"
+                              className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                             >
                               <option
                                 value=" FLYASH Bricks (10 inch)"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 Bricks 10 inch
                               </option>
                               <option
                                 value="FLYASH Bricks (9 inch)"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 Bricks 9 inch
                               </option>
                               <option
                                 value="FLYASH Bricks 8 inch"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 Bricks 8 inch
                               </option>
                             </optgroup>
                             <optgroup
                               label="Paver Blocks"
-                              className="bg-[#020403] text-emerald-500 font-bold"
+                              className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                             >
                               <option
                                 value="Paver Blocks Zig Zag (60mm)"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 Zig Zag (60mm)
                               </option>
                               <option
                                 value="Paver Blocks Zig Zag (80mm)"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 Zig Zag (80mm)
                               </option>
                               <option
                                 value="Paver Blocks 6/12 Brick (60mm)"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 6/12 Brick (60mm)
                               </option>
                               <option
                                 value="Paver Blocks 6/12 Brick (80mm)"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 6/12 Brick (80mm)
                               </option>
                               <option
                                 value="Paver Blocks 6/6 Brick (60mm)"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 6/6 Brick 60mm
                               </option>
                               <option
                                 value="Paver Blocks 6/6 Brick (80mm)"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 6/6 Brick (80mm)
                               </option>
                             </optgroup>
                             <optgroup
                               label="Chequered Tiles"
-                              className="bg-[#020403] text-emerald-500 font-bold"
+                              className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                             >
                               <option
                                 value="Chequered Tiles Hexagon"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 Hexagon
                               </option>
                               <option
                                 value="Chequered Tiles Brick Design (9inch)"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 Brick Design (9inch)
                               </option>
                               <option
                                 value="Chequered Tiles Curve Stone"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 Curve Stone
                               </option>
                               <option
                                 value="Chequered Tiles Cover Block"
-                                className="bg-[#050a08] text-white font-normal"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 Cover Block
                               </option>
                             </optgroup>
                             <option
                               value="Other Building Materials"
-                              className="bg-[#050a08] text-emerald-100 font-normal"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
                             >
                               Other Building Materials
                             </option>
                             <option
                               value="Custom"
-                              className="bg-[#020403] text-amber-400 font-bold border-t border-emerald-900/30 pt-2"
+                              className="bg-[#09090B] text-amber-400 font-bold border-t border-zinc-800/60 pt-2"
                             >
                               Custom Item...
                             </option>
                           </select>
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500/50 text-[10px] print:hidden">
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-[10px] print:hidden">
                             ▼
                           </div>
                         </div>
@@ -466,7 +498,7 @@ const CreateInvoice = () => {
                         <div className="relative">
                           <input
                             type="text"
-                            className={`w-full bg-[#020403] border ${errors[`item_${item.id}_name`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm pr-12 print:bg-transparent print:text-black`}
+                            className={`w-full bg-zinc-900/50 border ${errors[`item_${item.id}_name`] ? "border-rose-500/50 focus:border-rose-500" : `border-zinc-800 ${theme.primaryFocus}`} rounded-lg px-3 py-2.5 text-zinc-100 outline-none text-sm pr-12 transition-all print:bg-transparent print:text-black`}
                             placeholder="Type custom description..."
                             value={item.name}
                             onChange={(e) =>
@@ -490,7 +522,7 @@ const CreateInvoice = () => {
                       <input
                         type="text"
                         placeholder="HSN"
-                        className="w-full bg-[#020403] border border-emerald-900/30 rounded-lg px-3 py-2.5 text-emerald-100 focus:border-emerald-500/50 outline-none text-sm text-center print:bg-transparent print:text-black"
+                        className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100 outline-none text-sm text-center transition-all print:bg-transparent print:text-black print:border-none ${theme.primaryFocus}`}
                         value={item.hsn}
                         onChange={(e) =>
                           handleItemChange(item.id, "hsn", e.target.value)
@@ -500,7 +532,7 @@ const CreateInvoice = () => {
                     <td className="py-4 pr-3">
                       <input
                         type="number"
-                        className={`w-full bg-[#020403] border ${errors[`item_${item.id}_qty`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-2 py-2.5 text-emerald-100 text-center focus:border-emerald-500/50 outline-none text-sm print:bg-transparent print:text-black`}
+                        className={`w-full bg-zinc-900/50 border ${errors[`item_${item.id}_qty`] ? "border-rose-500/50 focus:border-rose-500" : `border-zinc-800 ${theme.primaryFocus}`} rounded-lg px-2 py-2.5 text-zinc-100 text-center outline-none text-sm transition-all print:bg-transparent print:text-black print:border-none`}
                         value={item.quantity}
                         onChange={(e) =>
                           handleItemChange(item.id, "quantity", e.target.value)
@@ -511,7 +543,7 @@ const CreateInvoice = () => {
                     <td className="py-4 pr-3">
                       <input
                         type="number"
-                        className={`w-full bg-[#020403] border ${errors[`item_${item.id}_price`] ? "border-rose-500/50" : "border-emerald-900/30"} rounded-lg px-3 py-2.5 text-emerald-100 text-right focus:border-emerald-500/50 outline-none text-sm print:bg-transparent print:text-black`}
+                        className={`w-full bg-zinc-900/50 border ${errors[`item_${item.id}_price`] ? "border-rose-500/50 focus:border-rose-500" : `border-zinc-800 ${theme.primaryFocus}`} rounded-lg px-3 py-2.5 text-zinc-100 text-right outline-none text-sm transition-all print:bg-transparent print:text-black print:border-none`}
                         value={item.price}
                         onChange={(e) =>
                           handleItemChange(item.id, "price", e.target.value)
@@ -519,14 +551,14 @@ const CreateInvoice = () => {
                         onWheel={(e) => e.target.blur()}
                       />
                     </td>
-                    <td className="py-4 font-bold text-emerald-400 font-mono text-sm text-right pr-4 print:text-black">
+                    <td className="py-4 font-bold text-white font-mono text-sm text-right pr-4 print:text-black">
                       {Number(item.total || 0).toLocaleString("en-IN")}
                     </td>
                     <td className="py-4 text-center print:hidden">
                       <button
                         type="button"
                         onClick={() => removeItem(item.id)}
-                        className="text-emerald-900/40 hover:text-rose-400 transition-colors p-2 rounded-lg"
+                        className="text-zinc-600 hover:text-rose-400 transition-colors p-2 rounded-lg"
                       >
                         <Trash2 size={18} />
                       </button>
@@ -538,41 +570,49 @@ const CreateInvoice = () => {
           </div>
           <Button
             type="button"
-            variant="secondary"
+            variant="outline"
             onClick={addItem}
-            className="text-xs border-emerald-500/20 text-emerald-400 mt-2 print:hidden"
+            className="text-xs border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white mt-2 rounded-xl print:hidden"
           >
             <Plus size={16} className="mr-1" /> Add Row
           </Button>
         </div>
 
         {/* Totals Section */}
-        <div className="bg-[#050a08] p-8 rounded-2xl border border-emerald-900/30 shadow-lg flex justify-end print:shadow-none print:border-none print:bg-transparent print:p-0">
+        <div className="bg-[#09090B] p-8 rounded-2xl border border-zinc-800/60 shadow-lg flex justify-end print:shadow-none print:border-none print:bg-transparent print:p-0">
           <div className="w-full md:w-80 space-y-4">
-            <div className="flex justify-between text-emerald-100/60 text-sm font-medium print:text-gray-600">
+            <div className="flex justify-between text-zinc-400 text-sm font-medium print:text-gray-600">
               <span>G. Total (Before Tax):</span>
-              <span className="font-mono text-emerald-100 print:text-black">
+              <span className="font-mono text-white print:text-black">
                 ₹ {totals.subTotal.toLocaleString("en-IN")}
               </span>
             </div>
 
-            <div className="flex justify-between items-center text-emerald-100/60 text-sm print:text-gray-600">
+            <div className="flex justify-between items-center text-zinc-400 text-sm print:text-gray-600">
               <span>Tax Category:</span>
               <select
-                className="bg-[#020403] border border-emerald-900/30 rounded-lg px-2 py-1 text-emerald-100 text-xs print:bg-transparent print:text-black print:border-none print:appearance-none"
+                className={`bg-zinc-900/50 border border-zinc-800 rounded-lg px-2 py-1 text-zinc-300 text-xs print:bg-transparent print:text-black print:border-none print:appearance-none outline-none transition-all cursor-pointer ${theme.primaryFocus}`}
                 value={gstRate}
                 onChange={(e) => setGstRate(parseFloat(e.target.value))}
               >
-                <option value="0">0%</option>
-                <option value="5">GST 5%</option>
-                <option value="12">GST 12%</option>
-                <option value="18">GST 18%</option>
+                <option value="0" className="bg-[#09090B]">
+                  0%
+                </option>
+                <option value="5" className="bg-[#09090B]">
+                  GST 5%
+                </option>
+                <option value="12" className="bg-[#09090B]">
+                  GST 12%
+                </option>
+                <option value="18" className="bg-[#09090B]">
+                  GST 18%
+                </option>
               </select>
             </div>
 
             {gstRate > 0 && (
               <>
-                <div className="flex justify-between text-emerald-100/40 text-xs print:text-gray-600">
+                <div className="flex justify-between text-zinc-500 text-xs print:text-gray-600">
                   <span>CGST @ {gstRate / 2}%:</span>
                   <span className="font-mono print:text-black">
                     ₹{" "}
@@ -582,7 +622,7 @@ const CreateInvoice = () => {
                     })}
                   </span>
                 </div>
-                <div className="flex justify-between text-emerald-100/40 text-xs print:text-gray-600">
+                <div className="flex justify-between text-zinc-500 text-xs print:text-gray-600">
                   <span>SGST @ {gstRate / 2}%:</span>
                   <span className="font-mono print:text-black">
                     ₹{" "}
@@ -595,7 +635,9 @@ const CreateInvoice = () => {
               </>
             )}
 
-            <div className="border-t border-emerald-900/20 pt-4 flex justify-between text-xl font-bold text-emerald-400 print:text-black print:border-gray-300">
+            <div
+              className={`border-t border-zinc-800/60 pt-4 flex justify-between text-xl font-bold print:text-black print:border-gray-300 ${theme.primaryText}`}
+            >
               <span className="text-base text-white print:text-black">
                 Net Total:
               </span>
@@ -610,17 +652,19 @@ const CreateInvoice = () => {
           </div>
         </div>
 
-        <div className="flex justify-end gap-4 pb-10 print:hidden">
+        <div className="flex flex-col sm:flex-row justify-end gap-4 pb-10 print:hidden">
           <Button
-            variant="secondary"
-            onClick={() => navigate("/enterprise/invoices")}
+            variant="outline"
+            onClick={() => navigate(-1)}
             type="button"
+            className="w-full sm:w-auto border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
           >
             Discard
           </Button>
           <Button
             type="submit"
-            className="px-10 shadow-emerald-900/40"
+            variant="primary"
+            className="w-full sm:w-auto px-10 rounded-xl"
             disabled={loading}
           >
             <Save size={18} className="mr-2" />{" "}
