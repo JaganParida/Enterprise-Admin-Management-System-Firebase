@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import salesService from "../../services/salesService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -34,6 +34,7 @@ import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const SalesReport = () => {
+  const location = useLocation();
   const { toast } = useUI();
   const { admin } = useAuth();
 
@@ -64,6 +65,28 @@ const SalesReport = () => {
     dateFilter: "All",
     exactDate: "",
   });
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryHoverBorder: isTransport
+      ? "hover:border-cyan-500/30"
+      : "hover:border-indigo-500/30",
+    primaryHoverBg: isTransport
+      ? "hover:bg-cyan-500/20"
+      : "hover:bg-indigo-500/20",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+  };
 
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
@@ -96,7 +119,6 @@ const SalesReport = () => {
     }
   };
 
-  // 🚀 ITEM PARSER FOR SPLITTING (Item / Size)
   const parseProduct = (fullName) => {
     if (!fullName || typeof fullName !== "string")
       return { name: "-", size: "No unit" };
@@ -107,7 +129,6 @@ const SalesReport = () => {
     return { name: fullName, size: "No unit" };
   };
 
-  // --- FILTRATION LOGIC (Applies universally) ---
   const filteredSales = useMemo(() => {
     return sales.filter((sale) => {
       const saleDate = sale.date ? new Date(sale.date) : new Date();
@@ -161,7 +182,6 @@ const SalesReport = () => {
     });
   }, [sales, filters]);
 
-  // --- STATS SUMMARY ---
   const summary = useMemo(() => {
     return filteredSales.reduce(
       (acc, curr) => {
@@ -178,7 +198,6 @@ const SalesReport = () => {
     );
   }, [filteredSales]);
 
-  // 🚀 --- CUSTOMER DUES GROUPING LOGIC --- 🚀
   const groupedDuesByCustomer = useMemo(() => {
     const map = {};
     filteredSales.forEach((sale) => {
@@ -368,18 +387,20 @@ const SalesReport = () => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8">
-      {/* 🚀 HEADER SECTION WITH PILL TABS */}
+      {/* HEADER SECTION */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
         <div>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl border border-emerald-500/20">
+            <div
+              className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+            >
               <FileText size={24} />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-white tracking-tight">
                 Sales Ledger
               </h1>
-              <p className="text-emerald-100/40 text-xs uppercase tracking-widest mt-0.5">
+              <p className="text-zinc-500 text-xs uppercase tracking-widest mt-0.5">
                 Advanced Report
               </p>
             </div>
@@ -387,8 +408,8 @@ const SalesReport = () => {
         </div>
 
         <div className="flex flex-col lg:flex-row items-center gap-4 w-full xl:w-auto">
-          {/* 🚀 NO SCROLLBAR PILL TABS */}
-          <div className="w-full lg:w-auto bg-[#020403] p-1.5 rounded-2xl md:rounded-full border border-emerald-900/30 shadow-inner grid grid-cols-2 md:flex md:items-center gap-1">
+          {/* PILL TABS */}
+          <div className="w-full lg:w-auto bg-[#09090B] p-1.5 rounded-2xl md:rounded-full border border-zinc-800/60 grid grid-cols-2 md:flex md:items-center gap-1">
             <button
               onClick={() => {
                 setActiveTab("all_sales");
@@ -396,8 +417,8 @@ const SalesReport = () => {
               }}
               className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
                 activeTab === "all_sales"
-                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
-                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+                  ? "bg-indigo-600 text-white"
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
               }`}
             >
               All Sales
@@ -406,8 +427,8 @@ const SalesReport = () => {
               onClick={() => setActiveTab("dues")}
               className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
                 activeTab === "dues"
-                  ? "bg-emerald-600 text-white shadow-[0_2px_10px_rgba(5,150,105,0.3)]"
-                  : "text-emerald-100/50 hover:text-emerald-100 hover:bg-white/5"
+                  ? "bg-indigo-600 text-white"
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
               }`}
             >
               Customer Dues
@@ -417,7 +438,8 @@ const SalesReport = () => {
           {/* Action Buttons */}
           <div className="flex gap-3 w-full lg:w-auto ml-auto lg:ml-0">
             <div className="relative w-full lg:w-auto">
-              <button
+              <Button
+                variant="module"
                 onClick={() =>
                   isManager
                     ? (() => {
@@ -426,17 +448,15 @@ const SalesReport = () => {
                       })()
                     : setIsDeleteAllOpen(true)
                 }
-                className={`flex w-full lg:w-auto items-center justify-center gap-2 px-4 py-2.5 rounded-xl transition-all text-xs font-bold shadow-lg ${
-                  isManager
-                    ? "bg-red-500/5 text-red-500/50 border border-red-500/10 opacity-50 cursor-not-allowed"
-                    : "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white hover:shadow-[0_0_20px_rgba(220,38,38,0.4)]"
+                className={`w-full lg:w-auto h-11 px-5 border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${
+                  isManager ? "opacity-50 !cursor-not-allowed" : ""
                 }`}
               >
                 <AlertOctagon size={16} /> Wipe DB
-              </button>
+              </Button>
               {warningTooltip === "wipe-all" && (
                 <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
-                  <div className="bg-[#050a08] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                  <div className="bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                     <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
                       🚫
                     </span>{" "}
@@ -445,10 +465,13 @@ const SalesReport = () => {
                 </div>
               )}
             </div>
-            <Link to="/enterprise/sales" className="w-full lg:w-auto">
+            <Link
+              to={isTransport ? "/transportation/sales" : "/enterprise/sales"}
+              className="w-full lg:w-auto"
+            >
               <Button
                 variant="primary"
-                className="w-full lg:w-auto text-xs px-6 py-2.5 shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center"
+                className="w-full lg:w-auto text-xs px-6 h-11 rounded-xl shadow-lg flex items-center justify-center"
               >
                 + Record Sale
               </Button>
@@ -459,44 +482,54 @@ const SalesReport = () => {
 
       {/* STATS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-gradient-to-br from-[#050a08] to-[#020403] border border-emerald-900/30 p-6 rounded-2xl relative overflow-hidden group">
-          <div className="absolute -right-4 -bottom-4 opacity-5 text-emerald-500 group-hover:opacity-10 transition-opacity">
+        <div
+          className={`bg-[#09090B] border border-zinc-800/60 p-6 rounded-2xl relative overflow-hidden group transition-all ${theme.primaryHoverBorder}`}
+        >
+          <div
+            className={`absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity ${theme.primaryText}`}
+          >
             <TrendingUp size={100} />
           </div>
-          <p className="text-emerald-100/50 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
+          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
             Total Billed
           </p>
           <h3 className="text-2xl font-black text-white font-mono relative z-10">
             ₹ {summary.total.toLocaleString("en-IN")}
           </h3>
         </div>
-        <div className="bg-gradient-to-br from-[#050a08] to-[#020403] border border-emerald-900/30 p-6 rounded-2xl relative overflow-hidden group">
-          <div className="absolute -right-4 -bottom-4 opacity-5 text-emerald-500 group-hover:opacity-10 transition-opacity">
+        <div
+          className={`bg-[#09090B] border border-zinc-800/60 p-6 rounded-2xl relative overflow-hidden group transition-all ${theme.primaryHoverBorder}`}
+        >
+          <div
+            className={`absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity ${theme.primaryText}`}
+          >
             <Banknote size={100} />
           </div>
-          <p className="text-emerald-100/50 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
+          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
             Cash Collected
           </p>
-          <h3 className="text-2xl font-black text-emerald-400 font-mono relative z-10">
+          <h3
+            className={`text-2xl font-black font-mono relative z-10 ${theme.primaryText}`}
+          >
             ₹ {summary.cash.toLocaleString("en-IN")}
           </h3>
         </div>
-        <div className="bg-gradient-to-br from-[#050b14] to-[#020617] border border-blue-900/30 p-6 rounded-2xl relative overflow-hidden group">
+        <div className="bg-[#09090B] border border-zinc-800/60 p-6 rounded-2xl relative overflow-hidden group hover:border-blue-500/30 transition-all">
           <div className="absolute -right-4 -bottom-4 opacity-5 text-blue-500 group-hover:opacity-10 transition-opacity">
             <CreditCard size={100} />
           </div>
-          <p className="text-blue-100/50 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
+          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
             Online Received
           </p>
           <h3 className="text-2xl font-black text-blue-400 font-mono relative z-10">
             ₹ {summary.online.toLocaleString("en-IN")}
           </h3>
         </div>
-        <div className="bg-gradient-to-br from-[#120406] to-[#0a0203] border border-rose-900/30 p-6 rounded-2xl relative overflow-hidden group">
+        <div className="bg-[#09090B] border border-zinc-800/60 p-6 rounded-2xl relative overflow-hidden group hover:border-rose-500/30 transition-all">
           <div className="absolute -right-4 -bottom-4 opacity-5 text-rose-500 group-hover:opacity-10 transition-opacity">
             <AlertCircle size={100} />
           </div>
-          <p className="text-rose-100/50 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
+          <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2 relative z-10">
             Total Pending Dues
           </p>
           <h3 className="text-2xl font-black text-rose-400 font-mono relative z-10">
@@ -506,13 +539,13 @@ const SalesReport = () => {
       </div>
 
       {/* MAIN DATA SECTION */}
-      <div className="bg-[#050a08] rounded-2xl border border-white/5 overflow-visible shadow-2xl transition-colors duration-500">
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-visible transition-colors duration-500">
         {/* SEARCH & EXPORT BAR */}
-        <div className="p-5 border-b border-white/5 bg-[#020403]/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-2xl">
+        <div className="p-5 border-b border-zinc-800/60 bg-[#09090B] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-2xl">
           <div className="relative w-full sm:max-w-md group">
             <Search
               size={16}
-              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? "text-emerald-500" : "text-gray-500 group-hover:text-gray-400"}`}
+              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
             <input
               type="text"
@@ -521,7 +554,7 @@ const SalesReport = () => {
                   ? "Search buyer, challan or vehicle..."
                   : "Search customer name..."
               }
-              className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-200 outline-none transition-all shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50"
+              className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               value={filters.search}
               onChange={(e) =>
                 setFilters({ ...filters, search: e.target.value })
@@ -531,7 +564,7 @@ const SalesReport = () => {
           <div className="w-full sm:w-auto">
             <Button
               variant="outline"
-              className="gap-2 w-full sm:w-auto text-xs font-bold tracking-widest border-white/10 py-2.5 bg-black/40 hover:bg-white/5 flex items-center justify-center"
+              className="h-11 px-5 gap-2 w-full sm:w-auto rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors text-xs"
               onClick={handleExport}
             >
               <Download size={16} /> Export View
@@ -539,12 +572,14 @@ const SalesReport = () => {
           </div>
         </div>
 
-        {/* 🚀 PROFESSIONAL UNIVERSAL FILTRATION UI 🚀 */}
-        <div className="p-4 border-b border-white/5 bg-[#050a08] flex flex-wrap items-center gap-4 relative z-20">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-500 px-3 py-1 border-r border-white/10 mr-1">
+        {/* FILTERS UI */}
+        <div className="p-4 border-b border-zinc-800/60 bg-zinc-900/20 flex flex-wrap items-center gap-4 relative z-20">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 px-3 py-1 border-r border-zinc-800 mr-1">
             <Filter size={16} /> Filters
             {activeFiltersCount > 0 && (
-              <span className="ml-1 px-1.5 rounded bg-emerald-500/20 text-emerald-400">
+              <span
+                className={`ml-1 px-1.5 rounded border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+              >
                 {activeFiltersCount}
               </span>
             )}
@@ -556,163 +591,105 @@ const SalesReport = () => {
               onChange={(e) =>
                 setFilters({ ...filters, productFilter: e.target.value })
               }
-              className="appearance-none bg-black/30 border border-white/10 rounded-xl pl-4 pr-10 py-2 text-xs font-medium text-gray-300 outline-none cursor-pointer transition-all focus:ring-2 focus:ring-emerald-500/20 hover:border-emerald-500/50"
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
-              <option value="All" className="bg-[#050a08] text-gray-300">
+              <option value="All" className="bg-[#09090B]">
                 All Products
               </option>
               <optgroup
                 label="Bricks"
-                className="bg-[#020403] text-emerald-500 font-bold"
+                className={`bg-[#09090B] font-bold ${theme.primaryText}`}
               >
                 <option
                   value="Bricks (10 inch)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   Bricks (10 inch)
                 </option>
                 <option
                   value="Bricks (9 inch)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   Bricks (9 inch)
                 </option>
                 <option
                   value="Bricks (8 inch)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   Bricks (8 inch)
                 </option>
               </optgroup>
               <optgroup
                 label="Paver Blocks"
-                className="bg-[#020403] text-emerald-500 font-bold"
+                className={`bg-[#09090B] font-bold ${theme.primaryText}`}
               >
                 <option
                   value="Zig Zag (60mm)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   Zig Zag (60mm)
                 </option>
                 <option
                   value="Zig Zag (80mm)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   Zig Zag (80mm)
                 </option>
                 <option
                   value="6-12 Brick (60mm)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   6-12 Brick (60mm)
                 </option>
                 <option
                   value="6-12 Brick (80mm)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   6-12 Brick (80mm)
                 </option>
                 <option
                   value="6/6 Brick (60mm)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   6/6 Brick 60mm
                 </option>
                 <option
                   value="6/6 Brick (80mm)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   6/6 Brick (80mm)
                 </option>
               </optgroup>
               <optgroup
                 label="Chequered Tiles"
-                className="bg-[#020403] text-emerald-500 font-bold"
+                className={`bg-[#09090B] font-bold ${theme.primaryText}`}
               >
-                <option value="Hexagon" className="text-gray-300 font-normal">
+                <option value="Hexagon" className="text-zinc-300 font-normal">
                   Hexagon
                 </option>
                 <option
                   value="Brick Design (9inch)"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   Brick Design (9inch)
                 </option>
                 <option
                   value="Curve Stone"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   Curve Stone
                 </option>
                 <option
                   value="Cover Block"
-                  className="text-gray-300 font-normal"
+                  className="text-zinc-300 font-normal"
                 >
                   Cover Block
-                </option>
-              </optgroup>
-              <optgroup
-                label="Raw Materials"
-                className="bg-[#020403] text-teal-500 font-bold"
-              >
-                <option
-                  value="Cement (Bags)"
-                  className="text-gray-300 font-normal"
-                >
-                  Cement (Bags)
-                </option>
-                <option value="Sand" className="text-gray-300 font-normal">
-                  Sand
-                </option>
-              </optgroup>
-              <optgroup
-                label="Aggregate"
-                className="bg-[#020403] text-amber-500 font-bold"
-              >
-                <option
-                  value="Aggregate (60mm)"
-                  className="text-gray-300 font-normal"
-                >
-                  Aggregate (60mm)
-                </option>
-                <option
-                  value="Aggregate (40mm)"
-                  className="text-gray-300 font-normal"
-                >
-                  Aggregate (40mm)
-                </option>
-                <option
-                  value="Aggregate (20mm)"
-                  className="text-gray-300 font-normal"
-                >
-                  Aggregate (20mm)
-                </option>
-                <option
-                  value="Aggregate (10mm)"
-                  className="text-gray-300 font-normal"
-                >
-                  Aggregate (10mm)
-                </option>
-                <option
-                  value="Aggregate (6mm)"
-                  className="text-gray-300 font-normal"
-                >
-                  Aggregate (6mm)
-                </option>
-                <option value="Dust" className="text-gray-300 font-normal">
-                  Dust
-                </option>
-                <option value="GSP" className="text-gray-300 font-normal">
-                  GSP
-                </option>
-                <option value="WMM" className="text-gray-300 font-normal">
-                  WMM
                 </option>
               </optgroup>
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-emerald-500"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
             />
           </div>
 
@@ -722,21 +699,21 @@ const SalesReport = () => {
               onChange={(e) =>
                 setFilters({ ...filters, paymentMode: e.target.value })
               }
-              className="appearance-none bg-black/30 border border-white/10 rounded-xl pl-4 pr-10 py-2 text-xs font-medium text-gray-300 outline-none cursor-pointer transition-all focus:ring-2 focus:ring-emerald-500/20 hover:border-emerald-500/50"
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
-              <option value="All Status" className="bg-[#050a08]">
+              <option value="All Status" className="bg-[#09090B]">
                 All Modes
               </option>
-              <option value="Cash" className="bg-[#050a08]">
+              <option value="Cash" className="bg-[#09090B]">
                 Cash Only
               </option>
-              <option value="Online" className="bg-[#050a08]">
+              <option value="Online" className="bg-[#09090B]">
                 Online Only
               </option>
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-emerald-500"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
             />
           </div>
 
@@ -746,21 +723,21 @@ const SalesReport = () => {
               onChange={(e) =>
                 setFilters({ ...filters, amountFilter: e.target.value })
               }
-              className="appearance-none bg-black/30 border border-white/10 rounded-xl pl-4 pr-10 py-2 text-xs font-medium text-gray-300 outline-none cursor-pointer transition-all focus:ring-2 focus:ring-emerald-500/20 hover:border-emerald-500/50"
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
-              <option value="Any Amount" className="bg-[#050a08]">
+              <option value="Any Amount" className="bg-[#09090B]">
                 Any Amount
               </option>
-              <option value="Under ₹50k" className="bg-[#050a08]">
+              <option value="Under ₹50k" className="bg-[#09090B]">
                 &lt; ₹50,000
               </option>
-              <option value="Over ₹50k" className="bg-[#050a08]">
+              <option value="Over ₹50k" className="bg-[#09090B]">
                 &gt; ₹50,000
               </option>
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-emerald-500"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
             />
           </div>
 
@@ -774,30 +751,30 @@ const SalesReport = () => {
                   exactDate: "",
                 });
               }}
-              className="appearance-none bg-black/30 border border-white/10 rounded-xl pl-4 pr-10 py-2 text-xs font-medium text-gray-300 outline-none cursor-pointer transition-all focus:ring-2 focus:ring-emerald-500/20 hover:border-emerald-500/50"
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
-              <option value="All" className="bg-[#050a08]">
+              <option value="All" className="bg-[#09090B]">
                 Timeline: All
               </option>
-              <option value="Today" className="bg-[#050a08]">
+              <option value="Today" className="bg-[#09090B]">
                 Today
               </option>
-              <option value="Last7Days" className="bg-[#050a08]">
+              <option value="Last7Days" className="bg-[#09090B]">
                 Last 7 Days
               </option>
-              <option value="ThisMonth" className="bg-[#050a08]">
+              <option value="ThisMonth" className="bg-[#09090B]">
                 This Month
               </option>
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover:text-white transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
             />
           </div>
 
           <div className="relative group flex items-center">
             <div
-              className={`absolute left-3 flex items-center justify-center text-gray-500 pointer-events-none transition-colors ${filters.exactDate ? "text-emerald-500" : ""}`}
+              className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filters.exactDate ? theme.primaryText : "text-zinc-500"}`}
             >
               <Calendar size={14} />
             </div>
@@ -812,13 +789,13 @@ const SalesReport = () => {
                 });
               }}
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-black/30 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs font-medium ${filters.exactDate ? "text-white" : "text-gray-400"} outline-none cursor-pointer transition-all focus:ring-2 focus:ring-emerald-500/20 hover:border-emerald-500/50`}
+              className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filters.exactDate ? `${theme.primaryBg} ${theme.primaryBorder} text-indigo-100` : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"}`}
             />
           </div>
 
-          {/* Clear Filters Button */}
           {activeFiltersCount > 0 && (
-            <button
+            <Button
+              variant="ghost"
               onClick={() => {
                 setFilters({
                   search: "",
@@ -829,28 +806,28 @@ const SalesReport = () => {
                   exactDate: "",
                 });
               }}
-              className="text-xs font-bold text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 px-3 py-2 rounded-lg transition-all flex items-center gap-1.5 ml-auto md:ml-2"
+              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5"
             >
               <X size={14} /> Clear All
-            </button>
+            </Button>
           )}
         </div>
 
-        {/* 🚀 DATA TABLE: ALL SALES 🚀 */}
+        {/* DATA TABLE: ALL SALES */}
         {activeTab === "all_sales" && (
           <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
             <table className="w-full text-left min-w-[800px] animate-in fade-in duration-300">
-              <thead className="bg-[#020403] text-emerald-100/40 text-xs uppercase font-bold tracking-wider">
+              <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-wider border-b border-zinc-800/60">
                 <tr>
-                  <th className="p-5 pl-6">Date & Challan</th>
+                  <th className="p-5 md:pl-6">Date & Challan</th>
                   <th className="p-5">Buyer Details</th>
                   <th className="p-5">Item</th>
                   <th className="p-5">Size</th>
                   <th className="p-5">Financials (Bill / Paid / Due)</th>
-                  <th className="p-5 pr-6 text-right">Actions</th>
+                  <th className="p-5 md:pr-6 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-emerald-900/20 text-sm">
+              <tbody className="divide-y divide-zinc-800/60 text-sm">
                 {filteredSales.map((sale) => {
                   const { name, size } = parseProduct(sale.productName);
                   const hasEdits =
@@ -863,19 +840,20 @@ const SalesReport = () => {
                   return (
                     <tr
                       key={sale._id}
-                      className="hover:bg-emerald-900/10 transition-colors group"
+                      className="hover:bg-zinc-800/30 transition-colors group"
                     >
-                      <td className="p-5 pl-6 align-middle">
-                        <div className="font-mono text-emerald-100/80 text-xs mb-1.5">
+                      <td className="p-5 md:pl-6 align-middle">
+                        <div className="font-mono text-zinc-400 text-xs mb-1.5">
                           {sale.date
                             ? new Date(sale.date).toLocaleDateString("en-GB")
                             : "-"}
                         </div>
-                        <div className="text-[10px] text-emerald-500 font-bold tracking-wider mb-2">
+                        <div
+                          className={`text-[10px] ${theme.primaryText} font-bold tracking-wider mb-2`}
+                        >
                           {sale.challanNo || "NO CHALLAN"}
                         </div>
 
-                        {/* 🚀 LOGIC FIX: Perfect Edit Log History Button (Clickable!) */}
                         {hasEdits && (
                           <div
                             onClick={() =>
@@ -884,18 +862,18 @@ const SalesReport = () => {
                             className="mt-1.5 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                             title="View Edit History"
                           >
-                            <div className="flex items-center gap-1.5 bg-emerald-950/30 border border-emerald-900/50 px-2 py-1 rounded-lg">
-                              <History size={12} className="text-emerald-500" />
-                              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+                            <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
+                              <History size={12} className="text-zinc-400" />
+                              <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
                                 {latestLog.role || "ADMIN"}
                               </span>
                               {historyCount > 1 && (
-                                <span className="bg-emerald-900/80 text-emerald-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                <span className="bg-zinc-700/50 text-zinc-400 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
                                   +{historyCount - 1} MORE
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] text-emerald-100/40 font-mono mt-1 pl-1">
+                            <div className="text-[9px] text-zinc-500 font-mono mt-1 pl-1">
                               {formatLogDate(latestLog.at)}
                             </div>
                           </div>
@@ -906,25 +884,27 @@ const SalesReport = () => {
                         <div className="font-bold text-white tracking-wide mb-1">
                           {sale.buyerName}
                         </div>
-                        <div className="text-[10px] text-emerald-100/40 font-mono mt-1 flex items-center gap-1.5">
-                          <Truck size={12} className="text-emerald-500/50" />{" "}
+                        <div className="text-[10px] text-zinc-500 font-mono mt-1 flex items-center gap-1.5">
+                          <Truck size={12} className="text-zinc-600" />{" "}
                           {sale.vehicleNo}
                         </div>
                       </td>
 
                       <td className="p-5 align-middle">
-                        <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest inline-flex items-center gap-2 w-max mb-2">
+                        <span
+                          className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest inline-flex items-center gap-2 w-max mb-2`}
+                        >
                           <Layers size={12} /> {name}
                         </span>
-                        <div className="text-xs text-emerald-100 font-medium">
+                        <div className="text-xs text-zinc-400 font-medium">
                           Qty:{" "}
-                          <span className="font-bold">
+                          <span className="font-bold text-zinc-300">
                             {Number(sale.quantity).toLocaleString()}
                           </span>
                         </div>
                       </td>
 
-                      <td className="p-5 align-middle text-emerald-100 font-medium text-xs">
+                      <td className="p-5 align-middle text-zinc-300 font-medium text-xs">
                         {size}
                       </td>
 
@@ -933,22 +913,25 @@ const SalesReport = () => {
                           Total: ₹{Number(sale.amount).toLocaleString("en-IN")}
                         </div>
                         <div className="flex items-center gap-2 mb-1 text-xs font-mono">
-                          <span className="text-emerald-400 font-bold">
+                          <span className={`${theme.primaryText} font-bold`}>
                             Paid: ₹
                             {Number(
                               sale.amountPaid || sale.amount,
                             ).toLocaleString("en-IN")}
                           </span>
-                          {/* 🚀 Cash/Online Status Badge Restored */}
                           <span
-                            className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border inline-block ${sale.paymentMode === "Online" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"}`}
+                            className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border inline-block ${
+                              sale.paymentMode === "Online"
+                                ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                                : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+                            }`}
                           >
                             {sale.paymentMode}
                           </span>
                         </div>
                         {Number(sale.amountDue) > 0 && (
                           <div className="text-xs font-mono">
-                            <span className="text-rose-400 font-bold bg-rose-500/10 px-2 py-0.5 rounded w-max">
+                            <span className="text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded w-max inline-block">
                               Due: ₹
                               {Number(sale.amountDue).toLocaleString("en-IN")}
                             </span>
@@ -956,11 +939,11 @@ const SalesReport = () => {
                         )}
                       </td>
 
-                      <td className="p-5 pr-6 text-right align-middle overflow-visible">
+                      <td className="p-5 md:pr-6 text-right align-middle overflow-visible">
                         <div className="flex justify-end gap-2 items-center relative">
                           <Link
-                            to={`/enterprise/sales/edit/${sale._id}`}
-                            className="p-2 text-emerald-100/40 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                            to={`${isTransport ? `/transportation/sales/edit/${sale._id}` : `/enterprise/sales/edit/${sale._id}`}`}
+                            className={`p-2 text-zinc-500 hover:${theme.primaryText} ${theme.primaryHoverBg} rounded-lg transition-colors`}
                           >
                             <Edit size={16} />
                           </Link>
@@ -976,12 +959,16 @@ const SalesReport = () => {
                                   })()
                                 : setDeleteModal({ isOpen: true, id: sale._id })
                             }
-                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-emerald-100/20 opacity-50 cursor-not-allowed" : "text-emerald-100/40 hover:text-red-400 hover:bg-red-500/10"}`}
+                            className={`p-2 rounded-lg transition-colors ${
+                              isManager
+                                ? "text-zinc-600 opacity-50 cursor-not-allowed"
+                                : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                            }`}
                           >
                             <Trash2 size={16} />
                           </button>
                           {warningTooltip === sale._id && (
-                            <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#050a08] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                            <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                               🚫 Access Denied
                             </div>
                           )}
@@ -994,7 +981,7 @@ const SalesReport = () => {
                   <tr>
                     <td
                       colSpan="6"
-                      className="p-10 text-center text-emerald-100/30 italic"
+                      className="p-10 text-center text-zinc-500 italic"
                     >
                       No matching sales records found.
                     </td>
@@ -1005,18 +992,18 @@ const SalesReport = () => {
           </div>
         )}
 
-        {/* 🚀 CUSTOMER DUES (GROUPED) TAB 🚀 */}
+        {/* CUSTOMER DUES (GROUPED) TAB */}
         {activeTab === "dues" && (
           <div className="p-4 custom-scrollbar min-h-[400px]">
             {groupedDuesByCustomer.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16">
-                <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 mx-auto mb-4 shadow-inner">
+                <div className="w-16 h-16 rounded-full bg-zinc-800/50 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto mb-4">
                   <AlertCircle size={28} />
                 </div>
                 <h3 className="text-white font-bold text-lg mb-1">
                   No Pending Dues!
                 </h3>
-                <p className="text-emerald-100/40 text-sm">
+                <p className="text-zinc-500 text-sm">
                   All customers have settled their accounts.
                 </p>
               </div>
@@ -1027,7 +1014,11 @@ const SalesReport = () => {
                   return (
                     <div
                       key={idx}
-                      className={`rounded-xl border transition-all duration-300 overflow-hidden ${isExpanded ? "bg-[#020403] border-rose-900/50 shadow-lg shadow-rose-900/10" : "bg-[#050a08] border-white/5 hover:border-rose-900/30"}`}
+                      className={`rounded-xl border transition-all duration-300 overflow-hidden ${
+                        isExpanded
+                          ? "bg-[#09090B] border-rose-900/50 shadow-lg shadow-rose-900/10"
+                          : "bg-zinc-900/10 border-zinc-800/60 hover:border-rose-900/30"
+                      }`}
                     >
                       {/* GROUP HEADER */}
                       <button
@@ -1040,17 +1031,23 @@ const SalesReport = () => {
                       >
                         <div className="flex items-center gap-4">
                           <div
-                            className={`p-3 rounded-xl transition-colors ${isExpanded ? "bg-rose-500/20 text-rose-500" : "bg-white/5 text-gray-400"}`}
+                            className={`p-3 rounded-xl transition-colors ${
+                              isExpanded
+                                ? "bg-rose-500/10 border border-rose-500/20 text-rose-400"
+                                : "bg-zinc-800/50 text-zinc-400"
+                            }`}
                           >
                             <Users size={24} />
                           </div>
                           <div>
                             <h3
-                              className={`text-lg font-bold tracking-wide transition-colors ${isExpanded ? "text-white" : "text-gray-300"}`}
+                              className={`text-lg font-bold tracking-wide transition-colors ${
+                                isExpanded ? "text-white" : "text-zinc-300"
+                              }`}
                             >
                               {cust.buyerName}
                             </h3>
-                            <p className="text-gray-500 text-xs mt-1">
+                            <p className="text-zinc-500 text-xs mt-1">
                               Pending in {cust.records.length} bill(s)
                             </p>
                           </div>
@@ -1058,10 +1055,10 @@ const SalesReport = () => {
 
                         <div className="flex items-center gap-6 sm:gap-10 w-full sm:w-auto">
                           <div className="text-left sm:text-right hidden sm:block">
-                            <p className="text-gray-500 text-[10px] uppercase tracking-widest font-bold mb-1">
+                            <p className="text-zinc-500 text-[10px] uppercase tracking-widest font-bold mb-1">
                               Total Purchases
                             </p>
-                            <p className="text-gray-300 font-mono font-bold">
+                            <p className="text-zinc-300 font-mono font-bold">
                               ₹ {cust.totalBillAmount.toLocaleString("en-IN")}
                             </p>
                           </div>
@@ -1075,20 +1072,22 @@ const SalesReport = () => {
                           </div>
                           <ChevronRight
                             size={20}
-                            className={`text-gray-600 transition-transform duration-300 ${isExpanded ? "rotate-90 text-rose-500" : ""}`}
+                            className={`text-zinc-600 transition-transform duration-300 ${
+                              isExpanded ? "rotate-90 text-rose-400" : ""
+                            }`}
                           />
                         </div>
                       </button>
 
-                      {/* 🚀 EXPANDED BILL DETAILS */}
+                      {/* EXPANDED BILL DETAILS */}
                       {isExpanded && (
-                        <div className="border-t border-rose-900/20 bg-rose-950/5 p-5 animate-in slide-in-from-top-2 fade-in duration-200">
-                          <h4 className="text-xs font-bold text-rose-200/50 uppercase tracking-widest mb-4">
+                        <div className="border-t border-rose-900/20 bg-[#09090B] p-5 animate-in slide-in-from-top-2 fade-in duration-200">
+                          <h4 className="text-xs font-bold text-rose-500/50 uppercase tracking-widest mb-4">
                             Pending Bill Details
                           </h4>
                           <div className="overflow-x-auto custom-scrollbar">
                             <table className="w-full text-left min-w-[600px]">
-                              <thead className="text-rose-100/40 text-[10px] uppercase font-bold tracking-wider border-b border-rose-900/20">
+                              <thead className="text-zinc-500 text-[10px] uppercase font-bold tracking-wider border-b border-zinc-800/60">
                                 <tr>
                                   <th className="pb-3 pl-2">Date</th>
                                   <th className="pb-3">Challan</th>
@@ -1106,7 +1105,7 @@ const SalesReport = () => {
                                   <th className="pb-3 text-center">Action</th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-rose-900/10 text-sm">
+                              <tbody className="divide-y divide-zinc-800/60 text-sm">
                                 {cust.records.map((record) => {
                                   const { name, size } = parseProduct(
                                     record.productName || "",
@@ -1114,9 +1113,9 @@ const SalesReport = () => {
                                   return (
                                     <tr
                                       key={record._id}
-                                      className="hover:bg-rose-900/10 transition-colors"
+                                      className="hover:bg-zinc-800/30 transition-colors"
                                     >
-                                      <td className="py-3 pl-2 text-gray-300 font-mono text-xs">
+                                      <td className="py-3 pl-2 text-zinc-400 font-mono text-xs">
                                         {record.date
                                           ? new Date(
                                               record.date,
@@ -1124,23 +1123,27 @@ const SalesReport = () => {
                                           : "-"}
                                       </td>
                                       <td className="py-3">
-                                        <div className="text-emerald-400 text-xs font-bold">
+                                        <div
+                                          className={`${theme.primaryText} text-xs font-bold`}
+                                        >
                                           {record.challanNo || "-"}
                                         </div>
                                       </td>
-                                      <td className="py-3 text-gray-300 text-[11px] font-medium">
+                                      <td className="py-3 text-zinc-300 text-[11px] font-medium">
                                         {name}
                                       </td>
-                                      <td className="py-3 text-gray-500 text-[11px]">
+                                      <td className="py-3 text-zinc-500 text-[11px]">
                                         {size}
                                       </td>
-                                      <td className="py-3 text-right text-gray-300 font-mono">
+                                      <td className="py-3 text-right text-zinc-300 font-mono">
                                         ₹{" "}
                                         {Number(
                                           record.amount || 0,
                                         ).toLocaleString("en-IN")}
                                       </td>
-                                      <td className="py-3 text-right text-emerald-400 font-mono font-bold">
+                                      <td
+                                        className={`py-3 text-right font-mono font-bold ${theme.primaryText}`}
+                                      >
                                         ₹{" "}
                                         {Number(
                                           record.amountPaid || 0,
@@ -1154,7 +1157,7 @@ const SalesReport = () => {
                                       </td>
                                       <td className="py-3 text-center">
                                         <Link
-                                          to={`/enterprise/sales/edit/${record._id}`}
+                                          to={`${isTransport ? `/transportation/sales/edit/${record._id}` : `/enterprise/sales/edit/${record._id}`}`}
                                           className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest bg-rose-500/10 text-rose-400 hover:bg-rose-500 border border-rose-500/20 hover:text-white px-3 py-1.5 rounded transition-all"
                                         >
                                           Settle <ArrowRight size={12} />
@@ -1187,14 +1190,14 @@ const SalesReport = () => {
         isDestructive={true}
       />
 
-      {/* 🛑 SECURE WIPE DATA MODAL 🛑 */}
+      {/* SECURE WIPE DATA MODAL */}
       {isDeleteAllOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
             onClick={() => !wiping && setIsDeleteAllOpen(false)}
           />
-          <div className="bg-[#050a08] border border-red-900/50 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
+          <div className="bg-[#09090B] border border-red-900/50 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
             <div className="flex items-center gap-3 text-red-500 mb-6">
               <AlertOctagon size={28} />
               <h2 className="text-xl font-bold tracking-wide">
@@ -1202,26 +1205,28 @@ const SalesReport = () => {
               </h2>
             </div>
 
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-5 mb-6">
+            {/* 🚀 BACKUP WARNING BOX */}
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
-                  className="text-yellow-500 shrink-0 mt-0.5"
+                  className="text-amber-500 shrink-0 mt-0.5"
                 />
                 <div>
-                  <h3 className="text-yellow-500 font-bold text-sm mb-1">
+                  <h3 className="text-amber-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-yellow-100/60 text-xs mb-4 leading-relaxed">
+                  <p className="text-amber-100/60 text-xs mb-4 leading-relaxed">
                     Before wiping the database, we highly recommend downloading
                     a complete CSV backup of all your current sales records.
                   </p>
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={handleFullBackup}
-                    className="w-full sm:w-auto px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"
                   >
                     <Download size={14} /> Download Full Database Backup
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1229,7 +1234,8 @@ const SalesReport = () => {
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
-              sales records. Please enter your Admin password to confirm.
+              sales records from the system. Please enter your Admin password to
+              confirm.
             </p>
 
             <div className="relative mb-8">
@@ -1238,7 +1244,7 @@ const SalesReport = () => {
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter your admin password..."
-                className="w-full bg-[#020403] border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
+                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
               />
               <button
                 type="button"
@@ -1250,114 +1256,32 @@ const SalesReport = () => {
             </div>
 
             <div className="flex justify-end gap-3">
-              <button
+              <Button
+                variant="outline"
                 onClick={() => {
                   setIsDeleteAllOpen(false);
                   setDeletePassword("");
                 }}
                 disabled={wiping}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold text-red-100/50 hover:text-red-100 hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                className="border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white"
               >
                 Cancel
-              </button>
+              </Button>
 
-              {/* Changed Loader to RefreshCcw to avoid UI height explosion bug */}
-              <button
+              <Button
+                variant="danger"
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
                 ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
-
-      {/* 🚀 MULTIPLE LOG HISTORY MODAL UI */}
-      {logModalInfo.isOpen &&
-        logModalInfo.data &&
-        (() => {
-          const logsList =
-            logModalInfo.data.editHistory &&
-            logModalInfo.data.editHistory.length > 0
-              ? [...logModalInfo.data.editHistory].reverse()
-              : [];
-
-          return (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-              <div
-                className="absolute inset-0"
-                onClick={() => setLogModalInfo({ isOpen: false, data: null })}
-              />
-              <div className="bg-[#050a08] border border-emerald-900/30 rounded-2xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-                <div className="flex items-center justify-between p-5 border-b border-emerald-900/20 bg-[#020403]/50 shrink-0">
-                  <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                    <History size={16} className="text-emerald-500" />
-                    Log History:{" "}
-                    <span className="text-emerald-400 font-normal">
-                      {logModalInfo.data.challanNo ||
-                        logModalInfo.data.buyerName}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() =>
-                      setLogModalInfo({ isOpen: false, data: null })
-                    }
-                    className="text-gray-400 hover:text-white transition-colors"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
-                  {logsList.map((log, index) => (
-                    <div
-                      key={index}
-                      className="bg-[#020403] border border-emerald-900/20 rounded-xl p-4 flex items-center justify-between relative overflow-hidden"
-                    >
-                      {index === 0 && (
-                        <div className="absolute left-0 top-0 w-1 h-full bg-emerald-500"></div>
-                      )}
-
-                      <div className="flex items-center gap-4 pl-1">
-                        <div
-                          className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg ${index === 0 ? "bg-emerald-900/40 border-emerald-500/30 text-emerald-400" : "bg-emerald-900/10 border-emerald-900/20 text-emerald-100/40"}`}
-                        >
-                          {(log.role || "A")[0].toUpperCase()}
-                        </div>
-                        <div>
-                          <h4
-                            className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-gray-500"}`}
-                          >
-                            {log.role || "ADMIN"}
-                          </h4>
-                          <p className="text-gray-500 text-[10px] mt-0.5 font-mono">
-                            {log.email || "admin@system.com"}
-                          </p>
-                          <p
-                            className={`text-[10px] font-mono mt-1.5 ${index === 0 ? "text-emerald-400" : "text-gray-600"}`}
-                          >
-                            {formatLogDateFull(log.at)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {index === 0 && (
-                        <div className="bg-emerald-500/10 border-emerald-500/20 text-emerald-500 text-[10px] font-bold px-3 py-1 rounded tracking-widest uppercase border">
-                          LATEST
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
     </div>
   );
 };
