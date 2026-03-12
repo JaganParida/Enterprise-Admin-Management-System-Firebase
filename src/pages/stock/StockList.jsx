@@ -17,7 +17,6 @@ import {
   ShieldAlert,
   Eye,
   EyeOff,
-  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -200,7 +199,6 @@ const StockList = () => {
 
     setWiping(true);
     try {
-      // Passes the current admin email securely for verification
       const adminEmail = admin?.data?.email || admin?.email;
       await stockService.deleteAllStocks({
         password: deletePassword,
@@ -213,7 +211,6 @@ const StockList = () => {
       refreshStocks();
     } catch (error) {
       console.error("Wipe Error:", error);
-      // Properly captures the 'Access Denied' error thrown from the service
       toast.error(error.message || "Authentication failed. Wipe aborted.");
     } finally {
       setWiping(false);
@@ -247,88 +244,91 @@ const StockList = () => {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20">
-              <Package size={24} />
+          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
+              <Package className="text-indigo-400" size={28} />
             </div>
             Stock Inventory
           </h1>
-          <p className="text-emerald-100/40 text-sm mt-1 ml-1">
+          <p className="text-zinc-400 mt-2 text-sm font-medium">
             Track materials and finished goods.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
-          {/* Wipe Data Button */}
+          {/* Wipe Data Button using Button Component */}
           <div className="relative">
-            <button
+            <Button
+              variant="module"
               onClick={() =>
                 isManager
                   ? handleDisabledClick("wipe-all")
                   : setIsDeleteAllOpen(true)
               }
-              className={`flex items-center gap-2 px-4 py-2 border rounded-xl transition-colors text-sm font-bold shadow-lg ${
-                isManager
-                  ? "bg-red-500/5 text-red-500/50 border-red-500/10 opacity-50 cursor-not-allowed"
-                  : "bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20 shadow-red-900/20"
+              className={`h-11 px-5 border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${
+                isManager ? "opacity-50 !cursor-not-allowed" : ""
               }`}
             >
               <AlertOctagon size={16} /> Wipe Data
-            </button>
+            </Button>
+
             {warningTooltip === "wipe-all" && (
               <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[9999] animate-in fade-in zoom-in-95 duration-200">
-                <div className="bg-[#050a08] border border-red-500/30 shadow-xl shadow-red-900/20 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                <div className="bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                   <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
                     🚫
                   </span>{" "}
                   Admin Only
                 </div>
-                <div className="absolute -top-1 right-6 md:left-1/2 md:-translate-x-1/2 w-2 h-2 bg-[#050a08] border-t border-l border-red-500/30 rotate-45"></div>
+                <div className="absolute -top-1 right-6 md:left-1/2 md:-translate-x-1/2 w-2 h-2 bg-[#09090B] border-t border-l border-red-500/30 rotate-45"></div>
               </div>
             )}
           </div>
 
           <Button
             variant="outline"
-            className="gap-2 text-xs border-emerald-900/30 hover:bg-emerald-900/10"
+            className="h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors text-xs"
             onClick={handleExport}
           >
             <Download size={16} /> Export
           </Button>
 
           <Link to="/enterprise/stock/add">
-            <Button className="gap-2 shadow-lg shadow-emerald-900/20">
+            <Button
+              variant="primary"
+              className="h-11 px-5 gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-indigo-900/20 active:scale-95 transition-all text-xs"
+            >
               <Plus size={18} /> Add Stock
             </Button>
           </Link>
         </div>
       </div>
 
-      <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 overflow-visible relative">
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-visible relative">
         {/* Top Search Bar */}
-        <div className="p-5 border-b border-emerald-900/20 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#020403]/50">
+        <div className="p-5 border-b border-zinc-800/60 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#09090B]">
           <h2 className="text-lg font-bold text-white">All Items</h2>
           <div className="relative w-full md:w-80">
             <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-100/30"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
               size={16}
             />
             <input
               type="text"
               placeholder="Search items..."
-              className="w-full bg-[#020403] border border-emerald-900/40 rounded-xl pl-9 pr-3 py-2.5 text-sm text-emerald-100 focus:border-emerald-500/50 outline-none transition-all"
+              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-zinc-100 focus:border-indigo-500/50 outline-none transition-all"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
         </div>
 
-        {/* E-COMMERCE STYLE FILTER BAR */}
-        <div className="p-3 border-b border-emerald-900/20 flex flex-wrap items-center gap-3 bg-[#020403]/80">
-          <div className="flex items-center gap-1.5 text-emerald-500 text-xs font-bold uppercase tracking-wider px-2 border-r border-emerald-900/40 mr-2">
+        {/* FILTER BAR */}
+        <div className="p-3 border-b border-zinc-800/60 flex flex-wrap items-center gap-3 bg-zinc-900/20">
+          <div className="flex items-center gap-1.5 text-zinc-400 text-xs font-bold uppercase tracking-wider px-2 border-r border-zinc-800 mr-2">
             <Filter size={14} /> Filters
             {activeFiltersCount > 0 && (
-              <span className="bg-emerald-500 text-[#020403] px-1.5 rounded-full ml-1">
+              <span className="bg-indigo-500/20 text-indigo-400 px-1.5 rounded-full ml-1 border border-indigo-500/30">
                 {activeFiltersCount}
               </span>
             )}
@@ -337,24 +337,28 @@ const StockList = () => {
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterCategory !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60 hover:border-emerald-500/30"}`}
+            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
+              filterCategory !== "All"
+                ? "bg-indigo-500/10 border-indigo-500/40 text-indigo-400"
+                : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700"
+            }`}
           >
-            <option value="All" className="bg-[#050a08] text-emerald-100">
+            <option value="All" className="bg-[#09090B] text-zinc-100">
               All Categories
             </option>
             <option
               value="Purchasing Item"
-              className="bg-[#050a08] text-emerald-100"
+              className="bg-[#09090B] text-zinc-100"
             >
               Purchasing Item
             </option>
             <option
               value="Finished Good"
-              className="bg-[#050a08] text-emerald-100"
+              className="bg-[#09090B] text-zinc-100"
             >
               Finished Good
             </option>
-            <option value="Other" className="bg-[#050a08] text-emerald-100">
+            <option value="Other" className="bg-[#09090B] text-zinc-100">
               Other
             </option>
           </select>
@@ -362,18 +366,22 @@ const StockList = () => {
           <select
             value={filterStockLevel}
             onChange={(e) => setFilterStockLevel(e.target.value)}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterStockLevel !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60 hover:border-emerald-500/30"}`}
+            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
+              filterStockLevel !== "All"
+                ? "bg-indigo-500/10 border-indigo-500/40 text-indigo-400"
+                : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700"
+            }`}
           >
-            <option value="All" className="bg-[#050a08] text-emerald-100">
+            <option value="All" className="bg-[#09090B] text-zinc-100">
               Any Stock Level
             </option>
-            <option value="Low" className="bg-[#050a08] text-emerald-100">
+            <option value="Low" className="bg-[#09090B] text-zinc-100">
               Low (&lt; 100)
             </option>
-            <option value="Medium" className="bg-[#050a08] text-emerald-100">
+            <option value="Medium" className="bg-[#09090B] text-zinc-100">
               Medium (100 - 1000)
             </option>
-            <option value="High" className="bg-[#050a08] text-emerald-100">
+            <option value="High" className="bg-[#09090B] text-zinc-100">
               High (&gt; 1000)
             </option>
           </select>
@@ -385,7 +393,7 @@ const StockList = () => {
                 setFilterStockLevel("All");
                 setSearchTerm("");
               }}
-              className="text-xs text-rose-400/80 hover:text-rose-400 underline underline-offset-2 ml-2 transition-colors flex items-center gap-1"
+              className="text-xs text-zinc-500 hover:text-white underline underline-offset-2 ml-2 transition-colors flex items-center gap-1"
             >
               <X size={12} /> Clear
             </button>
@@ -396,7 +404,7 @@ const StockList = () => {
         <div className="overflow-x-auto pb-4 custom-scrollbar">
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
-              <tr className="bg-[#020403] text-emerald-100/40 text-xs uppercase tracking-wider font-semibold">
+              <tr className="bg-[#09090B] text-zinc-500 text-xs uppercase tracking-wider font-semibold">
                 <th className="p-5 md:pl-6 whitespace-nowrap min-w-[220px]">
                   Item Name
                 </th>
@@ -409,33 +417,33 @@ const StockList = () => {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-emerald-900/20 text-sm">
+            <tbody className="divide-y divide-zinc-800/60 text-sm">
               {filteredStocks.map((stock) => (
                 <tr
                   key={stock._id}
-                  className="hover:bg-emerald-900/10 transition-colors group"
+                  className="hover:bg-zinc-800/30 transition-colors group"
                 >
                   <td className="p-5 md:pl-6 align-middle">
-                    <div className="font-medium text-emerald-100/90 group-hover:text-white whitespace-nowrap">
+                    <div className="font-medium text-zinc-100 group-hover:text-white whitespace-nowrap">
                       {stock.name}
                     </div>
                     {Array.isArray(stock.editHistory) &&
                     stock.editHistory.length > 0 ? (
                       <div
                         onClick={() => openHistory(stock)}
-                        className="mt-2 inline-flex flex-col gap-0.5 cursor-pointer bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/20 p-1.5 rounded-lg transition-all w-max whitespace-nowrap"
+                        className="mt-2 inline-flex flex-col gap-0.5 cursor-pointer bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 p-1.5 rounded-lg transition-all w-max whitespace-nowrap"
                       >
-                        <div className="text-[10px] font-mono text-emerald-400/90 flex items-center gap-1.5 uppercase tracking-widest font-bold">
+                        <div className="text-[10px] font-mono text-zinc-300 flex items-center gap-1.5 uppercase tracking-widest font-bold">
                           <History size={10} />{" "}
                           {stock.editHistory[stock.editHistory.length - 1]
                             ?.role || "ADMIN"}
                           {stock.editHistory.length > 1 && (
-                            <span className="bg-emerald-500/20 text-emerald-400 px-1 py-0.5 rounded text-[8px] ml-1">
+                            <span className="bg-zinc-700/50 text-zinc-300 px-1 py-0.5 rounded text-[8px] ml-1">
                               +{stock.editHistory.length - 1} MORE
                             </span>
                           )}
                         </div>
-                        <span className="text-emerald-100/30 text-[9px] ml-4 font-medium">
+                        <span className="text-zinc-500 text-[9px] ml-4 font-medium">
                           {stock.editHistory[stock.editHistory.length - 1]?.at
                             ? new Date(
                                 stock.editHistory[stock.editHistory.length - 1]
@@ -450,7 +458,7 @@ const StockList = () => {
                         </span>
                       </div>
                     ) : stock.lastEditedRole ? (
-                      <div className="text-[10px] font-mono text-emerald-400/70 font-bold mt-1.5 uppercase tracking-widest whitespace-nowrap w-max">
+                      <div className="text-[10px] font-mono text-zinc-400 font-bold mt-1.5 uppercase tracking-widest whitespace-nowrap w-max">
                         ✍️ {stock.lastEditedRole}
                       </div>
                     ) : null}
@@ -461,7 +469,7 @@ const StockList = () => {
                         stock.category === "Purchasing Item"
                           ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
                           : stock.category === "Finished Good"
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                            ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
                             : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                       }`}
                     >
@@ -470,14 +478,14 @@ const StockList = () => {
                   </td>
                   <td className="p-5 font-bold text-white font-mono align-middle whitespace-nowrap">
                     {Number(stock.quantity).toLocaleString()}{" "}
-                    <span className="text-xs font-normal text-emerald-100/40 ml-1">
+                    <span className="text-xs font-normal text-zinc-500 ml-1">
                       {stock.unit || "-"}
                     </span>
                   </td>
-                  <td className="p-5 text-emerald-100/60 align-middle whitespace-nowrap">
+                  <td className="p-5 text-zinc-400 align-middle whitespace-nowrap">
                     ₹ {Number(stock.price).toLocaleString()}
                   </td>
-                  <td className="p-5 font-bold text-emerald-400 align-middle whitespace-nowrap">
+                  <td className="p-5 font-bold text-indigo-400 align-middle whitespace-nowrap">
                     ₹{" "}
                     {(
                       Number(stock.price) * Number(stock.quantity)
@@ -487,7 +495,7 @@ const StockList = () => {
                     <div className="flex justify-end gap-2 items-center relative overflow-visible">
                       <Link
                         to={`/enterprise/stock/edit/${stock._id}`}
-                        className="p-2 text-emerald-100/40 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                        className="p-2 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors"
                       >
                         <Edit size={18} />
                       </Link>
@@ -498,19 +506,23 @@ const StockList = () => {
                               ? handleDisabledClick(stock._id)
                               : handleDeleteClick(stock)
                           }
-                          className={`p-2 rounded-lg transition-colors ${isManager ? "text-emerald-100/20 opacity-50 cursor-not-allowed hover:bg-red-500/5 hover:text-red-400/50" : "text-emerald-100/40 hover:text-red-400 hover:bg-red-500/10"}`}
+                          className={`p-2 rounded-lg transition-colors ${
+                            isManager
+                              ? "text-zinc-600 cursor-not-allowed hover:bg-red-500/5 hover:text-red-400/50"
+                              : "text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
+                          }`}
                         >
                           <Trash2 size={18} />
                         </button>
                         {warningTooltip === stock._id && (
                           <div className="absolute bottom-full right-0 mb-2 z-[9999] animate-in fade-in zoom-in-95 duration-200">
-                            <div className="bg-[#050a08] border border-red-500/30 shadow-xl shadow-red-900/20 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                            <div className="bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                               <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
                                 🚫
                               </span>{" "}
                               Action Denied
                             </div>
-                            <div className="absolute -bottom-1 right-3 w-2 h-2 bg-[#050a08] border-b border-r border-red-500/30 rotate-45"></div>
+                            <div className="absolute -bottom-1 right-3 w-2 h-2 bg-[#09090B] border-b border-r border-red-500/30 rotate-45"></div>
                           </div>
                         )}
                       </div>
@@ -522,7 +534,7 @@ const StockList = () => {
                 <tr>
                   <td
                     colSpan="6"
-                    className="p-10 text-center text-emerald-100/30 text-sm italic"
+                    className="p-10 text-center text-zinc-500 text-sm italic"
                   >
                     No stock items match your current filters.
                   </td>
@@ -533,7 +545,7 @@ const StockList = () => {
         </div>
       </div>
 
-      {/* 🚀 HISTORY MODAL (FIXED) */}
+      {/* 🚀 HISTORY MODAL */}
       {historyModal.isOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
@@ -542,12 +554,12 @@ const StockList = () => {
               setHistoryModal({ isOpen: false, data: [], itemName: "" })
             }
           />
-          <div className="bg-[#050a08] border border-emerald-900/30 rounded-2xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-emerald-900/20 bg-[#020403]/50 shrink-0">
+          <div className="bg-[#09090B] border border-zinc-800/60 rounded-2xl w-full max-w-md relative z-10 overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-zinc-800/60 bg-[#09090B] shrink-0">
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className="text-emerald-500" />
+                <History size={16} className="text-indigo-400" />
                 Edit History:{" "}
-                <span className="text-emerald-400 font-normal">
+                <span className="text-indigo-300 font-normal">
                   {historyModal.itemName}
                 </span>
               </div>
@@ -555,7 +567,7 @@ const StockList = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: [], itemName: "" })
                 }
-                className="text-emerald-100/40 hover:text-white transition-colors"
+                className="text-zinc-500 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
@@ -564,28 +576,38 @@ const StockList = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-[#020403] border ${index === 0 ? "border-emerald-500/30" : "border-emerald-900/10"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-zinc-900/30 border ${
+                    index === 0 ? "border-indigo-500/30" : "border-zinc-800"
+                  } rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
-                    <div className="absolute left-0 top-0 w-1 h-full bg-emerald-500"></div>
+                    <div className="absolute left-0 top-0 w-1 h-full bg-indigo-500"></div>
                   )}
                   <div className="flex items-center gap-4">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-900/10 text-emerald-100/30"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${
+                        index === 0
+                          ? "bg-indigo-500/10 text-indigo-400"
+                          : "bg-zinc-800/50 text-zinc-400"
+                      }`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-emerald-100/50"}`}
+                        className={`font-bold tracking-widest uppercase text-sm ${
+                          index === 0 ? "text-white" : "text-zinc-400"
+                        }`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
-                      <p className="text-emerald-100/20 text-[10px] font-mono mt-0.5">
+                      <p className="text-zinc-500 text-[10px] font-mono mt-0.5">
                         {log.by || "system@enterprise.com"}
                       </p>
                       <p
-                        className={`text-[10px] font-mono mt-1 ${index === 0 ? "text-emerald-400" : "text-emerald-100/30"}`}
+                        className={`text-[10px] font-mono mt-1 ${
+                          index === 0 ? "text-indigo-400" : "text-zinc-500"
+                        }`}
                       >
                         {new Date(log.at).toLocaleString("en-GB", {
                           day: "2-digit",
@@ -598,7 +620,7 @@ const StockList = () => {
                     </div>
                   </div>
                   {index === 0 && (
-                    <div className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
+                    <div className="bg-indigo-500/10 border-indigo-500/20 text-indigo-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
                       LATEST
                     </div>
                   )}
@@ -616,7 +638,7 @@ const StockList = () => {
             className="absolute inset-0"
             onClick={() => !wiping && setIsDeleteAllOpen(false)}
           />
-          <div className="bg-[#050a08] border border-red-900/50 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
+          <div className="bg-[#09090B] border border-red-900/50 rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
             <div className="flex items-center gap-3 text-red-500 mb-6">
               <AlertOctagon size={28} />
               <h2 className="text-xl font-bold tracking-wide">
@@ -624,26 +646,26 @@ const StockList = () => {
               </h2>
             </div>
 
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-5 mb-6">
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
-                  className="text-yellow-500 shrink-0 mt-0.5"
+                  className="text-amber-500 shrink-0 mt-0.5"
                 />
                 <div>
-                  <h3 className="text-yellow-500 font-bold text-sm mb-1">
+                  <h3 className="text-amber-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-yellow-100/60 text-xs mb-4 leading-relaxed">
+                  <p className="text-amber-100/60 text-xs mb-4 leading-relaxed">
                     Before wiping the database, we highly recommend downloading
                     a complete CSV backup of all your current inventory records.
                   </p>
-                  <button
+                  <Button
                     onClick={handleFullBackup}
-                    className="w-full sm:w-auto px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 !py-2 !px-4 !text-xs rounded-xl"
                   >
                     <Download size={14} /> Download Full Database Backup
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -660,7 +682,7 @@ const StockList = () => {
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter your admin password..."
-                className="w-full bg-[#020403] border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
+                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
               />
               <button
                 type="button"
@@ -672,26 +694,26 @@ const StockList = () => {
             </div>
 
             <div className="flex justify-end gap-3">
-              <button
+              <Button
+                variant="outline"
                 onClick={() => {
                   setIsDeleteAllOpen(false);
                   setDeletePassword("");
                 }}
                 disabled={wiping}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold text-red-100/50 hover:text-red-100 hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                className="text-zinc-400 border-zinc-800 hover:bg-zinc-800/50 hover:text-white rounded-xl"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="danger"
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                isLoading={wiping}
+                className="rounded-xl"
               >
-                {wiping ? (
-                  <RefreshCcw size={16} className="animate-spin" />
-                ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
