@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import invoiceService from "../../services/invoiceService";
 import { Printer, ArrowLeft, Download, Share2 } from "lucide-react";
 import Button from "../../components/common/Button";
@@ -11,6 +11,7 @@ import { useUI } from "../../context/UIProvider";
 const InvoiceView = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useUI();
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,6 +19,23 @@ const InvoiceView = () => {
   const printRef = useRef(null);
   const containerRef = useRef(null);
   const [scale, setScale] = useState(1);
+
+  // 🔥 THEME HOOK for UI Buttons only!
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/30" : "border-indigo-500/30",
+    primaryHoverBg: isTransport
+      ? "hover:bg-cyan-500/20"
+      : "hover:bg-indigo-500/20",
+    shadowGlow: isTransport ? "shadow-cyan-900/20" : "shadow-indigo-900/20",
+  };
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -181,7 +199,7 @@ const InvoiceView = () => {
 
   const InvoiceTemplate = () => (
     <div
-      // 🚀 p-10 ensures uniform margin on all sides
+      // p-10 ensures uniform margin on all sides
       className="w-[800px] h-[1123px] bg-white text-[#1e3a8a] font-sans box-border relative flex flex-col p-10 mx-auto"
       style={{ fontFamily: "Arial, sans-serif" }}
     >
@@ -348,7 +366,6 @@ const InvoiceView = () => {
             <tbody className="align-top font-bold text-[14px]">
               {invoice.items.map((item, i) => (
                 <tr key={i}>
-                  {/* 🚀 Reduced py-4 to py-2 to decrease table height */}
                   <td className="border-r-[1.5px] border-[#1e3a8a] py-2 px-2 text-center font-mono">
                     {i + 1}
                   </td>
@@ -372,7 +389,6 @@ const InvoiceView = () => {
                   </td>
                 </tr>
               ))}
-              {/* 🚀 Empty rows reduced in size to save height */}
               {Array.from({
                 length: Math.max(0, 8 - invoice.items.length),
               }).map((_, i) => (
@@ -515,28 +531,29 @@ const InvoiceView = () => {
     <div className="max-w-full lg:max-w-[900px] mx-auto my-2 md:my-4 animate-in fade-in slide-in-from-bottom-4 duration-500 overflow-x-hidden">
       <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 px-4">
         <button
-          onClick={() => navigate("/enterprise/invoices")}
-          className="flex items-center text-emerald-100/60 hover:text-white transition-colors self-start sm:self-auto font-medium"
+          onClick={() => navigate(-1)}
+          className="flex items-center text-zinc-500 hover:text-white transition-colors self-start sm:self-auto font-medium"
         >
           <ArrowLeft size={18} className="mr-2" /> Back
         </button>
         <div className="flex gap-2 flex-wrap justify-end w-full sm:w-auto">
           <Button
             onClick={handleShare}
-            className="text-xs px-3 py-1.5 gap-1.5 bg-[#25D366] hover:bg-[#128C7E] text-white border-none shadow-lg shadow-emerald-900/20 flex-1 sm:flex-none justify-center"
+            className="text-xs px-3 py-1.5 gap-1.5 rounded-lg bg-[#25D366] hover:bg-[#128C7E] text-white border-none shadow-lg shadow-green-900/20 flex-1 sm:flex-none justify-center transition-colors"
           >
             <Share2 size={16} /> WhatsApp
           </Button>
           <Button
-            variant="secondary"
+            variant="outline"
             onClick={handlePrint}
-            className="text-xs px-3 py-1.5 gap-1.5 flex-1 sm:flex-none justify-center border-emerald-900/40 hover:bg-emerald-900/20 text-emerald-100"
+            className="text-xs px-3 py-1.5 gap-1.5 rounded-lg flex-1 sm:flex-none justify-center border-zinc-800 hover:bg-zinc-800/50 text-zinc-300 transition-colors"
           >
             <Printer size={16} /> Print
           </Button>
+          {/* Dynamically themed Save PDF Button */}
           <Button
             onClick={handleDownloadPDF}
-            className="text-xs px-3 py-1.5 gap-1.5 shadow-emerald-500/20 flex-1 sm:flex-none justify-center border border-emerald-500/50"
+            className={`text-xs px-3 py-1.5 gap-1.5 rounded-lg ${theme.primaryBg} ${theme.primaryText} border ${theme.primaryBorder} ${theme.primaryHoverBg} shadow-lg ${theme.shadowGlow} flex-1 sm:flex-none justify-center transition-colors`}
           >
             <Download size={16} /> Save PDF
           </Button>
@@ -548,7 +565,7 @@ const InvoiceView = () => {
         className="w-full flex justify-center pb-6 overflow-hidden"
       >
         <div
-          className="bg-white shadow-[0_0_20px_rgba(16,185,129,0.15)] origin-top rounded-sm"
+          className="bg-white shadow-2xl origin-top rounded-sm"
           style={{
             width: `${800 * scale}px`,
             height: `${1123 * scale}px`,
