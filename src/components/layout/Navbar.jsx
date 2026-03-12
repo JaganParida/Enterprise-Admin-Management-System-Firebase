@@ -8,12 +8,17 @@ const Navbar = ({ toggleMobileSidebar }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const isHomePage = location.pathname === "/";
-  const isTransport = location.pathname.includes("/transportation");
+  // 🔥 FIX 3: Instantly read the actual URL to prevent the flashing dots/text
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
 
-  // 🚀 Logic updated: "User" fallback completely removed
+  const isHomePage = currentPath === "/";
+  const isTransport = currentPath.includes("/transportation");
+
   const userData = admin?.data || admin;
-  const userName = userData?.name || ""; // Placeholder hata diya
+  const userName = userData?.name || "";
   const userRole =
     userData?.role?.toLowerCase() === "admin" ? "Admin" : "Manager";
 
@@ -27,15 +32,15 @@ const Navbar = ({ toggleMobileSidebar }) => {
   };
 
   const theme = {
-    bg: isTransport ? "bg-[#020617]/80" : "bg-[#050a08]/80",
-    border: isTransport ? "border-blue-900/20" : "border-emerald-900/20",
-    textHighlight: isTransport ? "text-blue-400" : "text-emerald-400",
-    textSubtle: isTransport ? "text-blue-200/50" : "text-emerald-100/50",
-    ping: isTransport ? "bg-blue-400" : "bg-emerald-400",
-    dot: isTransport ? "bg-blue-500" : "bg-emerald-500",
-    gradientFrom: isTransport ? "from-blue-500" : "from-emerald-500",
-    gradientTo: isTransport ? "to-indigo-600" : "to-teal-600",
-    avatarBorder: isTransport ? "border-blue-900/50" : "border-emerald-900/50",
+    bg: "bg-zinc-950/80", // Unified deep background
+    border: "border-zinc-800", // Unified borders
+    textHighlight: isTransport ? "text-blue-400" : "text-indigo-400",
+    textSubtle: "text-zinc-400",
+    ping: isTransport ? "bg-blue-500" : "bg-indigo-500",
+    dot: isTransport ? "bg-blue-500" : "bg-indigo-500",
+    gradientFrom: isTransport ? "from-blue-500" : "from-indigo-500",
+    gradientTo: isTransport ? "to-cyan-600" : "to-violet-600",
+    avatarBorder: "border-zinc-800",
   };
 
   return (
@@ -54,7 +59,7 @@ const Navbar = ({ toggleMobileSidebar }) => {
           ) : (
             <button
               onClick={toggleMobileSidebar}
-              className={`p-2 ${theme.textHighlight} ${theme.hoverBg} rounded-lg transition-colors`}
+              className={`p-2 ${theme.textHighlight} hover:bg-zinc-900 rounded-lg transition-colors`}
             >
               <Menu size={24} />
             </button>
@@ -62,7 +67,7 @@ const Navbar = ({ toggleMobileSidebar }) => {
         </div>
 
         <div className="flex flex-col justify-center">
-          <h2 className="text-white font-bold text-lg md:text-xl tracking-tight hidden sm:block">
+          <h2 className="text-zinc-100 font-bold text-lg md:text-xl tracking-tight hidden sm:block">
             {isHomePage
               ? "Enterprise OS"
               : isTransport
@@ -92,10 +97,9 @@ const Navbar = ({ toggleMobileSidebar }) => {
           <div
             className={`flex items-center gap-3 md:gap-4 pl-4 md:pl-6 border-l ${theme.border}`}
           >
-            {/* 🚀 REMOVED: hidden sm:block SO ROLE SHOWS ON MOBILE */}
             <div className="text-right">
               {userName && (
-                <p className="text-sm font-bold text-white leading-tight mb-0.5">
+                <p className="text-sm font-bold text-zinc-100 leading-tight mb-0.5">
                   {userName}
                 </p>
               )}
@@ -110,7 +114,7 @@ const Navbar = ({ toggleMobileSidebar }) => {
                 className={`absolute -inset-0.5 bg-gradient-to-br ${theme.gradientFrom} ${theme.gradientTo} rounded-full blur-[2px] opacity-75`}
               ></div>
               <div
-                className={`relative w-9 h-9 md:w-10 md:h-10 rounded-full bg-black flex items-center justify-center border ${theme.avatarBorder}`}
+                className={`relative w-9 h-9 md:w-10 md:h-10 rounded-full bg-zinc-950 flex items-center justify-center border ${theme.avatarBorder}`}
               >
                 <UserCircle size={24} className={theme.textHighlight} />
               </div>
