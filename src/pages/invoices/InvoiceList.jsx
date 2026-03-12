@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import invoiceService from "../../services/invoiceService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -18,6 +18,8 @@ import {
   ShieldAlert,
   EyeOff,
   RefreshCcw,
+  ChevronDown,
+  Calendar,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -26,8 +28,31 @@ import ConfirmDialog from "../../components/common/ConfirmDialog";
 const InvoiceList = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
+  const location = useLocation();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // 🔥 THEME HOOK
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryHoverBorder: isTransport
+      ? "hover:border-cyan-500/30"
+      : "hover:border-indigo-500/30",
+    primaryHoverBg: isTransport
+      ? "hover:bg-cyan-500/10"
+      : "hover:bg-indigo-500/10",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+  };
 
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -94,8 +119,13 @@ const InvoiceList = () => {
 
   const filteredInvoices = invoices.filter((inv) => {
     const matchesSearch =
-      inv.client?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inv.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase());
+      String(inv.client?.name || "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      String(inv.invoiceNumber || "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
+
     const matchesStatus = filterStatus === "All" || inv.status === filterStatus;
 
     let matchesAmount = true;
@@ -143,7 +173,6 @@ const InvoiceList = () => {
         const date = inv.date
           ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
           : "-";
-        // Strip INV- prefix for export
         const number = inv.invoiceNumber
           ? String(inv.invoiceNumber).replace(/^INV-/i, "")
           : "-";
@@ -173,7 +202,6 @@ const InvoiceList = () => {
   const handleFullBackup = () => {
     try {
       if (invoices.length === 0) return toast.info("Database is empty.");
-      // Removed Phone from export headers to match requirements
       const headers = [
         "Date,Invoice No,Client Name,SubTotal,GST Rate,Grand Total,Status",
       ];
@@ -181,7 +209,6 @@ const InvoiceList = () => {
         const dateStr = inv.date
           ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
           : "-";
-        // Strip INV- prefix for backup
         const number = String(inv.invoiceNumber || "").replace(/^INV-/i, "");
         return `${dateStr},"${number}","${inv.client?.name || ""}",${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0},"${inv.status || ""}"`;
       });
@@ -207,7 +234,6 @@ const InvoiceList = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      // Passing both password and admin email to strictly verify identity
       const adminEmail = admin?.data?.email || admin?.email;
       await invoiceService.deleteAllInvoices({
         password: deletePassword,
@@ -266,7 +292,6 @@ const InvoiceList = () => {
     const sortedHistory = Array.isArray(inv?.editHistory)
       ? [...inv.editHistory].reverse()
       : [];
-    // Strip INV- prefix for modal title
     const formattedNumber = String(inv?.invoiceNumber || "").replace(
       /^INV-/i,
       "",
@@ -284,14 +309,17 @@ const InvoiceList = () => {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4 print:w-full print:max-w-none print:m-0 print:p-0">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-          <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 border border-emerald-500/20">
+          <div
+            className={`p-2 rounded-lg border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+          >
             <FileText size={24} />
           </div>
           Invoice Ledger
         </h1>
-        <div className="flex gap-3">
+        <div className="flex gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
           <div className="relative">
-            <button
+            <Button
+              variant="module"
               onClick={() =>
                 isManager
                   ? (() => {
@@ -300,17 +328,15 @@ const InvoiceList = () => {
                     })()
                   : setIsDeleteAllOpen(true)
               }
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all text-xs font-bold shadow-lg ${
-                isManager
-                  ? "bg-red-500/5 text-red-500/50 border border-red-500/10 opacity-50 cursor-not-allowed"
-                  : "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white hover:shadow-[0_0_20px_rgba(220,38,38,0.4)]"
+              className={`h-11 flex items-center gap-2 px-4 transition-all text-xs font-bold border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 whitespace-nowrap ${
+                isManager ? "opacity-50 !cursor-not-allowed" : ""
               }`}
             >
               <AlertOctagon size={16} /> Wipe Database
-            </button>
+            </Button>
             {warningTooltip === "wipe-all" && (
               <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
-                <div className="bg-[#050a08] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                <div className="bg-[#09090B] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                   <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
                     🚫
                   </span>{" "}
@@ -321,117 +347,150 @@ const InvoiceList = () => {
           </div>
           <Button
             variant="outline"
-            className="gap-2 text-xs border-emerald-900/30 hover:bg-emerald-900/10"
+            className="h-11 gap-2 text-xs border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800/50 whitespace-nowrap"
             onClick={handleExport}
           >
             <Download size={16} /> Export
           </Button>
-          <Link to="/enterprise/invoices/create">
-            <Button className="gap-2 shadow-lg shadow-emerald-900/20 h-full">
-              <Plus size={18} /> Create Bill
+          <Link
+            to={`${isTransport ? "/transportation/invoices/create" : "/enterprise/invoices/create"}`}
+          >
+            <Button
+              variant="primary"
+              className="h-11 gap-2 shadow-lg whitespace-nowrap text-xs"
+            >
+              <Plus size={16} /> Create Bill
             </Button>
           </Link>
         </div>
       </div>
 
-      <div className="bg-[#050a08] rounded-2xl shadow-xl border border-emerald-900/30 overflow-visible relative print:shadow-none print:border-none print:bg-white">
-        <div className="p-5 border-b border-emerald-900/20 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#020403]/50 print:hidden">
-          <div className="relative w-full md:w-96">
+      <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-visible relative print:shadow-none print:border-none print:bg-white">
+        <div className="p-5 border-b border-zinc-800/60 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#09090B] rounded-t-2xl print:hidden">
+          <div className="relative w-full md:w-96 group">
             <Search
               size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-100/30"
+              className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors duration-300 ${searchTerm ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
             <input
               type="text"
               placeholder="Search by client or invoice number..."
-              className="w-full bg-[#020403] border border-emerald-900/40 rounded-xl pl-9 pr-3 py-2.5 text-sm text-emerald-100 focus:border-emerald-500/50 outline-none transition-all"
+              className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="text-emerald-100/40 text-xs font-mono">
+          <div className="text-zinc-500 text-xs font-mono">
             Showing {filteredInvoices.length} bill(s)
           </div>
         </div>
 
-        <div className="p-3 border-b border-emerald-900/20 flex flex-wrap items-center gap-3 bg-[#020403]/80 print:hidden">
-          <div className="flex items-center gap-1.5 text-emerald-500 text-xs font-bold uppercase tracking-wider px-2 border-r border-emerald-900/40 mr-2">
-            <Filter size={14} /> Filters
+        <div className="p-4 border-b border-zinc-800/60 flex flex-wrap items-center gap-4 bg-zinc-900/20 print:hidden">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 px-3 py-1 border-r border-zinc-800 mr-1">
+            <Filter size={16} /> Filters
             {activeFiltersCount > 0 && (
-              <span className="bg-emerald-500 text-[#020403] px-1.5 rounded-full ml-1">
+              <span
+                className={`ml-1 px-1.5 rounded border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+              >
                 {activeFiltersCount}
               </span>
             )}
           </div>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterStatus !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60"}`}
-          >
-            <option value="All" className="bg-[#050a08]">
-              All Status
-            </option>
-            <option value="Pending" className="bg-[#050a08]">
-              Pending
-            </option>
-            <option value="Paid" className="bg-[#050a08]">
-              Paid
-            </option>
-            <option value="Cancelled" className="bg-[#050a08]">
-              Cancelled
-            </option>
-          </select>
-          <select
-            value={filterAmount}
-            onChange={(e) => setFilterAmount(e.target.value)}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterAmount !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60"}`}
-          >
-            <option value="All" className="bg-[#050a08]">
-              Any Amount
-            </option>
-            <option value="Under10k" className="bg-[#050a08]">
-              Under ₹10,000
-            </option>
-            <option value="10k-50k" className="bg-[#050a08]">
-              ₹10k - ₹50k
-            </option>
-            <option value="Above50k" className="bg-[#050a08]">
-              Above ₹50,000
-            </option>
-          </select>
-          <select
-            value={filterDate}
-            onChange={(e) => {
-              setFilterDate(e.target.value);
-              if (e.target.value !== "All") setFilterExactDate("");
-            }}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${filterDate !== "All" ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400" : "bg-transparent border-emerald-900/40 text-emerald-100/60"}`}
-          >
-            <option value="All" className="bg-[#050a08]">
-              Any Date
-            </option>
-            <option value="Last7Days" className="bg-[#050a08]">
-              Last 7 Days
-            </option>
-            <option value="Last30Days" className="bg-[#050a08]">
-              Last 30 Days
-            </option>
-            <option value="ThisMonth" className="bg-[#050a08]">
-              This Month
-            </option>
-          </select>
-          <input
-            type="date"
-            value={filterExactDate}
-            onChange={(e) => {
-              setFilterExactDate(e.target.value);
-              if (e.target.value) setFilterDate("All");
-            }}
-            style={{ colorScheme: "dark" }}
-            className={`text-xs px-3 py-1.5 rounded-full border bg-transparent cursor-pointer ${filterExactDate ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10" : "border-emerald-900/40 text-emerald-100/60"}`}
-          />
+          <div className="relative group">
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
+            >
+              <option value="All" className="bg-[#09090B]">
+                All Status
+              </option>
+              <option value="Pending" className="bg-[#09090B]">
+                Pending
+              </option>
+              <option value="Paid" className="bg-[#09090B]">
+                Paid
+              </option>
+              <option value="Cancelled" className="bg-[#09090B]">
+                Cancelled
+              </option>
+            </select>
+            <ChevronDown
+              size={14}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
+            />
+          </div>
+          <div className="relative group">
+            <select
+              value={filterAmount}
+              onChange={(e) => setFilterAmount(e.target.value)}
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
+            >
+              <option value="All" className="bg-[#09090B]">
+                Any Amount
+              </option>
+              <option value="Under10k" className="bg-[#09090B]">
+                Under ₹10,000
+              </option>
+              <option value="10k-50k" className="bg-[#09090B]">
+                ₹10k - ₹50k
+              </option>
+              <option value="Above50k" className="bg-[#09090B]">
+                Above ₹50,000
+              </option>
+            </select>
+            <ChevronDown
+              size={14}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
+            />
+          </div>
+          <div className="relative group">
+            <select
+              value={filterDate}
+              onChange={(e) => {
+                setFilterDate(e.target.value);
+                if (e.target.value !== "All") setFilterExactDate("");
+              }}
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
+            >
+              <option value="All" className="bg-[#09090B]">
+                Any Date
+              </option>
+              <option value="Last7Days" className="bg-[#09090B]">
+                Last 7 Days
+              </option>
+              <option value="Last30Days" className="bg-[#09090B]">
+                Last 30 Days
+              </option>
+              <option value="ThisMonth" className="bg-[#09090B]">
+                This Month
+              </option>
+            </select>
+            <ChevronDown
+              size={14}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
+            />
+          </div>
+          <div className="relative group flex items-center">
+            <div
+              className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filterExactDate ? theme.primaryText : "text-zinc-500"}`}
+            >
+              <Calendar size={14} />
+            </div>
+            <input
+              type="date"
+              value={filterExactDate}
+              onChange={(e) => {
+                setFilterExactDate(e.target.value);
+                if (e.target.value) setFilterDate("All");
+              }}
+              style={{ colorScheme: "dark" }}
+              className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryBorder} ${theme.primaryText} ${theme.primaryBg}` : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"}`}
+            />
+          </div>
           {activeFiltersCount > 0 && (
-            <button
+            <Button
+              variant="ghost"
               onClick={() => {
                 setFilterStatus("All");
                 setFilterAmount("All");
@@ -439,16 +498,16 @@ const InvoiceList = () => {
                 setFilterExactDate("");
                 setSearchTerm("");
               }}
-              className="text-xs text-rose-400/80 hover:text-rose-400 underline ml-2"
+              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5"
             >
-              Clear All
-            </button>
+              <X size={14} /> Clear All
+            </Button>
           )}
         </div>
 
         <div className="overflow-x-auto pb-4 custom-scrollbar print:overflow-visible print:w-full">
           <table className="w-full text-left min-w-max print:min-w-0">
-            <thead className="bg-[#020403] text-emerald-100/30 text-[10px] uppercase tracking-widest font-bold print:bg-white print:text-black">
+            <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold print:bg-white print:text-black border-b border-zinc-800/60">
               <tr>
                 <th className="p-5 md:pl-6 whitespace-nowrap">
                   Invoice # & Date
@@ -461,41 +520,45 @@ const InvoiceList = () => {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-emerald-900/10 text-sm print:divide-gray-200">
+            <tbody className="divide-y divide-zinc-800/60 text-sm print:divide-gray-200">
               {filteredInvoices.map((inv) => (
                 <tr
                   key={inv._id}
-                  className="hover:bg-emerald-400/[0.02] transition-colors group print:text-black"
+                  className="hover:bg-zinc-800/30 transition-colors group print:text-black"
                 >
                   <td className="p-5 md:pl-6 align-middle">
-                    <div className="font-mono font-bold text-emerald-400 whitespace-nowrap print:text-black">
-                      {/* Dynamically strip INV- for display */}
+                    <div
+                      className={`font-mono font-bold whitespace-nowrap print:text-black ${theme.primaryText}`}
+                    >
                       {inv.invoiceNumber
                         ? String(inv.invoiceNumber).replace(/^INV-/i, "")
                         : "N/A"}
                     </div>
-                    <div className="text-emerald-100/40 text-[10px] mt-1 whitespace-nowrap font-medium tracking-wide print:text-gray-500">
+                    <div className="text-zinc-500 text-[10px] mt-1 whitespace-nowrap font-medium tracking-wide print:text-gray-500">
                       {inv.date
                         ? new Date(inv.date).toLocaleDateString("en-GB")
                         : "Unknown Date"}
                     </div>
                   </td>
                   <td className="p-5 align-middle">
-                    <div className="font-medium text-emerald-50 whitespace-nowrap print:text-black">
+                    <div className="font-medium text-zinc-100 whitespace-nowrap print:text-black">
                       {inv.client?.name || "Unknown"}
                     </div>
                     {Array.isArray(inv.editHistory) &&
                       inv.editHistory.length > 0 && (
                         <div
                           onClick={() => openHistory(inv)}
-                          className="mt-1.5 inline-flex flex-col gap-0.5 cursor-pointer bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/20 p-1.5 rounded-lg transition-all w-max print:hidden"
+                          className="mt-1.5 inline-flex flex-col gap-0.5 cursor-pointer bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 p-1.5 rounded-lg transition-all w-max print:hidden group/btn"
                         >
-                          <div className="text-[9px] font-mono text-emerald-400/90 flex items-center gap-1 uppercase tracking-widest font-bold leading-none">
-                            <History size={10} />{" "}
+                          <div className="text-[9px] font-mono text-zinc-300 flex items-center gap-1 uppercase tracking-widest font-bold leading-none">
+                            <History
+                              size={10}
+                              className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
+                            />{" "}
                             {inv.editHistory[inv.editHistory.length - 1]
                               ?.role || "ADMIN"}
                           </div>
-                          <span className="text-emerald-100/30 text-[8px] ml-4 font-medium">
+                          <span className="text-zinc-500 text-[8px] ml-4 font-medium">
                             {formatInlineDate(
                               inv.editHistory[inv.editHistory.length - 1]?.at,
                             )}
@@ -512,23 +575,29 @@ const InvoiceList = () => {
                       onChange={(e) =>
                         handleStatusChange(inv._id, e.target.value)
                       }
-                      className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-md border outline-none cursor-pointer transition-colors print:appearance-none print:border-none print:bg-transparent print:text-black ${inv.status === "Paid" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : inv.status === "Cancelled" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20"}`}
+                      className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-md border outline-none cursor-pointer transition-colors print:appearance-none print:border-none print:bg-transparent print:text-black ${
+                        inv.status === "Paid"
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          : inv.status === "Cancelled"
+                            ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                      }`}
                     >
                       <option
                         value="Pending"
-                        className="bg-[#020403] text-amber-400"
+                        className="bg-[#09090B] text-amber-400"
                       >
                         Pending
                       </option>
                       <option
                         value="Paid"
-                        className="bg-[#020403] text-emerald-400"
+                        className="bg-[#09090B] text-emerald-400"
                       >
                         Paid
                       </option>
                       <option
                         value="Cancelled"
-                        className="bg-[#020403] text-rose-400"
+                        className="bg-[#09090B] text-rose-400"
                       >
                         Cancelled
                       </option>
@@ -537,15 +606,15 @@ const InvoiceList = () => {
                   <td className="p-5 md:pr-6 align-middle overflow-visible print:hidden">
                     <div className="flex justify-end gap-1.5 items-center relative overflow-visible">
                       <Link
-                        to={`/enterprise/invoices/view/${inv._id}`}
-                        className="p-1.5 text-emerald-100/30 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors"
+                        to={`${isTransport ? `/transportation/invoices/view/${inv._id}` : `/enterprise/invoices/view/${inv._id}`}`}
+                        className={`p-1.5 text-zinc-500 hover:${theme.primaryText} ${theme.primaryHoverBg} rounded-md transition-colors`}
                         title="View PDF"
                       >
                         <Eye size={16} />
                       </Link>
                       <Link
-                        to={`/enterprise/invoices/edit/${inv._id}`}
-                        className="p-1.5 text-emerald-100/30 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors"
+                        to={`${isTransport ? `/transportation/invoices/edit/${inv._id}` : `/enterprise/invoices/edit/${inv._id}`}`}
+                        className={`p-1.5 text-zinc-500 hover:${theme.primaryText} ${theme.primaryHoverBg} rounded-md transition-colors`}
                         title="Edit Invoice"
                       >
                         <Edit size={16} />
@@ -557,12 +626,16 @@ const InvoiceList = () => {
                               ? handleDisabledClick(inv._id)
                               : handleDeleteClick(inv._id)
                           }
-                          className={`p-1.5 rounded-md transition-colors ${isManager ? "text-emerald-100/10 opacity-50 cursor-not-allowed" : "text-emerald-100/30 hover:text-red-400 hover:bg-red-500/10"}`}
+                          className={`p-1.5 rounded-md transition-colors ${
+                            isManager
+                              ? "text-zinc-600 opacity-50 cursor-not-allowed"
+                              : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                          }`}
                         >
                           <Trash2 size={16} />
                         </button>
                         {warningTooltip === inv._id && (
-                          <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#050a08] border border-red-500/30 shadow-2xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                          <div className="absolute bottom-full right-0 mb-2 z-[9999] bg-[#09090B] border border-red-500/30 shadow-2xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                             <span className="bg-red-500/20 p-1 rounded text-[8px] leading-none">
                               🚫
                             </span>{" "}
@@ -578,7 +651,7 @@ const InvoiceList = () => {
                 <tr>
                   <td
                     colSpan="5"
-                    className="p-10 text-center text-emerald-100/30 text-sm italic print:text-black"
+                    className="p-10 text-center text-zinc-500 text-sm italic print:text-black"
                   >
                     No invoices match your current filters.
                   </td>
@@ -592,11 +665,11 @@ const InvoiceList = () => {
       {/* History Modal */}
       {historyModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
-          <div className="bg-[#050a08] border border-emerald-900/30 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative Z-50">
-            <div className="p-5 border-b border-emerald-900/20 flex justify-between items-center bg-[#020403]">
+          <div className="bg-[#09090B] border border-zinc-800/60 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative Z-50">
+            <div className="p-5 border-b border-zinc-800/60 flex justify-between items-center bg-[#09090B]">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <History size={18} className="text-emerald-500" /> Log History:{" "}
-                <span className="text-emerald-400 text-sm ml-1">
+                <History size={18} className={theme.primaryText} /> Log History:{" "}
+                <span className="text-zinc-300 text-sm ml-1">
                   {historyModal.itemName}
                 </span>
               </h3>
@@ -604,7 +677,7 @@ const InvoiceList = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: [], itemName: "" })
                 }
-                className="text-emerald-100/40 hover:text-white p-1 hover:bg-emerald-500/10 rounded-lg"
+                className="text-zinc-500 hover:text-white transition-colors"
               >
                 <X size={20} />
               </button>
@@ -613,26 +686,39 @@ const InvoiceList = () => {
               {historyModal.data.map((edit, idx) => (
                 <div
                   key={idx}
-                  className="bg-[#020403] border border-emerald-900/20 rounded-xl p-4 flex items-center justify-between group hover:border-emerald-500/30 transition-colors"
+                  className={`bg-zinc-900/30 border rounded-xl p-4 flex items-center justify-between group overflow-hidden relative ${theme.primaryHoverBorder} transition-colors ${idx === 0 ? theme.primaryBorder : "border-zinc-800"}`}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 font-black text-lg uppercase shadow-inner">
+                  {idx === 0 && (
+                    <div
+                      className={`absolute left-0 top-0 w-1 h-full ${theme.primaryBg}`}
+                    ></div>
+                  )}
+                  <div className="flex items-center gap-4 pl-1">
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg uppercase ${idx === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
+                    >
                       {edit.role ? edit.role.charAt(0) : "A"}
                     </div>
                     <div>
-                      <div className="text-emerald-100 font-bold uppercase tracking-widest text-sm">
+                      <div
+                        className={`font-bold uppercase tracking-widest text-sm ${idx === 0 ? "text-white" : "text-zinc-400"}`}
+                      >
                         {edit.role || "Admin"}
                       </div>
-                      <div className="text-emerald-100/40 text-[10px] font-mono lowercase">
+                      <div className="text-zinc-500 text-[10px] font-mono lowercase">
                         {edit.by}
                       </div>
-                      <div className="text-emerald-400/80 text-[10px] font-mono mt-1 tracking-wider">
+                      <div
+                        className={`text-[10px] font-mono mt-1 tracking-wider ${idx === 0 ? theme.primaryText : "text-zinc-500"}`}
+                      >
                         {formatModalDate(edit.at)}
                       </div>
                     </div>
                   </div>
                   {idx === 0 && (
-                    <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] px-3 py-1 rounded-md font-bold tracking-widest uppercase">
+                    <div
+                      className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} text-[10px] px-3 py-1 rounded-md font-bold tracking-widest uppercase`}
+                    >
                       LATEST
                     </div>
                   )}
@@ -650,7 +736,7 @@ const InvoiceList = () => {
             className="absolute inset-0"
             onClick={() => !wiping && setIsDeleteAllOpen(false)}
           />
-          <div className="bg-[#050a08] border border-red-900/50 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
+          <div className="bg-[#09090B] border border-red-900/50 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
             <div className="flex items-center gap-3 text-red-500 mb-6">
               <AlertOctagon size={28} />
               <h2 className="text-xl font-bold tracking-wide">
@@ -658,26 +744,27 @@ const InvoiceList = () => {
               </h2>
             </div>
 
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-5 mb-6">
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
-                  className="text-yellow-500 shrink-0 mt-0.5"
+                  className="text-amber-500 shrink-0 mt-0.5"
                 />
                 <div>
-                  <h3 className="text-yellow-500 font-bold text-sm mb-1">
+                  <h3 className="text-amber-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-yellow-100/60 text-xs mb-4 leading-relaxed">
+                  <p className="text-amber-100/60 text-xs mb-4 leading-relaxed">
                     Before wiping the database, we highly recommend downloading
                     a complete CSV backup of all your current invoice records.
                   </p>
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={handleFullBackup}
-                    className="w-full sm:w-auto px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto h-11 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"
                   >
                     <Download size={14} /> Download Full Database Backup
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -694,7 +781,7 @@ const InvoiceList = () => {
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter your admin password..."
-                className="w-full bg-[#020403] border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
+                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
               />
               <button
                 type="button"
@@ -706,28 +793,29 @@ const InvoiceList = () => {
             </div>
 
             <div className="flex justify-end gap-3">
-              <button
+              <Button
+                variant="outline"
                 onClick={() => {
                   setIsDeleteAllOpen(false);
                   setDeletePassword("");
                 }}
                 disabled={wiping}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold text-red-100/50 hover:text-red-100 hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                className="h-11 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white"
               >
                 Cancel
-              </button>
+              </Button>
 
-              {/* Changed Loader to RefreshCcw to avoid UI height explosion bug */}
-              <button
+              <Button
+                variant="danger"
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-11"
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
                 ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
