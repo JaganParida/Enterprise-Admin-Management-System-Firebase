@@ -53,12 +53,12 @@ const useThemeColors = () => {
     isTransport,
     colors: isTransport
       ? {
-          bgMain: "bg-zinc-950",
-          border: "border-zinc-800/80",
+          bgMain: "bg-[#09090B]",
+          border: "border-white/5",
           textSubtle: "text-zinc-400",
           textHighlight: "text-blue-400",
           icon: "text-blue-500",
-          hoverBg: "hover:bg-zinc-900",
+          hoverBg: "hover:bg-zinc-900/40",
           hoverText: "hover:text-zinc-200",
           activeBg: "bg-blue-500/10",
           activeBorder: "border-blue-500/20",
@@ -76,12 +76,12 @@ const useThemeColors = () => {
           shadowGlow: "shadow-[0_0_30px_rgba(59,130,246,0.1)]",
         }
       : {
-          bgMain: "bg-zinc-950",
-          border: "border-zinc-800/80",
+          bgMain: "bg-[#09090B]",
+          border: "border-white/5",
           textSubtle: "text-zinc-400",
           textHighlight: "text-indigo-400",
           icon: "text-indigo-500",
-          hoverBg: "hover:bg-zinc-900",
+          hoverBg: "hover:bg-zinc-900/40",
           hoverText: "hover:text-zinc-200",
           activeBg: "bg-indigo-500/10",
           activeBorder: "border-indigo-500/20",

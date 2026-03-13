@@ -13,11 +13,11 @@ const Loader = ({ size = "md", fullScreen = false, text = "Loading..." }) => {
 
   const theme = isTransport
     ? {
-        spinner: "border-[#1E293B] border-t-cyan-500",
+        spinner: "border-zinc-800 border-t-cyan-500",
         text: "text-cyan-400",
       }
     : {
-        spinner: "border-[#1E293B] border-t-indigo-500",
+        spinner: "border-zinc-800 border-t-indigo-500",
         text: "text-indigo-400",
       };
 
@@ -42,7 +42,7 @@ const Loader = ({ size = "md", fullScreen = false, text = "Loading..." }) => {
 
   if (fullScreen) {
     return (
-      <div className="fixed inset-0 bg-[#09090B]/90 backdrop-blur-sm z-[9999] flex items-center justify-center transition-all duration-300">
+      <div className="fixed inset-0 bg-[#09090B]/80 backdrop-blur-md z-[9999] flex items-center justify-center transition-all duration-300">
         {spinner}
       </div>
     );

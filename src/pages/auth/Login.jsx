@@ -57,15 +57,10 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#020403] flex items-center justify-center p-4 relative font-sans overflow-hidden selection:bg-emerald-500 selection:text-white">
-      <div
-        className="absolute top-[-10%] left-[-10%] w-[40vw] h-[40vw] rounded-full bg-emerald-600/10 blur-[120px] pointer-events-none animate-pulse"
-        style={{ animationDuration: "8s" }}
-      ></div>
-      <div
-        className="absolute bottom-[-10%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-teal-600/10 blur-[120px] pointer-events-none animate-pulse"
-        style={{ animationDuration: "10s" }}
-      ></div>
+    <div className="min-h-screen bg-[#09090B] flex items-center justify-center p-4 relative font-sans overflow-hidden selection:bg-indigo-500/30 selection:text-white">
+      {/* Static Background Glows - High Performance (Softened & Responsive) */}
+      <div className="absolute top-0 left-1/4 w-[120vw] md:w-[600px] max-w-[800px] h-[120vw] md:h-[600px] max-h-[800px] bg-indigo-500/5 blur-[100px] md:blur-[120px] rounded-full pointer-events-none mix-blend-screen" />
+      <div className="absolute bottom-0 right-1/4 w-[100vw] md:w-[500px] max-w-[600px] h-[100vw] md:h-[500px] max-h-[600px] bg-blue-500/5 blur-[100px] md:blur-[120px] rounded-full pointer-events-none mix-blend-screen" />
 
       <motion.div
         initial={{ opacity: 0, x: -20 }}
@@ -75,9 +70,9 @@ const Login = () => {
       >
         <Link
           to="/"
-          className="flex items-center gap-3 text-white/40 hover:text-emerald-400 transition-colors group"
+          className="flex items-center gap-3 text-zinc-500 hover:text-indigo-400 transition-colors group"
         >
-          <div className="p-2 sm:p-2.5 rounded-xl bg-white/5 border border-white/10 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/20 transition-all backdrop-blur-md">
+          <div className="p-2 sm:p-2.5 rounded-xl bg-zinc-900/50 border border-zinc-800 group-hover:bg-indigo-500/10 group-hover:border-indigo-500/20 transition-all backdrop-blur-md">
             <ArrowLeft
               size={18}
               className="group-hover:-translate-x-1 transition-transform"
@@ -93,7 +88,7 @@ const Login = () => {
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
-        className="w-full max-w-md bg-[#070d0a]/60 backdrop-blur-3xl border border-white/5 p-6 sm:p-8 md:p-10 rounded-[2rem] shadow-2xl relative z-10"
+        className="w-[95%] sm:w-full max-w-md bg-zinc-900/40 backdrop-blur-3xl border border-zinc-800 p-6 sm:p-8 md:p-10 rounded-[2rem] shadow-2xl relative z-10 mx-auto"
       >
         <div className="text-center mb-8">
           <motion.div
@@ -105,14 +100,14 @@ const Login = () => {
               damping: 15,
               delay: 0.1,
             }}
-            className="w-16 h-16 bg-gradient-to-tr from-emerald-500/20 to-teal-500/5 border border-emerald-500/20 rounded-2xl mx-auto flex items-center justify-center mb-5 shadow-[0_0_40px_rgba(16,185,129,0.1)] text-emerald-400"
+            className="w-16 h-16 bg-gradient-to-tr from-indigo-500/20 to-blue-500/5 border border-indigo-500/20 rounded-2xl mx-auto flex items-center justify-center mb-5 shadow-[0_0_40px_rgba(99,102,241,0.15)] text-indigo-400"
           >
             <ShieldCheck size={30} strokeWidth={1.5} />
           </motion.div>
-          <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight mb-2">
+          <h2 className="text-2xl md:text-3xl font-bold text-zinc-100 tracking-tight mb-2">
             System Login
           </h2>
-          <p className="text-emerald-100/50 text-sm font-medium">
+          <p className="text-zinc-500 text-sm font-medium">
             Secure Admin Access Portal
           </p>
         </div>
@@ -123,9 +118,9 @@ const Login = () => {
               initial={{ opacity: 0, height: 0, y: -10 }}
               animate={{ opacity: 1, height: "auto", y: 0 }}
               exit={{ opacity: 0, height: 0 }}
-              className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl mb-6 text-sm font-medium flex items-center justify-center gap-2 overflow-hidden"
+              className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl mb-6 text-sm font-medium flex items-center justify-center gap-2 overflow-hidden"
             >
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0"></span>
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0"></span>
               {error}
             </motion.div>
           )}
@@ -133,12 +128,12 @@ const Login = () => {
 
         <form onSubmit={handleEmailSubmit} className="space-y-5">
           <div className="space-y-2 group">
-            <label className="text-xs font-semibold text-white/60 ml-1">
+            <label className="text-xs font-semibold text-zinc-400 ml-1">
               Email Address
             </label>
             <div className="relative">
               <Mail
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-emerald-400 transition-colors"
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-indigo-400 transition-colors"
                 size={20}
               />
               <input
@@ -147,7 +142,7 @@ const Login = () => {
                 onChange={(e) =>
                   setFormData({ ...formData, email: e.target.value })
                 }
-                className="w-full bg-[#0a120e] border border-white/10 text-white rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all placeholder:text-white/20"
+                className="w-full bg-[#09090B] border border-zinc-800 text-white rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-zinc-600"
                 placeholder="admin@company.com"
                 required
               />
@@ -155,12 +150,12 @@ const Login = () => {
           </div>
 
           <div className="space-y-2 group">
-            <label className="text-xs font-semibold text-white/60 ml-1">
+            <label className="text-xs font-semibold text-zinc-400 ml-1">
               Password
             </label>
             <div className="relative">
               <Lock
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-emerald-400 transition-colors"
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-indigo-400 transition-colors"
                 size={20}
               />
               <input
@@ -169,14 +164,14 @@ const Login = () => {
                 onChange={(e) =>
                   setFormData({ ...formData, password: e.target.value })
                 }
-                className="w-full bg-[#0a120e] border border-white/10 text-white rounded-2xl py-4 pl-12 pr-12 outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all placeholder:text-white/20"
+                className="w-full bg-[#09090B] border border-zinc-800 text-white rounded-2xl py-4 pl-12 pr-12 outline-none focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-zinc-600"
                 placeholder="••••••••"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors focus:outline-none"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors focus:outline-none"
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
@@ -184,8 +179,7 @@ const Login = () => {
             <div className="flex justify-end pt-1">
               <Link
                 to="/forgot-password"
-                size={18}
-                className="text-xs font-medium text-emerald-500 hover:text-emerald-400 transition-colors"
+                className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
               >
                 Forgot Password?
               </Link>
@@ -195,15 +189,15 @@ const Login = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-emerald-500 hover:bg-emerald-400 text-[#020403] font-bold py-4 rounded-2xl flex justify-center items-center gap-3 transition-all active:scale-[0.98] shadow-[0_0_20px_rgba(16,185,129,0.2)] mt-4 group"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-2xl flex justify-center items-center gap-3 transition-all active:scale-[0.98] shadow-lg shadow-indigo-900/20 hover:shadow-indigo-500/30 mt-4 group border border-indigo-500/50"
           >
             {loading ? (
-              <Loader className="animate-spin text-[#020403]" size={22} />
+              <Loader className="animate-spin text-white" size={22} />
             ) : (
               <>
-                <span className="text-base font-bold">Access Dashboard</span>
+                <span className="text-sm font-bold tracking-wide uppercase">Access Dashboard</span>
                 <ArrowRight
-                  size={20}
+                  size={18}
                   className="group-hover:translate-x-1 transition-transform"
                 />
               </>
@@ -211,8 +205,8 @@ const Login = () => {
           </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-white/5 relative">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#070d0a] px-3 text-[10px] text-white/30 font-bold uppercase tracking-widest">
+        <div className="mt-8 pt-6 border-t border-zinc-800/60 relative">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#09090B] px-3 text-[10px] text-zinc-500 font-bold uppercase tracking-widest outline outline-[#09090B] outline-4">
             Or continue with
           </div>
           <div className="mt-4">
@@ -220,7 +214,7 @@ const Login = () => {
               type="button"
               onClick={handleGoogleLogin}
               disabled={loading}
-              className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium py-3.5 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+              className="w-full bg-[#09090B] hover:bg-zinc-900 border border-zinc-800 text-white font-medium py-3.5 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-[0.98] hover:border-zinc-700"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path

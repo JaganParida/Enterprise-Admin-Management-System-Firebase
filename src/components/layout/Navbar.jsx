@@ -32,20 +32,20 @@ const Navbar = ({ toggleMobileSidebar }) => {
   };
 
   const theme = {
-    bg: "bg-zinc-950/80", // Unified deep background
-    border: "border-zinc-800", // Unified borders
+    bg: "bg-[#09090B]/80", // Unified deep background
+    border: "border-white/5", // Unified borders
     textHighlight: isTransport ? "text-blue-400" : "text-indigo-400",
     textSubtle: "text-zinc-400",
     ping: isTransport ? "bg-blue-500" : "bg-indigo-500",
     dot: isTransport ? "bg-blue-500" : "bg-indigo-500",
     gradientFrom: isTransport ? "from-blue-500" : "from-indigo-500",
     gradientTo: isTransport ? "to-cyan-600" : "to-violet-600",
-    avatarBorder: "border-zinc-800",
+    avatarBorder: "border-white/10",
   };
 
   return (
     <header
-      className={`h-20 ${theme.bg} backdrop-blur-md border-b ${theme.border} flex items-center justify-between px-4 md:px-8 sticky top-0 z-40`}
+      className={`h-20 ${theme.bg} backdrop-blur-xl border-b ${theme.border} flex items-center justify-between px-4 md:px-8 sticky top-0 z-40 transition-all duration-300 shadow-[0_10px_30px_rgba(0,0,0,0.5)]`}
     >
       <div className="flex items-center gap-3 md:gap-4">
         <div className="md:hidden">
@@ -111,10 +111,10 @@ const Navbar = ({ toggleMobileSidebar }) => {
             </div>
             <div className="relative group">
               <div
-                className={`absolute -inset-0.5 bg-gradient-to-br ${theme.gradientFrom} ${theme.gradientTo} rounded-full blur-[2px] opacity-75`}
+                className={`absolute -inset-0.5 bg-gradient-to-br ${theme.gradientFrom} ${theme.gradientTo} rounded-full blur-[3px] opacity-60`}
               ></div>
               <div
-                className={`relative w-9 h-9 md:w-10 md:h-10 rounded-full bg-zinc-950 flex items-center justify-center border ${theme.avatarBorder}`}
+                className={`relative w-9 h-9 md:w-10 md:h-10 rounded-full bg-[#09090B] flex items-center justify-center border ${theme.avatarBorder}`}
               >
                 <UserCircle size={24} className={theme.textHighlight} />
               </div>

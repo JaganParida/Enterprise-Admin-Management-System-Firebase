@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
-import Footer from "./Footer"; // Import the Admin Footer
+import Footer from "./Footer"; 
 
 const AdminLayout = () => {
-  // 1. Define State
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile Toggle
-  const [isCollapsed, setIsCollapsed] = useState(false); // Desktop Collapse
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
+  const [isCollapsed, setIsCollapsed] = useState(false); 
+  const location = useLocation();
+
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+
+  const isTransport = currentPath.includes("/transportation");
 
   // Auto-close mobile sidebar on resize
   useEffect(() => {
@@ -21,8 +28,8 @@ const AdminLayout = () => {
   }, []);
 
   return (
-    <div className="flex min-h-screen bg-[#020403] text-emerald-50 font-sans selection:bg-emerald-500 selection:text-white overflow-hidden">
-      {/* 2. Sidebar (Only rendered here, inside the protected layout) */}
+    <div className={`flex min-h-screen bg-[#09090B] text-zinc-100 font-sans selection:text-white overflow-hidden ${isTransport ? "selection:bg-blue-500" : "selection:bg-indigo-500"}`}>
+      {/* Sidebar */}
       <Sidebar
         isMobileOpen={isSidebarOpen}
         setIsMobileOpen={setIsSidebarOpen}
@@ -41,8 +48,18 @@ const AdminLayout = () => {
 
         {/* Page Content Area */}
         <main className="flex-1 p-4 md:p-6 overflow-x-hidden w-full relative z-0 flex flex-col">
-          {/* Cyber Grid Background */}
-          <div className="fixed inset-0 bg-[linear-gradient(to_right,#0a1f16_1px,transparent_1px),linear-gradient(to_bottom,#0a1f16_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-[0.1] pointer-events-none -z-10"></div>
+          {/* Dynamic Premium Background */}
+          {isTransport ? (
+              <div className="fixed inset-0 bg-[#09090B] pointer-events-none -z-10">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(59,130,246,0.05),transparent_50%)]" />
+                  <div className="absolute inset-0 bg-[linear-gradient(to_right,#18181b_1px,transparent_1px),linear-gradient(to_bottom,#18181b_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-[0.2]" />
+              </div>
+          ) : (
+              <div className="fixed inset-0 bg-[#09090B] pointer-events-none -z-10">
+                   <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(99,102,241,0.05),transparent_50%)]" />
+                   <div className="absolute inset-0 bg-[linear-gradient(to_right,#18181b_1px,transparent_1px),linear-gradient(to_bottom,#18181b_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-[0.2]" />
+              </div>
+          )}
 
           {/* Content Outlet */}
           <div className="w-full max-w-full flex-1 animate-in fade-in slide-in-from-bottom-4 duration-500">
