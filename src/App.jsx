@@ -27,11 +27,6 @@ import Sales from "./pages/sales/Sales";
 import SalesReport from "./pages/sales/SalesReport";
 import EditSale from "./pages/sales/EditSale";
 
-import CashBook from "./pages/cash/CashBook";
-import CashEntry from "./pages/cash/CashEntry";
-import CashReport from "./pages/cash/CashReport";
-import EditCash from "./pages/cash/EditCash";
-
 import InvoiceList from "./pages/invoices/InvoiceList";
 import CreateInvoice from "./pages/invoices/CreateInvoice";
 import InvoiceView from "./pages/invoices/InvoiceView";
