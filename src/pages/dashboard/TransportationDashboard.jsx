@@ -240,8 +240,8 @@ const TransportationDashboard = () => {
                   className="fixed inset-0 z-10"
                   onClick={() => setShowQuickMenu(false)}
                 ></div>
-                <div className="absolute right-0 mt-3 w-64 bg-[#09090B]/95 backdrop-blur-xl border border-zinc-800/80 rounded-2xl shadow-2xl p-2 z-20 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
-                  <div className="px-3 py-2 border-b border-zinc-800/60 mb-1">
+                <div className="absolute right-0 mt-3 w-64 bg-[#09090B]/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-2 z-20 animate-in fade-in zoom-in-95 duration-200 origin-top-right ring-1 ring-white/5">
+                  <div className="px-3 py-2 border-b border-white/10 mb-1">
                     <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-[0.2em]">
                       Add Record
                     </p>
@@ -249,7 +249,7 @@ const TransportationDashboard = () => {
                   <div className="space-y-1 p-1">
                     <Link
                       to={`${isTransport ? "/transportation/logs" : "/enterprise/logs"}`}
-                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-blue-900/20 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 transition-colors mr-3">
                         <Truck size={16} />
@@ -259,12 +259,12 @@ const TransportationDashboard = () => {
                       </span>
                       <ChevronRight
                         size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-zinc-400"
+                        className="opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all text-white"
                       />
                     </Link>
                     <Link
                       to={`${isTransport ? "/transportation/fuel" : "/enterprise/fuel"}`}
-                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-cyan-900/20 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 group-hover:bg-cyan-500/20 transition-colors mr-3">
                         <Droplet size={16} />
@@ -274,12 +274,12 @@ const TransportationDashboard = () => {
                       </span>
                       <ChevronRight
                         size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-zinc-400"
+                        className="opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all text-white"
                       />
                     </Link>
                     <Link
                       to={`${isTransport ? "/transportation/maintenance" : "/enterprise/maintenance"}`}
-                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-sky-900/20 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 group-hover:bg-sky-500/20 transition-colors mr-3">
                         <Wrench size={16} />
@@ -289,12 +289,12 @@ const TransportationDashboard = () => {
                       </span>
                       <ChevronRight
                         size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-zinc-400"
+                        className="opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all text-white"
                       />
                     </Link>
                     <Link
                       to={`${isTransport ? "/transportation/jcb" : "/enterprise/jcb"}`}
-                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-amber-900/20 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 group-hover:bg-amber-500/20 transition-colors mr-3">
                         <Timer size={16} />
@@ -304,7 +304,7 @@ const TransportationDashboard = () => {
                       </span>
                       <ChevronRight
                         size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-zinc-400"
+                        className="opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all text-white"
                       />
                     </Link>
                   </div>
@@ -351,7 +351,7 @@ const TransportationDashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:auto-rows-fr h-auto">
         {/* CHART PANEL */}
         <div
-          className={`lg:col-span-2 p-6 md:p-8 rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-lg relative overflow-hidden flex flex-col h-full min-h-[400px] group ${theme.primaryHoverBorder} transition-all duration-500`}
+          className={`lg:col-span-2 p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col h-full min-h-[400px] group ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md`}
         >
           <div
             className={`absolute -left-10 -top-10 w-40 h-40 blur-[80px] rounded-full transition-colors duration-700 pointer-events-none ${theme.glowOrb} ${theme.glowOrbHover}`}
@@ -379,7 +379,7 @@ const TransportationDashboard = () => {
 
         {/* Activity Feed */}
         <div
-          className={`p-6 md:p-8 rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-lg flex flex-col w-full h-full min-h-[400px] overflow-hidden ${theme.primaryHoverBorder} transition-all duration-500`}
+          className={`p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl flex flex-col w-full h-full min-h-[400px] overflow-hidden ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md hover:border-white/10`}
         >
           <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-3 shrink-0">
             <div
@@ -438,7 +438,7 @@ const StatCard = ({ title, value, icon: Icon, color, isTransport }) => {
 
   return (
     <div
-      className={`bg-[#09090B] border border-zinc-800/60 p-6 rounded-2xl ${hoverBorder} transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden shadow-sm ${hoverShadow}`}
+      className={`bg-white/[0.02] backdrop-blur-md border border-white/5 p-6 rounded-2xl ${hoverBorder} transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden shadow-2xl shadow-black/20 hover:bg-white/[0.04] ${hoverShadow}`}
     >
       <div className="flex justify-between items-start mb-4 relative z-10">
         <div className={`p-3.5 rounded-xl border ${theme}`}>
@@ -465,9 +465,7 @@ const ActivityItem = ({ data, isTransport }) => {
   let title = `Trip: ${data.vehicleNo}`;
   let desc = `${data.loadingPoint || ""} to ${data.unloadingSite || ""}`;
   let amount = data.totalAmount ? `₹${data.totalAmount}` : null;
-  let hoverBg = isTransport
-    ? "hover:bg-cyan-900/10 hover:border-cyan-900/30"
-    : "hover:bg-indigo-900/10 hover:border-indigo-900/30";
+  let hoverBg = "hover:bg-white/[0.04] hover:border-white/5";
 
   if (data.activityType === "Fuel") {
     Icon = Droplet;
