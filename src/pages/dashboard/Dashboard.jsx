@@ -336,8 +336,8 @@ const Dashboard = () => {
                   className="fixed inset-0 z-10"
                   onClick={() => setShowQuickMenu(false)}
                 ></div>
-                <div className="absolute right-0 mt-3 w-64 bg-[#09090B]/95 backdrop-blur-xl border border-zinc-800/80 rounded-2xl shadow-2xl p-2 z-20 animate-in fade-in zoom-in-95 duration-200 origin-top-right ring-1 ring-black/50">
-                  <div className="px-3 py-2 border-b border-zinc-800/60 mb-1">
+                <div className="absolute right-0 mt-3 w-64 bg-[#09090B]/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-2 z-20 animate-in fade-in zoom-in-95 duration-200 origin-top-right ring-1 ring-white/5">
+                  <div className="px-3 py-2 border-b border-white/10 mb-1">
                     <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-[0.2em]">
                       Create New Entry
                     </p>
@@ -345,7 +345,7 @@ const Dashboard = () => {
                   <div className="space-y-1 p-1">
                     <Link
                       to="/enterprise/sales"
-                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-zinc-800/50 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 transition-colors mr-3">
                         <ShoppingCart size={16} />
@@ -360,7 +360,7 @@ const Dashboard = () => {
                     </Link>
                     <Link
                       to="/enterprise/production"
-                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-zinc-800/50 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20 transition-colors mr-3">
                         <Factory size={16} />
@@ -370,12 +370,12 @@ const Dashboard = () => {
                       </span>
                       <ChevronRight
                         size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-zinc-400"
+                        className="opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all text-white"
                       />
                     </Link>
                     <Link
                       to="/enterprise/invoices/create"
-                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-zinc-800/50 transition-colors"
+                      className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 group-hover:bg-purple-500/20 transition-colors mr-3">
                         <FileText size={16} />
@@ -385,7 +385,7 @@ const Dashboard = () => {
                       </span>
                       <ChevronRight
                         size={14}
-                        className="opacity-0 group-hover:opacity-50 -translate-x-2 group-hover:translate-x-0 transition-all text-zinc-400"
+                        className="opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all text-white"
                       />
                     </Link>
                   </div>
@@ -441,7 +441,7 @@ const Dashboard = () => {
           {/* PRODUCTION CHART */}
           {/* ========================================== */}
           <div
-            className={`lg:col-span-2 p-6 md:p-8 rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-lg relative flex flex-col w-full h-[450px] overflow-hidden group ${theme.primaryHoverBorder} transition-all duration-500`}
+            className={`lg:col-span-2 p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl relative flex flex-col w-full h-[450px] overflow-hidden group ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md`}
           >
             <div
               className={`absolute -left-10 -top-10 w-40 h-40 blur-[80px] rounded-full transition-colors duration-700 pointer-events-none ${theme.glowOrb}`}
@@ -478,7 +478,7 @@ const Dashboard = () => {
           {/* ========================================== */}
           {/* RECENT ACTIVITY */}
           {/* ========================================== */}
-          <div className="p-6 md:p-8 rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-lg flex flex-col w-full h-[450px] overflow-hidden hover:border-zinc-700 transition-all duration-500">
+          <div className="p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl flex flex-col w-full h-[450px] overflow-hidden hover:border-white/10 transition-all duration-500 backdrop-blur-md">
             <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-3 shrink-0">
               <div className="p-2 rounded-lg bg-zinc-800/50">
                 <Activity size={18} className="text-zinc-300" />
@@ -510,7 +510,7 @@ const Dashboard = () => {
         {/* ========================================== */}
         {/* SALES CHART */}
         {/* ========================================== */}
-        <div className="w-full p-6 md:p-8 rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-lg relative flex flex-col h-[450px] overflow-hidden group hover:border-blue-500/30 transition-all duration-500">
+        <div className="w-full p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl relative flex flex-col h-[450px] overflow-hidden group hover:border-blue-500/30 transition-all duration-500 backdrop-blur-md">
           <div className="absolute -left-10 -top-10 w-40 h-40 bg-blue-500/5 blur-[80px] rounded-full group-hover:bg-blue-500/10 transition-colors duration-700 pointer-events-none" />
 
           <div className="flex justify-between items-center shrink-0 relative z-10 mb-6">
@@ -557,31 +557,31 @@ const StatCard = ({
         blue: "text-blue-400 bg-blue-500/10 border-blue-500/20",
         purple: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
         sky: "text-sky-400 bg-sky-500/10 border-sky-500/20",
-        zinc: "text-zinc-400 bg-zinc-800/50 border-zinc-700",
+        zinc: "text-zinc-400 bg-white/5 border-white/10",
       }
     : {
         indigo: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
         blue: "text-blue-400 bg-blue-500/10 border-blue-500/20",
         purple: "text-purple-400 bg-purple-500/10 border-purple-500/20",
         sky: "text-sky-400 bg-sky-500/10 border-sky-500/20",
-        zinc: "text-zinc-400 bg-zinc-800/50 border-zinc-700",
+        zinc: "text-zinc-400 bg-white/5 border-white/10",
       };
 
   const theme = colors[color] || colors.zinc;
   const hoverClass = isTransport
-    ? "hover:border-blue-500/30 hover:shadow-[0_8px_24px_-6px_rgba(59,130,246,0.15)]"
-    : "hover:border-indigo-500/30 hover:shadow-[0_8px_24px_-6px_rgba(99,102,241,0.15)]";
+    ? "hover:border-blue-500/30 hover:shadow-[0_8px_24px_-6px_rgba(59,130,246,0.15)] hover:bg-white/[0.04]"
+    : "hover:border-indigo-500/30 hover:shadow-[0_8px_24px_-6px_rgba(99,102,241,0.15)] hover:bg-white/[0.04]";
 
   return (
     <div
-      className={`bg-[#09090B] border border-zinc-800/60 p-6 rounded-2xl ${hoverClass} transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden shadow-sm`}
+      className={`bg-white/[0.02] backdrop-blur-md border border-white/5 p-6 rounded-2xl ${hoverClass} transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden shadow-2xl shadow-black/20`}
     >
       <div className="flex justify-between items-start mb-4 relative z-10">
         <div className={`p-3.5 rounded-xl border ${theme}`}>
           <Icon size={22} />
         </div>
         <span
-          className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border ${
+          className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border backdrop-blur-sm ${
             trendUp
               ? isTransport
                 ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
@@ -630,7 +630,7 @@ const ActivityItem = ({ data, isTransport }) => {
   }
 
   return (
-    <div className="flex items-start gap-4 p-3 rounded-xl hover:bg-zinc-800/40 transition-colors border border-transparent hover:border-zinc-700/50">
+    <div className="flex items-start gap-4 p-3 rounded-xl hover:bg-white/[0.04] transition-colors border border-transparent hover:border-white/5">
       <div className={`p-2 rounded-lg border shrink-0 ${colorTheme}`}>
         <Icon size={16} />
       </div>
