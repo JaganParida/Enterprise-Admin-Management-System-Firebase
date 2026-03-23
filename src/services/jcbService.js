@@ -9,22 +9,109 @@ import {
   deleteDoc,
   query,
   orderBy,
+  limit,
+  startAfter,
+  where,
+  getAggregateFromServer,
+  sum,
+  count,
 } from "firebase/firestore";
 import { signInWithEmailAndPassword } from "firebase/auth";
 
 const jcbCollection = collection(db, "jcb_logs");
 
 const jcbService = {
-  getLogs: async () => {
+  // 1. 🚀 SERVER-SIDE STATS CALCULATION
+  getStats: async () => {
     try {
-      const q = query(jcbCollection, orderBy("date", "desc"));
-      const snapshot = await getDocs(q);
+      const q = query(jcbCollection);
+      const snapshot = await getAggregateFromServer(q, {
+        totalMins: sum("totalMins"),
+        logCount: count(),
+      });
       return {
-        data: snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() })),
+        totalMins: snapshot.data().totalMins || 0,
+        logCount: snapshot.data().logCount || 0,
+      };
+    } catch (error) {
+      console.warn("Aggregation failed, falling back to client calc:", error);
+      const snap = await getDocs(query(jcbCollection));
+      let totalMins = 0;
+      snap.forEach((doc) => {
+        totalMins += Number(doc.data().totalMins) || 0;
+      });
+      return { totalMins, logCount: snap.size };
+    }
+  },
+
+  // 2 & 3. 🚀 PAGINATION & BACKEND FILTERING
+  getLogs: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
+    try {
+      let queryConstraints = [];
+
+      // Date Filtering
+      if (filters.exactDate) {
+        queryConstraints.push(where("date", ">=", filters.exactDate));
+        queryConstraints.push(
+          where("date", "<=", filters.exactDate + "\uf8ff"),
+        );
+      } else if (filters.dateFilter && filters.dateFilter !== "All") {
+        const today = new Date();
+        let targetDate = new Date();
+
+        if (filters.dateFilter === "Today")
+          targetDate.setDate(today.getDate() - 1);
+        if (filters.dateFilter === "Last7Days")
+          targetDate.setDate(today.getDate() - 7);
+        if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
+
+        queryConstraints.push(
+          where("date", ">=", targetDate.toISOString().split("T")[0]),
+        );
+      }
+
+      queryConstraints.push(orderBy("date", "desc"));
+      if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
+      queryConstraints.push(limit(pageSize));
+
+      const q = query(jcbCollection, ...queryConstraints);
+      const snapshot = await getDocs(q);
+
+      let fetchedData = snapshot.docs.map((doc) => ({
+        _id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Client-side fallback for Search & Vehicle (Due to Firebase multiple-inequality limits)
+      if (filters.search) {
+        const searchLower = filters.search.toLowerCase();
+        fetchedData = fetchedData.filter(
+          (log) =>
+            String(log.customerName || "")
+              .toLowerCase()
+              .includes(searchLower) ||
+            String(log.location || "")
+              .toLowerCase()
+              .includes(searchLower) ||
+            String(log.phone || "")
+              .toLowerCase()
+              .includes(searchLower),
+        );
+      }
+
+      if (filters.vehicleFilter && filters.vehicleFilter !== "All") {
+        fetchedData = fetchedData.filter(
+          (log) => log.vehicleNo === filters.vehicleFilter,
+        );
+      }
+
+      return {
+        data: fetchedData,
+        lastVisible: snapshot.docs[snapshot.docs.length - 1],
       };
     } catch (error) {
       console.error("Fetch Error:", error);
-      return { data: [] };
+      throw error;
     }
   },
 
@@ -71,22 +158,25 @@ const jcbService = {
     return { message: "Updated" };
   },
 
-  deleteLog: async (id) => {
+  // 4. 🚀 BACKEND SECURITY (RBAC)
+  deleteLog: async (id, user) => {
+    if (user?.role === "manager" || user?.data?.role === "manager") {
+      throw new Error("Action Denied: Managers cannot delete records.");
+    }
     await deleteDoc(doc(db, "jcb_logs", id));
     return { message: "Deleted" };
   },
 
-  // 🚀 SECURE WIPE DATABASE FEATURE - Strictly Verifies Admin Password
-  deleteAllLogs: async ({ password, email }) => {
-    if (!password) {
-      throw new Error("Password is required to wipe the database.");
+  // 4. 🚀 BACKEND SECURITY WIPE FEATURE
+  deleteAllLogs: async ({ password, email, user }) => {
+    if (user?.role === "manager" || user?.data?.role === "manager") {
+      throw new Error("Action Denied: Managers cannot wipe the database.");
     }
-    if (!email) {
-      throw new Error("Authentication Error: Unable to verify admin identity.");
+    if (!password || !email) {
+      throw new Error("Authentication Error: Missing credentials.");
     }
 
     try {
-      // Securely verifies password against current admin's email using Firebase Auth
       await signInWithEmailAndPassword(auth, email, password);
     } catch (error) {
       throw new Error("Access Denied: Incorrect Admin Password.");
@@ -101,7 +191,6 @@ const jcbService = {
       await Promise.all(deletePromises);
       return { success: true };
     } catch (error) {
-      console.error("Wipe Database Error:", error);
       throw new Error("Failed to clear database. Admin rights required.");
     }
   },
