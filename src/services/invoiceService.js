@@ -1,4 +1,4 @@
-import { db } from "../config/firebase";
+import { db, auth } from "../config/firebase";
 import {
   collection,
   addDoc,
@@ -9,12 +9,14 @@ import {
   deleteDoc,
   query,
   orderBy,
+  limit,
+  where,
+  startAfter,
 } from "firebase/firestore";
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const invCollection = collection(db, "invoices");
 
-// Helper function history maintain karne ke liye
 const getUpdatedHistory = async (id, user) => {
   const docRef = doc(db, "invoices", id);
   const snapshot = await getDoc(docRef);
@@ -40,17 +42,91 @@ const getUpdatedHistory = async (id, user) => {
 };
 
 const invoiceService = {
-  getAllInvoices: async () => {
-    const q = query(invCollection, orderBy("createdAt", "desc"));
-    const snapshot = await getDocs(q);
-    const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
-    return { data };
+  // 1. 🚀 PAGINATED & 100% BACKEND FILTERED FETCH
+  getAllInvoices: async (filters = {}, lastDoc = null) => {
+    let constraints = [];
+    let hasInequality = false;
+
+    // 1. EQUALITY FILTERS (Can mix with anything)
+    if (filters.status && filters.status !== "All") {
+      constraints.push(where("status", "==", filters.status));
+    }
+    if (filters.exactDate) {
+      constraints.push(where("date", "==", filters.exactDate));
+    }
+
+    // 2. INEQUALITY FILTERS (Firebase allows only ONE per query)
+
+    // Priority A: Search
+    if (filters.search) {
+      constraints.push(where("invoiceNumber", ">=", filters.search));
+      constraints.push(where("invoiceNumber", "<=", filters.search + "\uf8ff"));
+      constraints.push(orderBy("invoiceNumber"));
+      hasInequality = true;
+    }
+
+    // Priority B: Amount Filter
+    if (filters.amount && filters.amount !== "All" && !hasInequality) {
+      if (filters.amount === "Under10k") {
+        constraints.push(where("grandTotal", "<", 10000));
+      } else if (filters.amount === "10k-50k") {
+        constraints.push(
+          where("grandTotal", ">=", 10000),
+          where("grandTotal", "<=", 50000),
+        );
+      } else if (filters.amount === "Above50k") {
+        constraints.push(where("grandTotal", ">", 50000));
+      }
+      constraints.push(orderBy("grandTotal", "desc"));
+      hasInequality = true;
+    }
+
+    // Priority C: Date Range Filter
+    if (
+      filters.date &&
+      filters.date !== "All" &&
+      !filters.exactDate &&
+      !hasInequality
+    ) {
+      const today = new Date();
+      let pastDate = new Date();
+      if (filters.date === "Last7Days") pastDate.setDate(today.getDate() - 7);
+      else if (filters.date === "Last30Days")
+        pastDate.setDate(today.getDate() - 30);
+      else if (filters.date === "ThisMonth") pastDate.setDate(1);
+
+      const pastDateStr = pastDate.toISOString().split("T")[0];
+      constraints.push(where("date", ">=", pastDateStr));
+      constraints.push(orderBy("date", "desc"));
+      hasInequality = true;
+    }
+
+    // Fallback order if no range filters are applied
+    if (!hasInequality && !filters.exactDate) {
+      constraints.push(orderBy("createdAt", "desc"));
+    }
+
+    constraints.push(limit(50));
+
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+
+    try {
+      const q = query(invCollection, ...constraints);
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
+      const lastVisible = snapshot.docs[snapshot.docs.length - 1];
+
+      return { data, lastVisible };
+    } catch (error) {
+      console.error("🔥 Firebase Query Error:", error);
+      throw error;
+    }
   },
 
   createInvoice: async (invoiceData, user) => {
     try {
-      // Auto-generation logic removed.
-      // It now strictly uses the manual 'invoiceNumber' passed from frontend.
       const payload = {
         ...invoiceData,
         createdAt: new Date().toISOString(),
@@ -76,13 +152,11 @@ const invoiceService = {
     }
   },
 
-  // 🚀 NAYA: Poora Invoice Edit karne ke liye
   updateInvoice: async (id, invoiceData, user) => {
     const { currentEdit, currentHistory, docRef } = await getUpdatedHistory(
       id,
       user,
     );
-
     const payload = {
       ...invoiceData,
       lastEditedBy: currentEdit.by,
@@ -90,18 +164,15 @@ const invoiceService = {
       lastEditedAt: currentEdit.at,
       editHistory: currentHistory,
     };
-
     await updateDoc(docRef, payload);
     return { message: "Invoice updated successfully" };
   },
 
-  // 🚀 UPDATED: Status update bhi history mein record hoga!
   updateStatus: async (id, newStatus, user) => {
     const { currentEdit, currentHistory, docRef } = await getUpdatedHistory(
       id,
       user,
     );
-
     await updateDoc(docRef, {
       status: newStatus,
       lastEditedBy: currentEdit.by,
@@ -112,27 +183,38 @@ const invoiceService = {
     return { message: "Status updated" };
   },
 
-  deleteInvoice: async (id) => {
+  // 3. 🚀 SECURE DELETE (RBAC Check)
+  deleteInvoice: async (id, user) => {
+    const userRole = user?.data?.role || user?.role;
+    if (userRole === "manager") {
+      throw new Error("Action Denied: Managers cannot delete records.");
+    }
     const docRef = doc(db, "invoices", id);
     await deleteDoc(docRef);
     return { message: "Invoice deleted" };
   },
 
-  // 🛑 SECURE: Wipe Entire Database Method Added - Strictly Verifies Admin Password against Auth server
-  deleteAllInvoices: async ({ password, email }) => {
-    if (!password) {
-      throw new Error("Password is required to wipe the database.");
+  // 4. 🚀 SECURE WIPE ALL (Password Re-auth + RBAC Check)
+  deleteAllInvoices: async ({ password, email, user }) => {
+    const userRole = user?.data?.role || user?.role;
+    if (userRole === "manager") {
+      throw new Error("Action Denied: Only Admins can wipe the database.");
     }
-    if (!email) {
-      throw new Error("Authentication Error: Unable to verify admin identity.");
+    if (!password || !email) throw new Error("Authentication Error");
+
+    const currentUser = auth.currentUser;
+    if (!currentUser || currentUser.email !== email) {
+      throw new Error("Active session mismatch.");
     }
 
     try {
-      const auth = getAuth();
-      // Securely verifies password against current admin's email using Firebase Auth
-      await signInWithEmailAndPassword(auth, email, password);
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        password,
+      );
+      await reauthenticateWithCredential(currentUser, credential);
     } catch (error) {
-      throw new Error("Access Denied: Incorrect Admin Password.");
+      throw new Error("Incorrect Admin Password.");
     }
 
     try {
@@ -143,7 +225,6 @@ const invoiceService = {
       await Promise.all(deletePromises);
       return { message: "All invoices deleted successfully" };
     } catch (error) {
-      console.error("Wipe Database Error:", error);
       throw new Error("Failed to clear database. Admin rights required.");
     }
   },
