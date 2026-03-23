@@ -1,59 +1,121 @@
 import { db } from "../config/firebase";
-import { collection, getDocs } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  query,
+  orderBy,
+  limit,
+  getAggregateFromServer,
+  sum,
+  count,
+} from "firebase/firestore";
 
 const transportDashboardService = {
   getStats: async () => {
     try {
-      // 1. Fetch Transport Data
-      const tripsSnap = await getDocs(collection(db, "trips"));
-      const fuelSnap = await getDocs(collection(db, "fuels"));
-      const maintSnap = await getDocs(collection(db, "maintenances"));
-      const jcbSnap = await getDocs(collection(db, "jcb_logs"));
-
       let totalDistance = 0,
-        totalTrips = tripsSnap.size;
-      let totalFuelCost = 0,
+        totalTrips = 0,
+        totalFuelCost = 0,
         totalMaintenanceCost = 0;
+
+      // 1. 🚀 SERVER-SIDE AGGREGATION (Golden Rule #1)
+      // This prevents downloading 1 lakh records to the frontend just to count them!
+      try {
+        const [tripAgg, fuelAgg, maintAgg] = await Promise.all([
+          getAggregateFromServer(query(collection(db, "trips")), {
+            dist: sum("distanceTravelled"),
+            trips: count(),
+          }),
+          getAggregateFromServer(query(collection(db, "fuels")), {
+            cost: sum("totalCost"),
+          }),
+          getAggregateFromServer(query(collection(db, "maintenances")), {
+            cost: sum("cost"),
+          }),
+        ]);
+
+        totalDistance = tripAgg.data().dist || 0;
+        totalTrips = tripAgg.data().trips || 0;
+        totalFuelCost = fuelAgg.data().cost || 0;
+        totalMaintenanceCost = maintAgg.data().cost || 0;
+      } catch (aggError) {
+        console.warn(
+          "Aggregation failed (Missing Index or older Firebase). Using fallback.",
+          aggError,
+        );
+        // Fallback execution if Indexes are not fully deployed yet
+        const [tripsSnap, fuelSnap, maintSnap] = await Promise.all([
+          getDocs(collection(db, "trips")),
+          getDocs(collection(db, "fuels")),
+          getDocs(collection(db, "maintenances")),
+        ]);
+        totalTrips = tripsSnap.size;
+        tripsSnap.forEach(
+          (doc) => (totalDistance += Number(doc.data().distanceTravelled) || 0),
+        );
+        fuelSnap.forEach(
+          (doc) => (totalFuelCost += Number(doc.data().totalCost) || 0),
+        );
+        maintSnap.forEach(
+          (doc) => (totalMaintenanceCost += Number(doc.data().cost) || 0),
+        );
+      }
+
+      // 2. 🚀 OPTIMIZED RECENT ACTIVITY FETCH (Golden Rule #2)
+      // Instead of downloading the whole DB, we only ask for the TOP 10 latest records from each!
+      const [tripsRecent, fuelRecent, maintRecent, jcbRecent] =
+        await Promise.all([
+          getDocs(
+            query(collection(db, "trips"), orderBy("date", "desc"), limit(10)),
+          ),
+          getDocs(
+            query(collection(db, "fuels"), orderBy("date", "desc"), limit(10)),
+          ),
+          getDocs(
+            query(
+              collection(db, "maintenances"),
+              orderBy("date", "desc"),
+              limit(10),
+            ),
+          ),
+          getDocs(
+            query(
+              collection(db, "jcb_logs"),
+              orderBy("date", "desc"),
+              limit(10),
+            ),
+          ),
+        ]);
+
       let activities = [];
 
-      // 2. Process Trips
-      tripsSnap.forEach((doc) => {
-        const d = doc.data();
-        totalDistance += Number(d.distanceTravelled) || 0;
-        activities.push({ ...d, activityType: "Trip", id: doc.id });
-      });
+      tripsRecent.forEach((doc) =>
+        activities.push({ ...doc.data(), activityType: "Trip", _id: doc.id }),
+      );
+      fuelRecent.forEach((doc) =>
+        activities.push({ ...doc.data(), activityType: "Fuel", _id: doc.id }),
+      );
+      maintRecent.forEach((doc) =>
+        activities.push({
+          ...doc.data(),
+          activityType: "Maintenance",
+          _id: doc.id,
+        }),
+      );
+      jcbRecent.forEach((doc) =>
+        activities.push({ ...doc.data(), activityType: "JCB", _id: doc.id }),
+      );
 
-      // 3. Process Fuel
-      fuelSnap.forEach((doc) => {
-        const d = doc.data();
-        totalFuelCost += Number(d.totalCost) || 0;
-        activities.push({ ...d, activityType: "Fuel", id: doc.id });
-      });
-
-      // 4. Process Maintenance
-      maintSnap.forEach((doc) => {
-        const d = doc.data();
-        totalMaintenanceCost += Number(d.cost) || 0;
-        activities.push({ ...d, activityType: "Maintenance", id: doc.id });
-      });
-
-      // 5. Process JCB
-      jcbSnap.forEach((doc) => {
-        const d = doc.data();
-        activities.push({ ...d, activityType: "JCB", id: doc.id });
-      });
-
-      // 6. 🚀 Sort all activities by EXACT creation time (Newest first)
+      // 3. Sort the combined top 40 records by EXACT creation time or date (Newest first)
       activities.sort((a, b) => {
-        const dateA = new Date(a.createdAt || a.date || 0);
-        const dateB = new Date(b.createdAt || b.date || 0);
+        const dateA = new Date(a.createdAt || a.date || 0).getTime();
+        const dateB = new Date(b.createdAt || b.date || 0).getTime();
         return dateB - dateA;
       });
 
-      // 7. Slice to exactly Top 10
+      // 4. Slice to exactly Top 10 for the UI
       const recentActivity = activities.slice(0, 10);
 
-      // 8. Return format matched to UI
       return {
         data: {
           cards: {
