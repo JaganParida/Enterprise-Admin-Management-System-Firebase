@@ -9,19 +9,193 @@ import {
   deleteDoc,
   query,
   orderBy,
+  limit,
+  startAfter,
+  where,
+  getAggregateFromServer,
+  sum,
+  count,
 } from "firebase/firestore";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const tripCollection = collection(db, "trips");
-const expenseCollection = collection(db, "expenses"); // Added Expense Collection
+const expenseCollection = collection(db, "expenses");
 
 const vehicleService = {
-  // ================= TRIP LOGS =================
-  getLogs: async () => {
-    const q = query(tripCollection, orderBy("date", "desc"));
+  // 1. 🚀 SERVER-SIDE STATS CALCULATION
+  getStats: async () => {
+    try {
+      const [tripSnap, expSnap] = await Promise.all([
+        getAggregateFromServer(query(tripCollection), {
+          totalAmount: sum("totalAmount"),
+          amountPaid: sum("amountPaid"),
+          amountDue: sum("amountDue"),
+          tripsCount: count(),
+        }),
+        getAggregateFromServer(query(expenseCollection), {
+          totalAmount: sum("amount"),
+          expensesCount: count(),
+        }),
+      ]);
+
+      return {
+        trips: {
+          total: tripSnap.data().totalAmount || 0,
+          paid: tripSnap.data().amountPaid || 0,
+          due: tripSnap.data().amountDue || 0,
+          count: tripSnap.data().tripsCount || 0,
+        },
+        expenses: {
+          total: expSnap.data().totalAmount || 0,
+          count: expSnap.data().expensesCount || 0,
+        },
+      };
+    } catch (error) {
+      console.warn("Aggregation failed, falling back to client calc:", error);
+      // Fallback
+      const [tripDocs, expDocs] = await Promise.all([
+        getDocs(query(tripCollection)),
+        getDocs(query(expenseCollection)),
+      ]);
+      let trips = { total: 0, paid: 0, due: 0, count: tripDocs.size };
+      let expenses = { total: 0, count: expDocs.size };
+
+      tripDocs.forEach((doc) => {
+        trips.total += Number(doc.data().totalAmount) || 0;
+        trips.paid += Number(doc.data().amountPaid) || 0;
+        trips.due += Number(doc.data().amountDue) || 0;
+      });
+      expDocs.forEach((doc) => {
+        expenses.total += Number(doc.data().amount) || 0;
+      });
+      return { trips, expenses };
+    }
+  },
+
+  // 2 & 3. 🚀 PAGINATION & BACKEND FILTERING (TRIPS)
+  getLogs: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
+    let queryConstraints = [];
+
+    if (filters.exactDate) {
+      queryConstraints.push(where("date", ">=", filters.exactDate));
+      queryConstraints.push(where("date", "<=", filters.exactDate + "\uf8ff"));
+    } else if (filters.dateFilter && filters.dateFilter !== "All") {
+      const today = new Date();
+      let targetDate = new Date();
+      if (filters.dateFilter === "Today")
+        targetDate.setDate(today.getDate() - 1);
+      if (filters.dateFilter === "Last7Days")
+        targetDate.setDate(today.getDate() - 7);
+      if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
+      queryConstraints.push(
+        where("date", ">=", targetDate.toISOString().split("T")[0]),
+      );
+    }
+
+    queryConstraints.push(orderBy("date", "desc"));
+    if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
+    queryConstraints.push(limit(pageSize));
+
+    const q = query(tripCollection, ...queryConstraints);
     const snapshot = await getDocs(q);
+
+    let fetchedData = snapshot.docs.map((doc) => ({
+      _id: doc.id,
+      ...doc.data(),
+    }));
+
+    // Client-side fallback for Search & Amounts
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      fetchedData = fetchedData.filter(
+        (item) =>
+          String(item.vehicleNo || "")
+            .toLowerCase()
+            .includes(searchLower) ||
+          String(item.driverName || "")
+            .toLowerCase()
+            .includes(searchLower) ||
+          String(item.loadingPoint || "")
+            .toLowerCase()
+            .includes(searchLower) ||
+          String(item.unloadingSite || "")
+            .toLowerCase()
+            .includes(searchLower),
+      );
+    }
+
+    if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
+      fetchedData = fetchedData.filter((item) => {
+        const amt = Number(item.totalAmount) || 0;
+        if (filters.amountFilter === "Under ₹10k") return amt < 10000;
+        if (filters.amountFilter === "₹10k - ₹50k")
+          return amt >= 10000 && amt <= 50000;
+        if (filters.amountFilter === "Over ₹50k") return amt > 50000;
+        return true;
+      });
+    }
+
     return {
-      data: snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() })),
+      data: fetchedData,
+      lastVisible: snapshot.docs[snapshot.docs.length - 1],
+    };
+  },
+
+  // 2 & 3. 🚀 PAGINATION & BACKEND FILTERING (EXPENSES)
+  getExpenses: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
+    let queryConstraints = [];
+
+    if (filters.exactDate) {
+      queryConstraints.push(where("date", ">=", filters.exactDate));
+      queryConstraints.push(where("date", "<=", filters.exactDate + "\uf8ff"));
+    } else if (filters.dateFilter && filters.dateFilter !== "All") {
+      const today = new Date();
+      let targetDate = new Date();
+      if (filters.dateFilter === "Today")
+        targetDate.setDate(today.getDate() - 1);
+      if (filters.dateFilter === "Last7Days")
+        targetDate.setDate(today.getDate() - 7);
+      if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
+      queryConstraints.push(
+        where("date", ">=", targetDate.toISOString().split("T")[0]),
+      );
+    }
+
+    queryConstraints.push(orderBy("date", "desc"));
+    if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
+    queryConstraints.push(limit(pageSize));
+
+    const q = query(expenseCollection, ...queryConstraints);
+    const snapshot = await getDocs(q);
+
+    let fetchedData = snapshot.docs.map((doc) => ({
+      _id: doc.id,
+      ...doc.data(),
+    }));
+
+    // Client-side fallback for Search & Amounts
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      fetchedData = fetchedData.filter((item) =>
+        String(item.reason || "")
+          .toLowerCase()
+          .includes(searchLower),
+      );
+    }
+    if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
+      fetchedData = fetchedData.filter((item) => {
+        const amt = Number(item.amount) || 0;
+        if (filters.amountFilter === "Under ₹10k") return amt < 10000;
+        if (filters.amountFilter === "₹10k - ₹50k")
+          return amt >= 10000 && amt <= 50000;
+        if (filters.amountFilter === "Over ₹50k") return amt > 50000;
+        return true;
+      });
+    }
+
+    return {
+      data: fetchedData,
+      lastVisible: snapshot.docs[snapshot.docs.length - 1],
     };
   },
 
@@ -44,8 +218,8 @@ const vehicleService = {
       rate: rate,
       foodCharge: food,
       amountPaid: paid,
-      totalAmount: totalAmount,
-      amountDue: amountDue,
+      totalAmount,
+      amountDue,
       distanceTravelled: distance,
       createdAt: new Date().toISOString(),
       createdBy: user?.email || "Unknown",
@@ -89,8 +263,8 @@ const vehicleService = {
       rate: rate,
       foodCharge: food,
       amountPaid: paid,
-      totalAmount: totalAmount,
-      amountDue: amountDue,
+      totalAmount,
+      amountDue,
       distanceTravelled: distance,
       lastEditedRole: currentEdit.role,
       lastEditedAt: currentEdit.at,
@@ -100,20 +274,6 @@ const vehicleService = {
     return { message: "Updated" };
   },
 
-  deleteLog: async (id) => {
-    await deleteDoc(doc(db, "trips", id));
-    return { message: "Deleted" };
-  },
-
-  // ================= EXPENSES =================
-  getExpenses: async () => {
-    const q = query(expenseCollection, orderBy("date", "desc"));
-    const snapshot = await getDocs(q);
-    return {
-      data: snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() })),
-    };
-  },
-
   addExpense: async (payload, user) => {
     const dataToSave = {
       ...payload,
@@ -121,7 +281,7 @@ const vehicleService = {
       createdAt: new Date().toISOString(),
       createdBy: user?.email || "Unknown",
       createdRole: user?.role || "Admin",
-      editHistory: [], // ADDED HISTORY ARRAY
+      editHistory: [],
     };
     const docRef = await addDoc(expenseCollection, dataToSave);
     return { data: { _id: docRef.id, ...dataToSave } };
@@ -140,35 +300,42 @@ const vehicleService = {
       role: user?.role || "Admin",
       at: new Date().toISOString(),
     };
-    currentHistory.push(currentEdit); // ADDED HISTORY PUSH
+    currentHistory.push(currentEdit);
 
     const dataToUpdate = {
       ...payload,
       amount: Number(payload.amount) || 0,
       lastEditedBy: currentEdit.by,
       lastEditedAt: currentEdit.at,
-      editHistory: currentHistory.slice(-10), // KEEPS LAST 10 EDITS
+      editHistory: currentHistory.slice(-10),
     };
     await updateDoc(docRef, dataToUpdate);
     return { message: "Updated" };
   },
 
-  deleteExpense: async (id) => {
+  // 4. 🚀 BACKEND SECURITY (RBAC)
+  deleteLog: async (id, user) => {
+    if (user?.role === "manager" || user?.data?.role === "manager")
+      throw new Error("Action Denied: Managers cannot delete records.");
+    await deleteDoc(doc(db, "trips", id));
+    return { message: "Deleted" };
+  },
+
+  deleteExpense: async (id, user) => {
+    if (user?.role === "manager" || user?.data?.role === "manager")
+      throw new Error("Action Denied: Managers cannot delete records.");
     await deleteDoc(doc(db, "expenses", id));
     return { message: "Deleted" };
   },
 
-  // ================= ADMIN SECURE WIPE =================
-  deleteAllLogs: async ({ password, type = "trips", email }) => {
-    if (!password) {
-      throw new Error("Password is required to wipe the database.");
-    }
-    if (!email) {
-      throw new Error("Authentication Error: Unable to verify admin identity.");
-    }
+  // 4. 🚀 BACKEND SECURITY WIPE FEATURE
+  deleteAllLogs: async ({ password, type = "trips", email, user }) => {
+    if (user?.role === "manager" || user?.data?.role === "manager")
+      throw new Error("Action Denied: Managers cannot wipe the database.");
+    if (!password || !email)
+      throw new Error("Authentication Error: Missing credentials.");
 
     try {
-      // Securely verifies password against current admin's email using Firebase Auth
       await signInWithEmailAndPassword(auth, email, password);
     } catch (error) {
       throw new Error("Access Denied: Incorrect Admin Password.");
@@ -189,7 +356,6 @@ const vehicleService = {
       await Promise.all(deletePromises);
       return { success: true };
     } catch (error) {
-      console.error("Wipe Database Error:", error);
       throw new Error("Failed to clear database. Admin rights required.");
     }
   },
