@@ -34,6 +34,17 @@ import {
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
+import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { db } from "../../config/firebase";
+
+// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
+const getPreviousMonthString = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
 
 const VehicleReport = () => {
   const { toast } = useUI();
@@ -45,6 +56,18 @@ const VehicleReport = () => {
   const [logs, setLogs] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // 🚀 Pagination States
+  const [lastDocTrip, setLastDocTrip] = useState(null);
+  const [hasMoreTrip, setHasMoreTrip] = useState(false);
+  const [lastDocExp, setLastDocExp] = useState(null);
+  const [hasMoreExp, setHasMoreExp] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // 🚀 Highlight Animation State
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
 
   // 🔥 THEME HOOK
   const currentPath =
@@ -64,6 +87,10 @@ const VehicleReport = () => {
       ? "bg-[#0ea5e9] text-white shadow-lg shadow-[#0ea5e9]/20"
       : "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20",
     glowOrb: isTransport ? "bg-[#0ea5e9]/5" : "bg-indigo-500/5",
+    iconColor: isTransport ? "text-[#38bdf8]" : "text-indigo-400",
+    gradientBtn: isTransport
+      ? "bg-[#0ea5e9] hover:bg-[#0284c7] text-white"
+      : "bg-indigo-600 hover:bg-indigo-500 text-white",
   };
 
   const [deleteModal, setDeleteModal] = useState({
@@ -72,14 +99,12 @@ const VehicleReport = () => {
     type: null,
   });
   const [warningTooltip, setWarningTooltip] = useState(null);
-
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
     data: null,
     itemName: "",
   });
 
-  // Wipe Data States
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -92,27 +117,109 @@ const VehicleReport = () => {
     exactDate: "",
   });
 
+  // 🚀 SMART BACKUP STATES
+  const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
+
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  const fetchData = async () => {
+  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
+  useEffect(() => {
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonthString();
+      const storageKey = `backup_${activeTab}_${prevMonth}`;
+
+      // Agar local storage me backup verified nahi hai for the current tab
+      if (!localStorage.getItem(storageKey)) {
+        try {
+          const collectionName = activeTab === "trips" ? "trips" : "expenses";
+
+          // Database me check karo ki kya pichle mahine ka koi data hai (using prefix string match hack on date string)
+          const q = query(
+            collection(db, collectionName),
+            where("date", ">=", prevMonth),
+            where("date", "<=", prevMonth + "\uf8ff"),
+            limit(1),
+          );
+          const snap = await getDocs(q);
+
+          // Agar data hai, toh hi warning dikhao
+          if (!snap.empty) {
+            setShowBackupWarning(prevMonth);
+          } else {
+            setShowBackupWarning(null); // Clear warning if no data
+          }
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
+      } else {
+        setShowBackupWarning(null);
+      }
+    };
+
+    checkBackupNeeded();
+  }, [activeTab]);
+
+  // 🚀 Scroll & Highlight Effect
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element)
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 500);
+      const timer = setTimeout(() => setActiveHighlight(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
+
+  // 🚀 Fetch Logic with Pagination
+  const fetchLogs = async (isLoadMore = false) => {
+    if (isLoadMore) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const [tripRes, expRes] = await Promise.all([
-        vehicleService.getLogs(),
-        vehicleService.getExpenses(),
-      ]);
-      setLogs(tripRes.data || []);
-      setExpenses(expRes.data || []);
+      if (activeTab === "trips") {
+        const tripRes = await vehicleService.getLogs(
+          filters,
+          isLoadMore ? lastDocTrip : null,
+        );
+        if (isLoadMore) setLogs((prev) => [...prev, ...(tripRes.data || [])]);
+        else setLogs(tripRes.data || []);
+        setLastDocTrip(tripRes.lastVisible || null);
+        setHasMoreTrip(tripRes.data && tripRes.data.length === 50);
+      } else {
+        const expRes = await vehicleService.getExpenses(
+          filters,
+          isLoadMore ? lastDocExp : null,
+        );
+        if (isLoadMore)
+          setExpenses((prev) => [...prev, ...(expRes.data || [])]);
+        else setExpenses(expRes.data || []);
+        setLastDocExp(expRes.lastVisible || null);
+        setHasMoreExp(expRes.data && expRes.data.length === 50);
+      }
     } catch (error) {
-      toast.error("Failed to load report data.");
+      if (error.message && error.message.toLowerCase().includes("index")) {
+        toast.error("Firebase Index required! Check browser console.");
+      } else {
+        toast.error("Failed to load report data.");
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
+  // Trigger Fetch on Filter or Tab Change
   useEffect(() => {
-    fetchData();
-  }, []);
+    const delayDebounceFn = setTimeout(() => {
+      fetchLogs(false);
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [filters, activeTab]);
 
   const handleDisabledClick = (action) => {
     setWarningTooltip(action);
@@ -122,16 +229,17 @@ const VehicleReport = () => {
   const executeDelete = async () => {
     if (!deleteModal.id) return;
     try {
+      const currentUser = admin?.data || admin || {};
       if (deleteModal.type === "trips") {
-        await vehicleService.deleteLog(deleteModal.id);
+        await vehicleService.deleteLog(deleteModal.id, currentUser);
         toast.success("Trip record deleted.");
       } else {
-        await vehicleService.deleteExpense(deleteModal.id);
+        await vehicleService.deleteExpense(deleteModal.id, currentUser);
         toast.success("Expense deleted.");
       }
-      fetchData();
+      fetchLogs(false);
     } catch (error) {
-      toast.error("Failed to delete record");
+      toast.error(error.message || "Failed to delete record");
     } finally {
       setDeleteModal({ isOpen: false, id: null, type: null });
     }
@@ -148,66 +256,17 @@ const VehicleReport = () => {
     });
   };
 
+  const activeFiltersCount =
+    [filters.amountFilter, filters.dateFilter].filter(
+      (f) => f !== "All" && f !== "Any Amount",
+    ).length + (filters.exactDate ? 1 : 0);
+
+  // Use state data directly since backend filtering is applied
   const currentDataList = activeTab === "trips" ? logs : expenses;
-
-  const filteredData = useMemo(() => {
-    return currentDataList.filter((item) => {
-      const itemDateObj = item.date ? new Date(item.date) : new Date();
-      const searchTerm = String(filters.search || "").toLowerCase();
-
-      let matchSearch = false;
-      if (activeTab === "trips") {
-        matchSearch =
-          String(item.vehicleNo || "")
-            .toLowerCase()
-            .includes(searchTerm) ||
-          String(item.driverName || "")
-            .toLowerCase()
-            .includes(searchTerm) ||
-          String(item.loadingPoint || "")
-            .toLowerCase()
-            .includes(searchTerm) ||
-          String(item.unloadingSite || "")
-            .toLowerCase()
-            .includes(searchTerm);
-      } else {
-        matchSearch = String(item.reason || "")
-          .toLowerCase()
-          .includes(searchTerm);
-      }
-
-      let matchAmount = true;
-      const amt =
-        activeTab === "trips"
-          ? Number(item.totalAmount) || 0
-          : Number(item.amount) || 0;
-      if (filters.amountFilter === "Under ₹10k") matchAmount = amt < 10000;
-      else if (filters.amountFilter === "₹10k - ₹50k")
-        matchAmount = amt >= 10000 && amt <= 50000;
-      else if (filters.amountFilter === "Over ₹50k") matchAmount = amt > 50000;
-
-      let matchDate = true;
-      if (filters.exactDate && item.date) {
-        matchDate = item.date.startsWith(filters.exactDate);
-      } else if (filters.dateFilter !== "All" && item.date) {
-        const today = new Date();
-        const diffTime = Math.abs(today - itemDateObj);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        if (filters.dateFilter === "Today") matchDate = diffDays <= 1;
-        else if (filters.dateFilter === "Last7Days") matchDate = diffDays <= 7;
-        else if (filters.dateFilter === "ThisMonth")
-          matchDate =
-            itemDateObj.getMonth() === today.getMonth() &&
-            itemDateObj.getFullYear() === today.getFullYear();
-      }
-
-      return matchSearch && matchAmount && matchDate;
-    });
-  }, [currentDataList, filters, activeTab]);
 
   const summary = useMemo(() => {
     if (activeTab === "trips") {
-      return filteredData.reduce(
+      return currentDataList.reduce(
         (acc, curr) => {
           acc.trips += 1;
           acc.total += Number(curr.totalAmount) || 0;
@@ -218,7 +277,7 @@ const VehicleReport = () => {
         { trips: 0, total: 0, paid: 0, due: 0 },
       );
     } else {
-      return filteredData.reduce(
+      return currentDataList.reduce(
         (acc, curr) => {
           acc.count += 1;
           acc.total += Number(curr.amount) || 0;
@@ -227,17 +286,27 @@ const VehicleReport = () => {
         { count: 0, total: 0 },
       );
     }
-  }, [filteredData, activeTab]);
+  }, [currentDataList, activeTab]);
 
-  const activeFiltersCount =
-    [filters.amountFilter, filters.dateFilter].filter(
-      (f) => f !== "All" && f !== "Any Amount",
-    ).length + (filters.exactDate ? 1 : 0);
-
-  const handleExport = () => {
+  // 🚀 FIXED: 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
+  const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
-      if (filteredData.length === 0) return toast.info("No records to export");
-      let csvContent = "";
+      if (!monthToFetch) return toast.error("Please select a month to backup.");
+      toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
+
+      const collectionName = activeTab === "trips" ? "trips" : "expenses";
+      const q = query(
+        collection(db, collectionName),
+        where("date", ">=", monthToFetch),
+        where("date", "<=", monthToFetch + "\uf8ff"),
+      );
+      const snapshot = await getDocs(q);
+      const allData = snapshot.docs.map((doc) => doc.data());
+
+      if (allData.length === 0)
+        return toast.info(`No records found for ${monthToFetch}.`);
+
+      let csvContent = "\uFEFF"; // UTF-8 BOM
 
       if (activeTab === "trips") {
         const headers = [
@@ -255,22 +324,22 @@ const VehicleReport = () => {
           "Paid",
           "Due",
         ];
-        const rows = filteredData.map((log) => {
+        const rows = allData.map((log) => {
           let dateStr = log.date
             ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
             : "-";
           return `${dateStr},"${log.vehicleNo}","${log.driverName}","${log.loadingPoint}","${log.unloadingSite}",${log.distanceTravelled || 0},"${log.items}",${log.quantity},${log.rate},${log.foodCharge},${log.totalAmount},${log.amountPaid},${log.amountDue}`;
         });
-        csvContent = [headers.join(","), ...rows].join("\n");
+        csvContent += [headers.join(","), ...rows].join("\n");
       } else {
         const headers = ["Date", "Reason", "Amount"];
-        const rows = filteredData.map((exp) => {
+        const rows = allData.map((exp) => {
           let dateStr = exp.date
             ? `\t${new Date(exp.date).toLocaleDateString("en-GB")}`
             : "-";
           return `${dateStr},"${exp.reason}",${exp.amount}`;
         });
-        csvContent = [headers.join(","), ...rows].join("\n");
+        csvContent += [headers.join(","), ...rows].join("\n");
       }
 
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -278,12 +347,78 @@ const VehicleReport = () => {
       link.href = URL.createObjectURL(blob);
       link.setAttribute(
         "download",
-        `${activeTab === "trips" ? "Trip_Report" : "Expense_Report"}_${new Date().toISOString().split("T")[0]}.csv`,
+        `Full_Backup_${activeTab === "trips" ? "Trips" : "Expenses"}_${monthToFetch}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Exported successfully");
+
+      toast.success(`Backup for ${monthToFetch} downloaded securely!`);
+
+      // 🚀 Instantly removes the warning after successful backup
+      const storageKey = `backup_${activeTab}_${monthToFetch}`;
+      localStorage.setItem(storageKey, "true");
+      if (showBackupWarning === monthToFetch) {
+        setShowBackupWarning(null);
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to generate backup.");
+    }
+  };
+
+  // 🚀 ONLY EXPORTS VISIBLE DATA (Maximum 50 or what is loaded in table)
+  const handleExport = () => {
+    try {
+      if (currentDataList.length === 0)
+        return toast.info("No records to export");
+      let csvContent = "\uFEFF"; // UTF-8 BOM
+
+      if (activeTab === "trips") {
+        const headers = [
+          "Date",
+          "Vehicle No",
+          "Driver",
+          "Loading Point",
+          "Unloading Site",
+          "Distance (km)",
+          "Item",
+          "Quantity",
+          "Rate",
+          "Food Charge",
+          "Total Amount",
+          "Paid",
+          "Due",
+        ];
+        const rows = currentDataList.map((log) => {
+          let dateStr = log.date
+            ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
+            : "-";
+          return `${dateStr},"${log.vehicleNo}","${log.driverName}","${log.loadingPoint}","${log.unloadingSite}",${log.distanceTravelled || 0},"${log.items}",${log.quantity},${log.rate},${log.foodCharge},${log.totalAmount},${log.amountPaid},${log.amountDue}`;
+        });
+        csvContent += [headers.join(","), ...rows].join("\n");
+      } else {
+        const headers = ["Date", "Reason", "Amount"];
+        const rows = currentDataList.map((exp) => {
+          let dateStr = exp.date
+            ? `\t${new Date(exp.date).toLocaleDateString("en-GB")}`
+            : "-";
+          return `${dateStr},"${exp.reason}",${exp.amount}`;
+        });
+        csvContent += [headers.join(","), ...rows].join("\n");
+      }
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute(
+        "download",
+        `View_Report_${activeTab === "trips" ? "Trip" : "Expense"}_${new Date().toISOString().split("T")[0]}.csv`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Visible records exported successfully");
     } catch (error) {
       toast.error("Export failed");
     }
@@ -294,11 +429,12 @@ const VehicleReport = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      const adminEmail = admin?.data?.email || admin?.email;
+      const currentUser = admin?.data || admin || {};
       await vehicleService.deleteAllLogs({
         password: deletePassword,
-        email: adminEmail,
+        email: currentUser.email,
         type: activeTab,
+        user: currentUser,
       });
       toast.success(
         `${activeTab === "trips" ? "Trip" : "Expense"} database cleared.`,
@@ -306,20 +442,13 @@ const VehicleReport = () => {
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchData();
+      fetchLogs(false);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
       setWiping(false);
     }
   };
-
-  if (loading)
-    return (
-      <div className="flex justify-center items-center h-64">
-        <Loader />
-      </div>
-    );
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
@@ -383,10 +512,7 @@ const VehicleReport = () => {
                 variant="module"
                 onClick={() =>
                   isManager
-                    ? (() => {
-                        setWarningTooltip("wipe-all");
-                        setTimeout(() => setWarningTooltip(null), 2500);
-                      })()
+                    ? handleDisabledClick("wipe-all")
                     : setIsDeleteAllOpen(true)
                 }
                 className={`h-full flex items-center justify-center gap-2 px-4 rounded-xl transition-all text-xs font-bold border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${isManager ? "opacity-50 !cursor-not-allowed" : ""}`}
@@ -413,6 +539,40 @@ const VehicleReport = () => {
           </div>
         </div>
       </div>
+
+      {/* 🚀 SMART BACKUP WARNING */}
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the{" "}
+                {activeTab === "trips" ? "trip logs" : "expenses"} backup for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
 
       {/* STATS CARDS */}
       <div
@@ -501,7 +661,13 @@ const VehicleReport = () => {
       <div
         className={`bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/30"}`}
       >
-        {/* TABS & SEARCH BAR */}
+        {loading && !loadingMore && (
+          <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm rounded-3xl">
+            <Loader />
+          </div>
+        )}
+
+        {/* SEARCH & EXPORT BAR */}
         <div
           className={`p-5 border-b flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5 rounded-t-3xl ${activeTab === "trips" ? "border-zinc-800/60 bg-zinc-900/10" : "border-rose-900/20 bg-rose-950/10"}`}
         >
@@ -527,13 +693,13 @@ const VehicleReport = () => {
           <Button
             variant="outline"
             onClick={handleExport}
-            className={`gap-2 text-xs font-bold tracking-widest border h-11 px-4 rounded-xl bg-[#09090B] transition-colors flex items-center ${activeTab === "trips" ? "border-zinc-800 hover:bg-zinc-800/50 text-zinc-300" : "border-rose-900/40 hover:bg-rose-900/20 text-rose-400"}`}
+            className={`gap-2 text-xs font-bold tracking-widest border h-11 px-4 rounded-xl bg-[#09090B] transition-colors flex items-center w-full sm:w-auto justify-center ${activeTab === "trips" ? "border-zinc-800 hover:bg-zinc-800/50 text-zinc-300" : "border-rose-900/40 hover:bg-rose-900/20 text-rose-400"}`}
           >
             <Download size={16} /> Export View
           </Button>
         </div>
 
-        {/* 🚀 PROFESSIONAL UNIVERSAL FILTRATION UI */}
+        {/* PROFESSIONAL UNIVERSAL FILTRATION UI */}
         <div
           className={`p-4 border-b bg-[#09090B] flex flex-wrap items-center gap-4 relative z-20 ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/20"}`}
         >
@@ -645,7 +811,7 @@ const VehicleReport = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {filteredData.map((log) => {
+                {currentDataList.map((log) => {
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
                   const latestLog = hasEdits
@@ -655,21 +821,27 @@ const VehicleReport = () => {
                   return (
                     <tr
                       key={log._id}
-                      className="hover:bg-zinc-800/30 transition-colors group"
+                      id={log._id}
+                      className={`transition-all duration-1000 ease-out group border-l-4 ${
+                        activeHighlight === log._id
+                          ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                          : "border-transparent hover:bg-zinc-800/30"
+                      }`}
                     >
-                      <td className="p-5 px-6 align-top">
-                        <div className="font-mono text-zinc-400 text-xs mb-1">
+                      <td className="p-4 align-top">
+                        <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
                           {log.date
                             ? new Date(log.date).toLocaleDateString("en-GB")
                             : "-"}
-                        </div>
-                        <div className="text-white font-bold text-md tracking-wider mb-1 uppercase">
+                        </p>
+                        <p className="font-bold text-white text-md uppercase tracking-wider flex items-center gap-2">
+                          <Truck size={14} className="text-zinc-500" />{" "}
                           {log.vehicleNo}
-                        </div>
-                        <div className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                        </p>
+                        <p className="text-[11px] text-zinc-500 mt-1.5 uppercase tracking-widest font-semibold flex items-center gap-1.5">
                           <User size={12} className="text-zinc-600" />{" "}
                           {log.driverName}
-                        </div>
+                        </p>
                         {hasEdits && (
                           <div
                             onClick={() => openHistory(log, "trips")}
@@ -686,7 +858,7 @@ const VehicleReport = () => {
                                 </span>
                               )}
                             </div>
-                            <div className="text-[9px] text-zinc-500 font-mono mt-1 pl-1">
+                            <div className="text-[9px] text-zinc-500 font-mono mt-1.5 pl-1">
                               {new Date(latestLog.at).toLocaleString("en-GB", {
                                 day: "2-digit",
                                 month: "short",
@@ -697,13 +869,13 @@ const VehicleReport = () => {
                           </div>
                         )}
                       </td>
-                      <td className="p-5 px-6 align-top">
+                      <td className="p-4 align-top">
                         <div className="flex flex-col gap-2.5">
                           <div className="flex items-start gap-2">
                             <div
                               className={`mt-0.5 w-5 h-5 rounded-full ${theme.primaryBg} flex items-center justify-center border ${theme.primaryBorder} shrink-0`}
                             >
-                              <MapPin size={10} className={theme.primaryText} />
+                              <MapPin size={10} className={theme.iconColor} />
                             </div>
                             <div>
                               <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">
@@ -714,68 +886,62 @@ const VehicleReport = () => {
                               </span>
                             </div>
                           </div>
-                          <div className="flex items-start gap-2">
-                            <div className="mt-0.5 w-5 h-5 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shrink-0">
-                              <MapPin size={10} className="text-rose-400" />
+                          <div className="w-0.5 h-3 bg-zinc-800 ml-3"></div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shrink-0">
+                              <ArrowRightCircle
+                                size={12}
+                                className="text-rose-400"
+                              />
                             </div>
-                            <div>
-                              <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">
-                                Destination
-                              </p>
-                              <span className="text-xs font-semibold text-zinc-300">
-                                {log.unloadingSite}
+                            <span className="text-xs font-semibold text-zinc-300">
+                              {log.unloadingSite}
+                            </span>
+                            {log.distanceTravelled && (
+                              <span className="text-[10px] text-zinc-500 font-mono ml-1">
+                                ({log.distanceTravelled} km)
                               </span>
-                            </div>
+                            )}
                           </div>
-                          {log.distanceTravelled && (
-                            <div className="flex items-start gap-2 mt-1">
-                              <div className="mt-0.5 w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shrink-0">
-                                <Map size={10} className="text-emerald-400" />
-                              </div>
-                              <div>
-                                <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">
-                                  Distance
-                                </p>
-                                <span className="text-xs font-semibold text-zinc-300">
-                                  {log.distanceTravelled} km
-                                </span>
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </td>
-                      <td className="p-5 px-6 align-top">
+                      <td className="p-4 align-top">
                         <div className="text-xs text-zinc-300 mb-2 flex items-center gap-1.5 bg-zinc-800/50 w-max px-2.5 py-1 rounded-md font-medium border border-zinc-700/50 uppercase tracking-wide">
-                          <Package size={12} className={theme.primaryText} />{" "}
-                          {log.items}
+                          <Package size={12} className={theme.iconColor} />{" "}
+                          {log.items} <span className="text-zinc-600">|</span>{" "}
+                          {log.quantity} Qty
                         </div>
                         <div className="text-[11px] text-zinc-400 font-medium">
-                          Qty:{" "}
-                          <span className="font-bold text-white ml-1">
-                            {log.quantity}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-zinc-400 font-medium mt-1">
                           Rate:{" "}
-                          <span className="font-bold text-emerald-400 font-mono ml-1">
+                          <span className="font-bold text-white ml-1">
                             ₹{log.rate}
                           </span>
                         </div>
+                        {log.foodCharge > 0 && (
+                          <div className="text-[11px] text-zinc-400 font-medium mt-1">
+                            Food:{" "}
+                            <span className="font-bold text-white ml-1">
+                              ₹{log.foodCharge}
+                            </span>
+                          </div>
+                        )}
                       </td>
-                      <td className="p-5 px-6 align-top text-right">
-                        <div className="font-black text-white font-mono text-lg drop-shadow-sm mb-2">
-                          Total: ₹
-                          {Number(log.totalAmount).toLocaleString("en-IN")}
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5 text-xs font-mono">
-                          <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/10">
+                      <td className="p-4 align-top text-right">
+                        <p className="text-lg font-black text-white font-mono drop-shadow-sm">
+                          ₹{log.totalAmount?.toLocaleString("en-IN")}
+                        </p>
+                        <div className="flex flex-col items-end gap-1.5 mt-2">
+                          <span
+                            className={`text-[10px] font-bold ${theme.primaryText} uppercase tracking-widest`}
+                          >
                             Paid: ₹
-                            {Number(log.amountPaid).toLocaleString("en-IN")}
+                            {Number(log.amountPaid || 0).toLocaleString(
+                              "en-IN",
+                            )}
                           </span>
-                          {Number(log.amountDue) > 0 && (
-                            <span className="text-rose-400 font-bold bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
-                              Due: ₹
-                              {Number(log.amountDue).toLocaleString("en-IN")}
+                          {log.amountDue > 0 && (
+                            <span className="text-[10px] font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 mt-0.5">
+                              Due: ₹{log.amountDue?.toLocaleString("en-IN")}
                             </span>
                           )}
                         </div>
@@ -810,8 +976,11 @@ const VehicleReport = () => {
                             <Trash2 size={16} />
                           </button>
                           {warningTooltip === log._id && (
-                            <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg w-max shadow-xl">
-                              🚫 Access Denied
+                            <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 shadow-2xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                              <span className="bg-red-500/20 p-1 rounded text-[8px] leading-none">
+                                🚫
+                              </span>{" "}
+                              Access Denied
                             </div>
                           )}
                         </div>
@@ -819,13 +988,13 @@ const VehicleReport = () => {
                     </tr>
                   );
                 })}
-                {filteredData.length === 0 && (
+                {currentDataList.length === 0 && !loading && (
                   <tr>
                     <td
                       colSpan="5"
-                      className="p-10 text-center text-zinc-500 italic"
+                      className="p-12 text-center text-zinc-500 italic"
                     >
-                      No matching trip records found.
+                      No trip records found.
                     </td>
                   </tr>
                 )}
@@ -833,16 +1002,16 @@ const VehicleReport = () => {
             </table>
           ) : (
             <table className="w-full text-left min-w-[500px] animate-in fade-in duration-300">
-              <thead className="sticky top-0 bg-[#09090B] text-[10px] uppercase font-bold text-rose-400/70 tracking-[0.15em] z-10 shadow-sm border-b border-rose-900/20">
+              <thead className="sticky top-0 bg-transparent text-[10px] uppercase font-bold text-rose-100/40 tracking-[0.15em] z-10 border-b border-rose-900/20">
                 <tr>
-                  <th className="py-5 px-6 w-[20%]">Date</th>
-                  <th className="py-5 px-6 w-[50%]">Reason for Expense</th>
-                  <th className="py-5 px-6 text-right w-[20%]">Amount</th>
-                  <th className="py-5 px-6 text-right w-[10%]">Actions</th>
+                  <th className="py-4 px-4 w-[30%]">Date</th>
+                  <th className="py-4 px-4 w-[45%]">Reason</th>
+                  <th className="py-4 px-4 text-right w-[25%]">Amount</th>
+                  <th className="py-4 px-4 text-right w-[10%]">Actions</th>
                 </tr>
               </thead>
               <tbody className="text-sm divide-y divide-rose-900/10">
-                {filteredData.map((exp) => {
+                {currentDataList.map((exp) => {
                   const hasEdits =
                     exp.editHistory && exp.editHistory.length > 0;
                   const latestLog = hasEdits
@@ -852,10 +1021,15 @@ const VehicleReport = () => {
                   return (
                     <tr
                       key={exp._id}
-                      className="hover:bg-rose-900/10 transition-colors group"
+                      id={exp._id}
+                      className={`transition-all duration-1000 ease-out group border-l-4 ${
+                        activeHighlight === exp._id
+                          ? `bg-rose-500/[0.08] shadow-[inset_0_0_20px_rgba(244,63,94,0.05)] border-rose-500`
+                          : "border-transparent hover:bg-rose-900/10"
+                      }`}
                     >
-                      <td className="p-5 px-6 align-top">
-                        <div className="text-[11px] font-mono text-rose-400 mb-1">
+                      <td className="p-4 align-top">
+                        <div className="text-[11px] font-mono text-rose-400 mb-1.5">
                           {new Date(exp.date).toLocaleDateString("en-GB")}
                         </div>
                         {hasEdits && (
@@ -874,7 +1048,7 @@ const VehicleReport = () => {
                                 </span>
                               )}
                             </div>
-                            <div className="text-[9px] text-rose-100/40 font-mono mt-1 pl-1">
+                            <div className="text-[9px] text-rose-100/40 font-mono mt-1.5 pl-1">
                               {new Date(latestLog.at).toLocaleString("en-GB", {
                                 day: "2-digit",
                                 month: "short",
@@ -885,11 +1059,11 @@ const VehicleReport = () => {
                           </div>
                         )}
                       </td>
-                      <td className="p-5 px-6 align-top text-white font-medium capitalize">
+                      <td className="p-4 align-top text-white font-medium capitalize">
                         {exp.reason}
                       </td>
-                      <td className="p-5 px-6 align-top text-right">
-                        <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-3 py-1 rounded-lg font-mono font-bold">
+                      <td className="p-4 align-top text-right">
+                        <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-3 py-1.5 rounded-lg font-mono font-bold">
                           ₹{Number(exp.amount).toLocaleString("en-IN")}
                         </span>
                       </td>
@@ -932,19 +1106,38 @@ const VehicleReport = () => {
                     </tr>
                   );
                 })}
-                {filteredData.length === 0 && (
+                {currentDataList.length === 0 && !loading && (
                   <tr>
                     <td
                       colSpan="4"
-                      className="p-10 text-center text-rose-100/30 italic"
+                      className="p-12 text-center text-rose-100/30 italic"
                     >
-                      No matching expenses found.
+                      No expenses recorded yet.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           )}
+
+          {/* 🚀 LOAD MORE BUTTON */}
+          {((activeTab === "trips" && hasMoreTrip) ||
+            (activeTab === "expenses" && hasMoreExp)) &&
+            currentDataList.length > 0 && (
+              <div className="flex justify-center p-6 border-t border-zinc-800/60">
+                <Button
+                  onClick={() => fetchLogs(true)}
+                  disabled={loadingMore}
+                  variant="outline"
+                  className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+                >
+                  {loadingMore ? (
+                    <RefreshCcw size={16} className="animate-spin mr-2" />
+                  ) : null}
+                  {loadingMore ? "Loading..." : "Load Next 50 Records"}
+                </Button>
+              </div>
+            )}
         </div>
       </div>
 
@@ -959,7 +1152,7 @@ const VehicleReport = () => {
       />
 
       {/* 🛑 SECURE WIPE DATA MODAL REDESIGNED */}
-      {isDeleteAllOpen && (
+      {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
@@ -973,8 +1166,6 @@ const VehicleReport = () => {
                 {activeTab === "trips" ? "Trip Database" : "Expense Database"}
               </h2>
             </div>
-
-            {/* 🌟 RECOMMENDED BACKUP BOX */}
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-xl p-5 mb-6">
               <div className="flex items-center gap-2 text-yellow-500 font-bold mb-2 text-sm">
                 <ShieldAlert size={18} />
@@ -982,25 +1173,31 @@ const VehicleReport = () => {
               </div>
               <p className="text-zinc-400 text-xs leading-relaxed mb-4">
                 Before wiping the database, we highly recommend downloading a
-                complete CSV backup of all your current{" "}
-                {activeTab === "trips" ? "trip" : "expense"} records.
+                complete CSV backup of a specific month.
               </p>
-              <Button
-                variant="outline"
-                onClick={handleExport}
-                className="h-11 w-full sm:w-auto text-yellow-500 border-yellow-600/40 hover:bg-yellow-500/10"
-              >
-                <Download size={14} /> Download Full Database Backup
-              </Button>
+              <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                <input
+                  type="month"
+                  value={backupMonth}
+                  onChange={(e) => setBackupMonth(e.target.value)}
+                  style={{ colorScheme: "dark" }}
+                  className="w-full sm:w-32 bg-zinc-900/50 border border-yellow-500/30 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none transition-all"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => handleFullBackup(backupMonth)}
+                  className="h-11 w-full sm:flex-1 text-yellow-500 border-yellow-600/40 hover:bg-yellow-500/10"
+                >
+                  <Download size={14} className="mr-2" /> Download Backup
+                </Button>
+              </div>
             </div>
-
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
               {activeTab === "trips" ? "trip" : "expense"} records. Please enter
               your Admin password to confirm.
             </p>
-
             <div className="relative mb-8">
               <input
                 type={showPassword ? "text" : "password"}
@@ -1017,7 +1214,6 @@ const VehicleReport = () => {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-
             <div className="flex justify-end gap-3 items-center">
               <Button
                 variant="outline"
@@ -1030,7 +1226,6 @@ const VehicleReport = () => {
               >
                 Cancel
               </Button>
-
               <Button
                 variant="danger"
                 onClick={handleWipeAll}
@@ -1038,7 +1233,7 @@ const VehicleReport = () => {
                 className="h-11"
               >
                 {wiping ? (
-                  <RefreshCcw size={16} className="animate-spin" />
+                  <RefreshCcw size={16} className="animate-spin mr-2" />
                 ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </Button>
@@ -1057,15 +1252,22 @@ const VehicleReport = () => {
             }
           />
           <div
-            className={`bg-[#09090B] border ${theme.primaryBorder} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200`}
+            className={`bg-[#09090B] border ${activeTab === "trips" ? theme.primaryBorder : "border-rose-900/30"} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200`}
           >
             <div
-              className={`flex items-center justify-between p-5 border-b ${theme.primaryBorder} ${theme.primaryBg} shrink-0`}
+              className={`flex items-center justify-between p-5 border-b ${activeTab === "trips" ? `${theme.primaryBorder} ${theme.primaryBg}` : "border-rose-900/20 bg-rose-900/10"} shrink-0`}
             >
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className={theme.primaryText} />
+                <History
+                  size={16}
+                  className={
+                    activeTab === "trips" ? theme.primaryText : "text-rose-400"
+                  }
+                />{" "}
                 Log History:{" "}
-                <span className={`${theme.primaryText} font-normal`}>
+                <span
+                  className={`${activeTab === "trips" ? theme.primaryText : "text-rose-400"} font-normal`}
+                >
                   {historyModal.itemName}
                 </span>
               </div>
@@ -1078,21 +1280,20 @@ const VehicleReport = () => {
                 <X size={18} />
               </button>
             </div>
-
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-[#09090B] border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-[#09090B] border ${index === 0 ? (activeTab === "trips" ? theme.primaryBorder : "border-rose-500/30") : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
                     <div
-                      className={`absolute left-0 top-0 w-1 h-full ${theme.primaryBg}`}
+                      className={`absolute left-0 top-0 w-1 h-full ${activeTab === "trips" ? theme.primaryBg : "bg-rose-500"}`}
                     ></div>
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? (activeTab === "trips" ? `${theme.primaryBg} ${theme.primaryText}` : "bg-rose-500/10 text-rose-400") : "bg-zinc-800 text-zinc-500"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
@@ -1106,7 +1307,7 @@ const VehicleReport = () => {
                         {log.by || "admin@system.com"}
                       </p>
                       <p
-                        className={`text-[10px] font-mono mt-1 ${index === 0 ? theme.primaryText : "text-zinc-600"}`}
+                        className={`text-[10px] font-mono mt-1 ${index === 0 ? (activeTab === "trips" ? theme.primaryText : "text-rose-400") : "text-zinc-600"}`}
                       >
                         {new Date(log.at).toLocaleString("en-GB", {
                           day: "2-digit",
@@ -1121,7 +1322,7 @@ const VehicleReport = () => {
                   </div>
                   {index === 0 && (
                     <div
-                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                      className={`${activeTab === "trips" ? `${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText}` : "bg-rose-500/10 border-rose-500/20 text-rose-400"} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
                     >
                       LATEST
                     </div>

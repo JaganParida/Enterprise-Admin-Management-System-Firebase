@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import productionService from "../../services/productionService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -28,18 +28,37 @@ import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import { Link, useLocation } from "react-router-dom";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
+import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { db } from "../../config/firebase";
+
+// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
+const getPreviousMonthString = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
 
 const ProductionReport = () => {
   const location = useLocation();
   const { toast } = useUI();
   const { admin } = useAuth();
   const [logs, setLogs] = useState([]);
-  const [labourLogs, setLabourLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [stats, setStats] = useState({ output: 0, paid: 0, due: 0 });
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [activeTab, setActiveTab] = useState("production");
 
-  // 🔥 THEME HOOK
+  // 🚀 Highlight Animation State
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
+
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -70,7 +89,6 @@ const ProductionReport = () => {
   const [filterDate, setFilterDate] = useState("All");
   const [filterExactDate, setFilterExactDate] = useState("");
 
-  // Wipe Data States
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -89,23 +107,142 @@ const ProductionReport = () => {
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  const fetchAllLogs = async () => {
-    try {
-      const prodRes = await productionService.getAllProduction();
-      setLogs(Array.isArray(prodRes.data) ? prodRes.data : []);
+  // 🚀 SMART BACKUP STATES
+  const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
 
-      const labRes = await productionService.getAllLabourPayouts();
-      setLabourLogs(Array.isArray(labRes.data) ? labRes.data : []);
+  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
+  useEffect(() => {
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonthString();
+
+      // Agar local storage me backup verified nahi hai
+      if (!localStorage.getItem(`backup_production_${prevMonth}`)) {
+        try {
+          // Check production collection
+          const qProd = query(
+            collection(db, "production"),
+            where("date", ">=", prevMonth),
+            where("date", "<=", prevMonth + "\uf8ff"),
+            limit(1),
+          );
+          const snapProd = await getDocs(qProd);
+
+          // Check labour collection
+          const qLab = query(
+            collection(db, "labour_payouts"),
+            where("date", ">=", prevMonth),
+            where("date", "<=", prevMonth + "\uf8ff"),
+            limit(1),
+          );
+          const snapLab = await getDocs(qLab);
+
+          // Agar dono mein se kisi me bhi data hai, toh warning dikhao
+          if (!snapProd.empty || !snapLab.empty) {
+            setShowBackupWarning(prevMonth);
+          }
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
+      }
+    };
+
+    checkBackupNeeded();
+  }, []);
+
+  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 500);
+
+      const timer = setTimeout(() => {
+        setActiveHighlight(null);
+      }, 3500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
+
+  // 🚀 FETCH DATA (100% Backend Filtered)
+  const fetchLogs = async (isLoadMore = false) => {
+    if (isLoadMore) setLoadingMore(true);
+    else setLoading(true);
+
+    try {
+      if (!isLoadMore) {
+        const s = await productionService.getStats();
+        setStats(s);
+      }
+
+      const backendFilters = {
+        search: searchTerm,
+        product: filterProduct,
+        quantity: filterQuantity,
+        date: filterDate,
+        exactDate: filterExactDate,
+      };
+
+      let response;
+      if (activeTab === "production") {
+        response = await productionService.getAllProduction(
+          backendFilters,
+          isLoadMore ? lastDoc : null,
+        );
+      } else if (activeTab === "labour") {
+        response = await productionService.getAllLabourPayouts(
+          backendFilters,
+          isLoadMore ? lastDoc : null,
+          50,
+          false,
+        );
+      } else {
+        response = await productionService.getAllLabourPayouts(
+          backendFilters,
+          isLoadMore ? lastDoc : null,
+          50,
+          true,
+        );
+      }
+
+      if (isLoadMore) setLogs((prev) => [...prev, ...(response.data || [])]);
+      else setLogs(response.data || []);
+
+      setLastDoc(response.lastVisible || null);
+      setHasMore(response.data && response.data.length === 50);
     } catch (error) {
-      toast.error("Failed to load records");
+      if (error.message && error.message.toLowerCase().includes("index")) {
+        toast.error(
+          "Firebase Index required! Check browser console to click the create link.",
+          { duration: 6000 },
+        );
+      } else {
+        toast.error("Failed to load records");
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    fetchAllLogs();
-  }, []);
+    const delayDebounceFn = setTimeout(() => {
+      fetchLogs(false);
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [
+    searchTerm,
+    activeTab,
+    filterProduct,
+    filterQuantity,
+    filterDate,
+    filterExactDate,
+  ]);
 
   const parseProduct = (fullName) => {
     if (!fullName) return { name: "-", size: "-" };
@@ -140,86 +277,11 @@ const ProductionReport = () => {
     });
   };
 
-  const filteredLogs = logs.filter((log) => {
-    const matchesSearch = log.productName
-      ?.toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchesProduct =
-      filterProduct === "All" || log.productName === filterProduct;
-
-    let matchesQty = true;
-    if (filterQuantity !== "All") {
-      const qty = Number(log.quantity) || 0;
-      if (filterQuantity === "Under5k") matchesQty = qty < 5000;
-      else if (filterQuantity === "5k-15k")
-        matchesQty = qty >= 5000 && qty <= 15000;
-      else if (filterQuantity === "Above15k") matchesQty = qty > 15000;
-    }
-
-    let matchesDate = true;
-    if (filterExactDate && log.date) {
-      const logDateObj = new Date(log.date);
-      const formattedLogDate = `${logDateObj.getFullYear()}-${String(logDateObj.getMonth() + 1).padStart(2, "0")}-${String(logDateObj.getDate()).padStart(2, "0")}`;
-      matchesDate = formattedLogDate === filterExactDate;
-    } else if (filterDate !== "All" && log.date) {
-      const lDate = new Date(log.date);
-      const today = new Date();
-      const diffTime = Math.abs(today - lDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      if (filterDate === "Today") matchesDate = diffDays <= 1;
-      else if (filterDate === "Last7Days") matchesDate = diffDays <= 7;
-      else if (filterDate === "ThisMonth")
-        matchesDate =
-          lDate.getMonth() === today.getMonth() &&
-          lDate.getFullYear() === today.getFullYear();
-    }
-    return matchesSearch && matchesProduct && matchesQty && matchesDate;
-  });
-
-  const filteredLabourLogs = labourLogs.filter((log) => {
-    const matchesSearch =
-      log.labourName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.payoutCategory?.toLowerCase().includes(searchTerm.toLowerCase());
-    let matchesDate = true;
-    if (filterExactDate && log.date) {
-      const logDateObj = new Date(log.date);
-      const formattedLogDate = `${logDateObj.getFullYear()}-${String(logDateObj.getMonth() + 1).padStart(2, "0")}-${String(logDateObj.getDate()).padStart(2, "0")}`;
-      matchesDate = formattedLogDate === filterExactDate;
-    } else if (filterDate !== "All" && log.date) {
-      const lDate = new Date(log.date);
-      const today = new Date();
-      const diffTime = Math.abs(today - lDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      if (filterDate === "Today") matchesDate = diffDays <= 1;
-      else if (filterDate === "Last7Days") matchesDate = diffDays <= 7;
-      else if (filterDate === "ThisMonth")
-        matchesDate =
-          lDate.getMonth() === today.getMonth() &&
-          lDate.getFullYear() === today.getFullYear();
-    }
-    return matchesSearch && matchesDate;
-  });
-
-  const filteredDuesLogs = filteredLabourLogs.filter(
-    (log) => Number(log.amountDue) > 0,
-  );
+  const filteredData = logs;
 
   const activeFiltersCount =
     [filterProduct, filterQuantity, filterDate].filter((f) => f !== "All")
       .length + (filterExactDate ? 1 : 0);
-
-  const totalOutput = filteredLogs.reduce(
-    (acc, log) => acc + (Number(log.quantity) || 0),
-    0,
-  );
-  const totalPaidOut = filteredLabourLogs.reduce(
-    (acc, log) => acc + (Number(log.amountPaid) || 0),
-    0,
-  );
-  const totalDue = filteredDuesLogs.reduce(
-    (acc, log) => acc + (Number(log.amountDue) || 0),
-    0,
-  );
 
   const handleDeleteClick = (entry, type) => {
     setEntryToDelete(entry);
@@ -230,16 +292,23 @@ const ProductionReport = () => {
   const confirmDelete = async () => {
     if (!entryToDelete) return;
     try {
+      const currentUser = admin?.data || admin || {};
       if (deleteType === "production") {
-        await productionService.deleteProduction(entryToDelete._id);
+        await productionService.deleteProduction(
+          entryToDelete._id,
+          currentUser,
+        );
         toast.success("Production log deleted.");
       } else {
-        await productionService.deleteLabourPayout(entryToDelete._id);
+        await productionService.deleteLabourPayout(
+          entryToDelete._id,
+          currentUser,
+        );
         toast.success("Record deleted.");
       }
-      fetchAllLogs();
+      fetchLogs(false);
     } catch (error) {
-      toast.error("Failed to delete log.");
+      toast.error(error.message || "Failed to delete log.");
     } finally {
       setIsDialogOpen(false);
       setEntryToDelete(null);
@@ -252,58 +321,148 @@ const ProductionReport = () => {
     setTimeout(() => setWarningTooltip(null), 2500);
   };
 
-  const handleFullBackup = () => {
+  // 🚀 FIXED: 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
+  const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
-      if (logs.length === 0 && labourLogs.length === 0)
-        return toast.info("Database is empty.");
+      if (!monthToFetch) return toast.error("Please select a month to backup.");
+      toast.info(`Fetching 100% database for backup... Please wait.`);
 
-      const headers = [
-        "Module,Date,Item Name,Size,Quantity,Payout Category,Party Name,Cost,Paid,Due",
-      ];
-      const prodRows = logs.map((l) => {
-        const { name, size } = parseProduct(l.productName);
-        return `"Production",\t${new Date(l.date).toLocaleDateString("en-GB")},"${name}","${size}",${l.quantity},"-","-",0,0,0`;
-      });
-      const labRows = labourLogs.map(
-        (l) =>
-          `"Payout",\t${new Date(l.date).toLocaleDateString("en-GB")},"-","-",${l.quantityProduced || 0},"${l.payoutCategory || "Labour"}","${l.labourName}",${l.cost || 0},${l.amountPaid || 0},${l.amountDue || 0}`,
+      const collectionName =
+        activeTab === "production" ? "production" : "labour_payouts";
+      const q = query(
+        collection(db, collectionName),
+        where("date", ">=", monthToFetch),
+        where("date", "<=", monthToFetch + "\uf8ff"),
       );
+      const snapshot = await getDocs(q);
+      const allData = snapshot.docs.map((doc) => doc.data());
 
-      const csvContent = [headers.join(","), ...prodRows, ...labRows].join(
-        "\n",
-      );
+      if (allData.length === 0)
+        return toast.info(
+          `No records found for ${monthToFetch} in ${activeTab}.`,
+        );
+
+      let csvContent = "\uFEFF"; // UTF-8 BOM
+
+      if (activeTab === "production") {
+        const headers = ["Date", "Item Name", "Size", "Quantity (Output)"];
+        const rows = allData.map((log) => {
+          const dateStr = log.date
+            ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
+            : "-";
+          const { name, size } = parseProduct(log.productName);
+          return `${dateStr},"${name}","${size}",${log.quantity || 0}`;
+        });
+        csvContent += [headers.join(","), ...rows].join("\n");
+      } else {
+        const headers = [
+          "Date",
+          "Party Name",
+          "Category",
+          "Cost",
+          "Paid",
+          "Due",
+        ];
+        const rows = allData.map((log) => {
+          const dateStr = log.date
+            ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
+            : "-";
+          return `${dateStr},"${log.labourName}","${log.payoutCategory}",${log.cost || 0},${log.amountPaid || 0},${log.amountDue || 0}`;
+        });
+        csvContent += [headers.join(","), ...rows].join("\n");
+      }
+
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
+      link.href = url;
       link.setAttribute(
         "download",
-        `Full_Database_Backup_${new Date().toISOString().split("T")[0]}.csv`,
+        `Full_Backup_${activeTab}_${monthToFetch}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Secure full backup generated!");
+      toast.success(`Backup for ${monthToFetch} downloaded securely!`);
+
+      // 🚀 Instantly removes the warning after successful backup
+      localStorage.setItem(`backup_production_${monthToFetch}`, "true");
+      if (showBackupWarning === monthToFetch) {
+        setShowBackupWarning(null);
+      }
     } catch (e) {
+      console.error(e);
       toast.error("Backup failed.");
+    }
+  };
+
+  // 🚀 ONLY EXPORTS VISIBLE DATA (Maximum 50 or what is loaded in table)
+  const handleExport = () => {
+    try {
+      if (filteredData.length === 0) return toast.info("No records to export");
+      let csvContent = "\uFEFF"; // UTF-8 BOM
+
+      if (activeTab === "production") {
+        const headers = ["Date", "Item Name", "Size", "Quantity (Output)"];
+        const rows = filteredData.map((log) => {
+          const dateStr = log.date
+            ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
+            : "-";
+          const { name, size } = parseProduct(log.productName);
+          return `${dateStr},"${name}","${size}",${log.quantity || 0}`;
+        });
+        csvContent += [headers.join(","), ...rows].join("\n");
+      } else {
+        const headers = [
+          "Date",
+          "Party Name",
+          "Category",
+          "Cost",
+          "Paid",
+          "Due",
+        ];
+        const rows = filteredData.map((log) => {
+          const dateStr = log.date
+            ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
+            : "-";
+          return `${dateStr},"${log.labourName}","${log.payoutCategory}",${log.cost || 0},${log.amountPaid || 0},${log.amountDue || 0}`;
+        });
+        csvContent += [headers.join(","), ...rows].join("\n");
+      }
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute(
+        "download",
+        `Production_View_Report_${activeTab}_${new Date().toISOString().split("T")[0]}.csv`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Visible records exported successfully!");
+    } catch (error) {
+      toast.error("Export failed");
     }
   };
 
   const handleWipeAll = async () => {
     if (isManager || !deletePassword)
       return toast.error("Verification failed.");
-
     setWiping(true);
     try {
-      const adminEmail = admin?.data?.email || admin?.email;
+      const currentUser = admin?.data || admin || {};
       await productionService.deleteAllProduction({
         password: deletePassword,
-        email: adminEmail,
+        email: currentUser.email,
+        user: currentUser,
       });
       toast.success("Database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchAllLogs();
+      fetchLogs(false);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
@@ -311,140 +470,35 @@ const ProductionReport = () => {
     }
   };
 
-  const handleExport = () => {
-    try {
-      if (activeTab === "production") {
-        if (filteredLogs.length === 0)
-          return toast.info("No records to export");
-        const headers = ["Date", "Item Name", "Size", "Quantity Produced"];
-        const rows = filteredLogs.map((log) => {
-          let dateStr = log.date
-            ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
-            : "-";
-          const { name, size } = parseProduct(log.productName);
-          return `${dateStr},"${name}","${size}",${log.quantity}`;
-        });
-        const csvContent = [headers.join(","), ...rows].join("\n");
-        const blob = new Blob([csvContent], {
-          type: "text/csv;charset=utf-8;",
-        });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.setAttribute(
-          "download",
-          `Production_Report_${new Date().toISOString().split("T")[0]}.csv`,
-        );
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast.success("Exported successfully");
-      } else if (activeTab === "labour") {
-        if (filteredLabourLogs.length === 0)
-          return toast.info("No records to export");
-        const headers = ["Date", "Category", "Name", "Cost", "Paid", "Due"];
-        const rows = filteredLabourLogs.map((log) => {
-          let dateStr = log.date
-            ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
-            : "-";
-          return `${dateStr},"${log.payoutCategory || "Labour"}","${log.labourName}",${log.cost || 0},${log.amountPaid || 0},${log.amountDue || 0}`;
-        });
-        const csvContent = [headers.join(","), ...rows].join("\n");
-        const blob = new Blob([csvContent], {
-          type: "text/csv;charset=utf-8;",
-        });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.setAttribute(
-          "download",
-          `Payouts_Report_${new Date().toISOString().split("T")[0]}.csv`,
-        );
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast.success("Exported!");
-      } else if (activeTab === "dues") {
-        if (filteredDuesLogs.length === 0)
-          return toast.info("No dues to export");
-        const headers = [
-          "Date",
-          "Category",
-          "Party Name",
-          "Pending Due Amount",
-        ];
-        const rows = filteredDuesLogs.map((log) => {
-          let dateStr = log.date
-            ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
-            : "-";
-          return `${dateStr},"${log.payoutCategory || "Labour"}","${log.labourName}",${log.amountDue}`;
-        });
-        const csvContent = [headers.join(","), ...rows].join("\n");
-        const blob = new Blob([csvContent], {
-          type: "text/csv;charset=utf-8;",
-        });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.setAttribute(
-          "download",
-          `Pending_Dues_Report_${new Date().toISOString().split("T")[0]}.csv`,
-        );
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast.success("Exported!");
-      }
-    } catch (error) {
-      toast.error("Export failed");
-    }
-  };
-
-  if (loading) return <Loader />;
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      {/* HEADER SECTION */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">
             Production Ledger
           </h1>
         </div>
-
         <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
-          {/* PILL TABS */}
           <div className="w-full md:w-auto bg-[#09090B] p-1.5 rounded-2xl md:rounded-full border border-zinc-800/60 grid grid-cols-3 md:flex md:items-center gap-1">
             <button
               onClick={() => setActiveTab("production")}
-              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
-                activeTab === "production"
-                  ? `${theme.primaryTabBg} text-white`
-                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
-              }`}
+              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${activeTab === "production" ? `${theme.primaryTabBg} text-white` : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"}`}
             >
               Output
             </button>
             <button
               onClick={() => setActiveTab("labour")}
-              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
-                activeTab === "labour"
-                  ? `${theme.primaryTabBg} text-white`
-                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
-              }`}
+              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${activeTab === "labour" ? `${theme.primaryTabBg} text-white` : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"}`}
             >
               Payouts
             </button>
             <button
               onClick={() => setActiveTab("dues")}
-              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
-                activeTab === "dues"
-                  ? `${theme.primaryTabBg} text-white`
-                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
-              }`}
+              className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${activeTab === "dues" ? `${theme.primaryTabBg} text-white` : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"}`}
             >
               Dues
             </button>
           </div>
-
-          {/* Action Buttons */}
           <div className="flex gap-3 w-full md:w-auto ml-auto md:ml-0">
             <div className="relative w-full md:w-auto">
               <Button
@@ -454,9 +508,7 @@ const ProductionReport = () => {
                     ? handleDisabledClick("wipe-all")
                     : setIsDeleteAllOpen(true)
                 }
-                className={`h-11 px-5 w-full md:w-auto border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${
-                  isManager ? "opacity-50 !cursor-not-allowed" : ""
-                }`}
+                className={`h-11 px-5 w-full md:w-auto border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${isManager ? "opacity-50 !cursor-not-allowed" : ""}`}
               >
                 <AlertOctagon size={16} /> Wipe DB
               </Button>
@@ -490,9 +542,42 @@ const ProductionReport = () => {
         </div>
       </div>
 
+      {/* 🚀 SMART BACKUP WARNING */}
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the backup for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
+
       {/* STATS CARDS */}
       {activeTab === "production" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+        <div className="grid grid-cols-1 gap-6 animate-in fade-in duration-300">
           <div
             className={`p-6 rounded-2xl bg-[#09090B] border border-zinc-800/60 relative overflow-hidden group ${theme.primaryHoverBorder} transition-all`}
           >
@@ -505,26 +590,13 @@ const ProductionReport = () => {
               Total Output
             </p>
             <h3 className="text-3xl font-bold text-white relative z-10">
-              {totalOutput.toLocaleString()}{" "}
+              {stats.output.toLocaleString()}{" "}
               <span className="text-sm text-zinc-500">Pcs</span>
-            </h3>
-          </div>
-          <div
-            className={`p-6 rounded-2xl bg-[#09090B] border border-zinc-800/60 ${theme.primaryHoverBorder} transition-all`}
-          >
-            <div
-              className={`flex items-center gap-3 mb-2 ${theme.primaryText}`}
-            >
-              <BarChart size={20} />
-              <span className="font-bold">Total Batches</span>
-            </div>
-            <h3 className="text-2xl font-bold text-white">
-              {filteredLogs.length}
             </h3>
           </div>
         </div>
       ) : activeTab === "labour" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+        <div className="grid grid-cols-1 gap-6 animate-in fade-in duration-300">
           <div className="p-6 rounded-2xl bg-[#09090B] border border-zinc-800/60 relative overflow-hidden group hover:border-blue-500/30 transition-all">
             <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
               <IndianRupee size={80} className="text-blue-500" />
@@ -533,17 +605,8 @@ const ProductionReport = () => {
               Total Paid Out
             </p>
             <h3 className="text-3xl font-bold text-white relative z-10">
-              ₹ {totalPaidOut.toLocaleString()}{" "}
+              ₹ {stats.paid.toLocaleString()}{" "}
               <span className="text-sm text-zinc-500">INR</span>
-            </h3>
-          </div>
-          <div className="p-6 rounded-2xl bg-[#09090B] border border-zinc-800/60 hover:border-blue-500/30 transition-all">
-            <div className="flex items-center gap-3 mb-2 text-blue-400">
-              <Users size={20} />
-              <span className="font-bold">Total Payout Records</span>
-            </div>
-            <h3 className="text-2xl font-bold text-white">
-              {filteredLabourLogs.length}
             </h3>
           </div>
         </div>
@@ -557,15 +620,19 @@ const ProductionReport = () => {
               Total Pending Dues
             </p>
             <h3 className="text-4xl font-bold text-rose-400 relative z-10">
-              ₹ {totalDue.toLocaleString()}
+              ₹ {stats.due.toLocaleString()}
             </h3>
           </div>
         </div>
       )}
 
       {/* MAIN DATA SECTION */}
-      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-visible transition-colors duration-500">
-        {/* SEARCH & EXPORT BAR */}
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-visible transition-colors duration-500 relative">
+        {loading && !loadingMore && (
+          <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm rounded-2xl">
+            <Loader />
+          </div>
+        )}
         <div className="p-5 border-b border-zinc-800/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5">
           <div className="relative w-full sm:max-w-md group">
             <Search
@@ -574,7 +641,7 @@ const ProductionReport = () => {
             />
             <input
               type="text"
-              placeholder={`Search ${activeTab === "production" ? "product" : "name or category"}...`}
+              placeholder={`Search ${activeTab === "production" ? "product" : "name"}...`}
               className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -591,10 +658,9 @@ const ProductionReport = () => {
           </div>
         </div>
 
-        {/* FILTERS */}
         <div className="p-4 border-b border-zinc-800/60 bg-zinc-900/20 flex flex-wrap items-center gap-4 relative z-20">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 px-3 py-1 border-r border-zinc-800 mr-1">
-            <Filter size={16} /> Filters
+            <Filter size={16} /> Filters{" "}
             {activeFiltersCount > 0 && (
               <span
                 className={`ml-1 px-1.5 rounded border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
@@ -714,7 +780,6 @@ const ProductionReport = () => {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
                 />
               </div>
-
               <div className="relative group">
                 <select
                   value={filterQuantity}
@@ -741,8 +806,6 @@ const ProductionReport = () => {
               </div>
             </>
           )}
-
-          {/* Preset Date Filter */}
           <div className="relative group">
             <select
               value={filterDate}
@@ -770,8 +833,6 @@ const ProductionReport = () => {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
             />
           </div>
-
-          {/* Exact Date Filter */}
           <div className="relative group flex items-center">
             <div
               className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filterExactDate ? theme.primaryText : "text-zinc-500"}`}
@@ -786,11 +847,9 @@ const ProductionReport = () => {
                 if (e.target.value) setFilterDate("All");
               }}
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryText} ${theme.primaryBg} ${theme.primaryBorder}` : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"}`}
+              className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryBorder} ${theme.primaryText} ${theme.primaryBg}` : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"}`}
             />
           </div>
-
-          {/* Clear Filters Button */}
           {activeFiltersCount > 0 && (
             <button
               onClick={() => {
@@ -807,9 +866,7 @@ const ProductionReport = () => {
           )}
         </div>
 
-        {/* DATA TABLES SECTION */}
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
-          {/* PRODUCTION TAB */}
           {activeTab === "production" && (
             <table className="w-full text-left min-w-[600px] animate-in fade-in duration-300">
               <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
@@ -822,19 +879,19 @@ const ProductionReport = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {filteredLogs.map((log) => {
+                {filteredData.map((log) => {
                   const { name, size } = parseProduct(log.productName);
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
-                  const historyCount = hasEdits ? log.editHistory.length : 0;
-                  const latestLog = hasEdits
-                    ? log.editHistory[log.editHistory.length - 1]
-                    : null;
-
                   return (
                     <tr
                       key={log._id}
-                      className="hover:bg-zinc-800/30 transition-colors group"
+                      id={log._id}
+                      className={`transition-all duration-1000 ease-out group border-l-4 ${
+                        activeHighlight === log._id
+                          ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                          : "border-transparent hover:bg-zinc-800/30"
+                      }`}
                     >
                       <td className="p-4 md:pl-6 align-middle">
                         <div className="text-zinc-400 font-mono text-xs mb-2">
@@ -859,16 +916,14 @@ const ProductionReport = () => {
                                 className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
                               />
                               <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
-                                {latestLog.role || "ADMIN"}
+                                {log.editHistory[log.editHistory.length - 1]
+                                  .role || "ADMIN"}
                               </span>
-                              {historyCount > 1 && (
-                                <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
-                                  +{historyCount - 1} MORE
-                                </span>
-                              )}
                             </div>
                             <div className="text-[10px] text-zinc-500 font-mono mt-1 pl-[18px]">
-                              {formatLogDate(latestLog.at)}
+                              {formatLogDate(
+                                log.editHistory[log.editHistory.length - 1].at,
+                              )}
                             </div>
                           </button>
                         )}
@@ -900,11 +955,7 @@ const ProductionReport = () => {
                                 ? handleDisabledClick(log._id)
                                 : handleDeleteClick(log, "production")
                             }
-                            className={`p-2 rounded-lg transition-colors ${
-                              isManager
-                                ? "text-zinc-600 opacity-50 cursor-not-allowed"
-                                : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
-                            }`}
+                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
                           >
                             <Trash2 size={16} />
                           </button>
@@ -918,21 +969,9 @@ const ProductionReport = () => {
                     </tr>
                   );
                 })}
-                {filteredLogs.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan="5"
-                      className="p-10 text-center text-zinc-500 italic"
-                    >
-                      No production logs found.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           )}
-
-          {/* LABOUR PAYOUTS TAB */}
           {activeTab === "labour" && (
             <table className="w-full text-left min-w-[600px] animate-in fade-in duration-300">
               <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
@@ -946,18 +985,18 @@ const ProductionReport = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {filteredLabourLogs.map((log) => {
+                {filteredData.map((log) => {
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
-                  const historyCount = hasEdits ? log.editHistory.length : 0;
-                  const latestLog = hasEdits
-                    ? log.editHistory[log.editHistory.length - 1]
-                    : null;
-
                   return (
                     <tr
                       key={log._id}
-                      className="hover:bg-zinc-800/30 transition-colors group"
+                      id={log._id}
+                      className={`transition-all duration-1000 ease-out group border-l-4 ${
+                        activeHighlight === log._id
+                          ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                          : "border-transparent hover:bg-zinc-800/30"
+                      }`}
                     >
                       <td className="p-4 md:pl-6 align-middle">
                         <div className="text-zinc-400 font-mono text-xs mb-2">
@@ -982,16 +1021,14 @@ const ProductionReport = () => {
                                 className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
                               />
                               <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
-                                {latestLog.role || "ADMIN"}
+                                {log.editHistory[log.editHistory.length - 1]
+                                  .role || "ADMIN"}
                               </span>
-                              {historyCount > 1 && (
-                                <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
-                                  +{historyCount - 1} MORE
-                                </span>
-                              )}
                             </div>
                             <div className="text-[10px] text-zinc-500 font-mono mt-1 pl-[18px]">
-                              {formatLogDate(latestLog.at)}
+                              {formatLogDate(
+                                log.editHistory[log.editHistory.length - 1].at,
+                              )}
                             </div>
                           </button>
                         )}
@@ -1030,11 +1067,7 @@ const ProductionReport = () => {
                                 ? handleDisabledClick(log._id)
                                 : handleDeleteClick(log, "labour")
                             }
-                            className={`p-2 rounded-lg transition-colors ${
-                              isManager
-                                ? "text-zinc-600 opacity-50 cursor-not-allowed"
-                                : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
-                            }`}
+                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
                           >
                             <Trash2 size={16} />
                           </button>
@@ -1048,25 +1081,9 @@ const ProductionReport = () => {
                     </tr>
                   );
                 })}
-                {filteredLabourLogs.length === 0 && (
-                  <tr>
-                    <td colSpan="6" className="p-16 text-center">
-                      <div
-                        className={`w-16 h-16 rounded-full bg-zinc-800/50 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto mb-4`}
-                      >
-                        <IndianRupee size={28} />
-                      </div>
-                      <h3 className="text-white font-bold text-lg mb-1">
-                        No Payout Records
-                      </h3>
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           )}
-
-          {/* DUES TAB */}
           {activeTab === "dues" && (
             <table className="w-full text-left min-w-[600px] animate-in fade-in duration-300">
               <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
@@ -1078,18 +1095,18 @@ const ProductionReport = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {filteredDuesLogs.map((log) => {
+                {filteredData.map((log) => {
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
-                  const historyCount = hasEdits ? log.editHistory.length : 0;
-                  const latestLog = hasEdits
-                    ? log.editHistory[log.editHistory.length - 1]
-                    : null;
-
                   return (
                     <tr
                       key={log._id}
-                      className="hover:bg-zinc-800/30 transition-colors group"
+                      id={log._id}
+                      className={`transition-all duration-1000 ease-out group border-l-4 ${
+                        activeHighlight === log._id
+                          ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                          : "border-transparent hover:bg-zinc-800/30"
+                      }`}
                     >
                       <td className="p-4 md:pl-6 align-middle">
                         <div className="text-zinc-400 font-mono text-xs mb-2">
@@ -1114,16 +1131,14 @@ const ProductionReport = () => {
                                 className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
                               />
                               <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
-                                {latestLog.role || "ADMIN"}
+                                {log.editHistory[log.editHistory.length - 1]
+                                  .role || "ADMIN"}
                               </span>
-                              {historyCount > 1 && (
-                                <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
-                                  +{historyCount - 1} MORE
-                                </span>
-                              )}
                             </div>
                             <div className="text-[10px] text-zinc-500 font-mono mt-1 pl-[18px]">
-                              {formatLogDate(latestLog.at)}
+                              {formatLogDate(
+                                log.editHistory[log.editHistory.length - 1].at,
+                              )}
                             </div>
                           </button>
                         )}
@@ -1156,11 +1171,7 @@ const ProductionReport = () => {
                                 ? handleDisabledClick(log._id)
                                 : handleDeleteClick(log, "labour")
                             }
-                            className={`p-2 rounded-lg transition-colors ${
-                              isManager
-                                ? "text-zinc-600 opacity-50 cursor-not-allowed"
-                                : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
-                            }`}
+                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
                           >
                             <Trash2 size={16} />
                           </button>
@@ -1174,23 +1185,40 @@ const ProductionReport = () => {
                     </tr>
                   );
                 })}
-                {filteredDuesLogs.length === 0 && (
-                  <tr>
-                    <td colSpan="4" className="p-16 text-center">
-                      <div className="w-16 h-16 rounded-full bg-zinc-800/50 border border-zinc-800 flex items-center justify-center text-zinc-400 mx-auto mb-4">
-                        <AlertCircle size={28} />
-                      </div>
-                      <h3 className="text-white font-bold text-lg mb-1">
-                        No Pending Dues!
-                      </h3>
-                      <p className="text-zinc-500 text-sm max-w-sm mx-auto">
-                        All accounts are settled. Great job!
-                      </p>
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
+          )}
+          {filteredData.length === 0 && !loading && (
+            <div className="p-16 text-center w-full flex flex-col items-center border-t border-zinc-800/60">
+              <div
+                className={`w-16 h-16 rounded-full bg-zinc-800/50 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto mb-4`}
+              >
+                <AlertCircle size={28} />
+              </div>
+              <h3 className="text-white font-bold text-lg mb-1">
+                No Records Found
+              </h3>
+              <p className="text-zinc-500 text-sm max-w-sm mx-auto">
+                Try adjusting your filters or search terms.
+              </p>
+            </div>
+          )}
+
+          {/* 🚀 LOAD MORE BUTTON */}
+          {hasMore && filteredData.length > 0 && (
+            <div className="flex justify-center p-6 border-t border-zinc-800/60">
+              <Button
+                onClick={() => fetchLogs(true)}
+                disabled={loadingMore}
+                variant="outline"
+                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+              >
+                {loadingMore ? (
+                  <RefreshCcw size={16} className="animate-spin mr-2" />
+                ) : null}
+                {loadingMore ? "Loading..." : "Load Next 50 Records"}
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -1213,8 +1241,7 @@ const ProductionReport = () => {
               <div
                 className={`flex items-center gap-2 text-white font-bold tracking-wide text-sm`}
               >
-                <History size={16} className={theme.primaryText} />
-                Log History:{" "}
+                <History size={16} className={theme.primaryText} /> Log History:{" "}
                 <span className="text-zinc-400 font-normal">
                   {logModalInfo.tabType === "production"
                     ? logModalInfo.data.productName
@@ -1234,7 +1261,6 @@ const ProductionReport = () => {
                 <X size={18} />
               </button>
             </div>
-
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
               {(logModalInfo.data.editHistory
                 ? [...logModalInfo.data.editHistory].reverse()
@@ -1249,7 +1275,6 @@ const ProductionReport = () => {
                       className={`absolute left-0 top-0 w-1 h-full ${theme.indicatorLine}`}
                     ></div>
                   )}
-
                   <div className="flex items-center gap-4 pl-1">
                     <div
                       className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
@@ -1263,7 +1288,7 @@ const ProductionReport = () => {
                         {log.role || "ADMIN"}
                       </h4>
                       <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
-                        {log.email || "admin@system.com"}
+                        {log.email || log.by || "admin@system.com"}
                       </p>
                       <p
                         className={`text-[10px] font-mono mt-1.5 ${index === 0 ? theme.primaryText : "text-zinc-500"}`}
@@ -1272,7 +1297,6 @@ const ProductionReport = () => {
                       </p>
                     </div>
                   </div>
-
                   {index === 0 && (
                     <div
                       className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase`}
@@ -1313,27 +1337,37 @@ const ProductionReport = () => {
               </h2>
             </div>
 
+            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
                   className="text-amber-500 shrink-0 mt-0.5"
                 />
-                <div>
+                <div className="w-full">
                   <h3 className="text-amber-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-amber-100/60 text-xs mb-4 leading-relaxed">
-                    Before wiping the database, we highly recommend downloading
-                    a complete CSV backup of all your current production and
-                    payout records.
+                  <p className="text-amber-100/60 text-xs mb-3 leading-relaxed">
+                    Before wiping, please download the backup for a specific
+                    month to prevent browser crash.
                   </p>
-                  <button
-                    onClick={handleFullBackup}
-                    className="w-full sm:w-auto px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Download size={14} /> Download Full Database Backup
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                    <input
+                      type="month"
+                      value={backupMonth}
+                      onChange={(e) => setBackupMonth(e.target.value)}
+                      style={{ colorScheme: "dark" }}
+                      className="w-full sm:w-32 bg-zinc-900/50 border border-amber-500/30 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none transition-all"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => handleFullBackup(backupMonth)}
+                      className="w-full sm:flex-1 h-9 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"
+                    >
+                      <Download size={14} className="mr-2" /> Download Backup
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1344,14 +1378,13 @@ const ProductionReport = () => {
               production and payout records. Please enter your Admin password to
               confirm.
             </p>
-
             <div className="relative mb-8">
               <input
                 type={showPassword ? "text" : "password"}
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter your admin password..."
-                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
+                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 outline-none transition-all"
               />
               <button
                 type="button"
@@ -1361,7 +1394,6 @@ const ProductionReport = () => {
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-
             <div className="flex justify-end gap-3">
               <Button
                 variant="outline"
@@ -1378,11 +1410,11 @@ const ProductionReport = () => {
                 variant="danger"
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
-                className="rounded-xl flex items-center gap-2"
+                className="h-11 rounded-xl flex items-center gap-2"
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
-                ) : null}
+                ) : null}{" "}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </Button>
             </div>

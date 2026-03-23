@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, Suspense, lazy } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import transportDashboardService from "../../services/transportDashboardService";
 import { useUI } from "../../context/UIProvider";
 import {
@@ -28,6 +28,7 @@ const ChartSkeleton = () => (
 const TransportationDashboard = () => {
   const { toast } = useUI();
   const location = useLocation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [showQuickMenu, setShowQuickMenu] = useState(false);
 
@@ -37,6 +38,7 @@ const TransportationDashboard = () => {
       ? window.location.pathname
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
+  const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
     primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
@@ -93,7 +95,7 @@ const TransportationDashboard = () => {
 
       if (data.recentActivity && data.recentActivity.length > 0) {
         const rows = data.recentActivity.map((act) => {
-          const dateStr = `="${new Date(act.date).toLocaleDateString("en-GB")}"`;
+          const dateStr = `="${new Date(act.date || act.createdAt).toLocaleDateString("en-GB")}"`;
           const type = act.activityType || "Unknown";
           const vehicle = act.vehicleNo || "-";
           let details = "";
@@ -145,20 +147,19 @@ const TransportationDashboard = () => {
         {
           label: "Total Fuel Cost (₹)",
           data: [data.cards.totalFuelCost],
-          backgroundColor: isTransport ? "#3b82f6" : "#6366f1", // Blue vs Indigo
+          backgroundColor: isTransport ? "#3b82f6" : "#6366f1",
           borderRadius: 6,
         },
         {
           label: "Total Maintenance (₹)",
           data: [data.cards.totalMaintenanceCost],
-          backgroundColor: isTransport ? "#0ea5e9" : "#a855f7", // Cyan vs Purple
+          backgroundColor: isTransport ? "#0ea5e9" : "#a855f7",
           borderRadius: 6,
         },
       ],
     };
   }, [data, isTransport]);
 
-  // CHART OPTIONS TO FORCE FILL CONTAINER & MATCH DARK THEME
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -166,7 +167,7 @@ const TransportationDashboard = () => {
       legend: {
         position: "top",
         labels: {
-          color: "rgba(161, 161, 170, 0.8)", // zinc-400
+          color: "rgba(161, 161, 170, 0.8)",
           font: { family: "monospace", size: 11 },
         },
       },
@@ -174,21 +175,17 @@ const TransportationDashboard = () => {
     scales: {
       y: {
         beginAtZero: true,
-        grid: {
-          color: "rgba(39, 39, 42, 0.3)", // zinc-800
-        },
+        grid: { color: "rgba(39, 39, 42, 0.3)" },
         ticks: {
-          color: "rgba(161, 161, 170, 0.6)", // zinc-400
+          color: "rgba(161, 161, 170, 0.6)",
           font: { family: "monospace", size: 10 },
         },
         border: { display: false },
       },
       x: {
-        grid: {
-          display: false,
-        },
+        grid: { display: false },
         ticks: {
-          color: "rgba(161, 161, 170, 0.6)", // zinc-400
+          color: "rgba(161, 161, 170, 0.6)",
           font: { family: "monospace", size: 11 },
         },
         border: { display: false },
@@ -200,7 +197,6 @@ const TransportationDashboard = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10 h-full flex flex-col">
-      {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-20">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
@@ -248,7 +244,7 @@ const TransportationDashboard = () => {
                   </div>
                   <div className="space-y-1 p-1">
                     <Link
-                      to={`${isTransport ? "/transportation/logs" : "/enterprise/logs"}`}
+                      to={`${basePath}/logs`}
                       className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 transition-colors mr-3">
@@ -263,7 +259,7 @@ const TransportationDashboard = () => {
                       />
                     </Link>
                     <Link
-                      to={`${isTransport ? "/transportation/fuel" : "/enterprise/fuel"}`}
+                      to={`${basePath}/fuel`}
                       className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 group-hover:bg-cyan-500/20 transition-colors mr-3">
@@ -278,7 +274,7 @@ const TransportationDashboard = () => {
                       />
                     </Link>
                     <Link
-                      to={`${isTransport ? "/transportation/maintenance" : "/enterprise/maintenance"}`}
+                      to={`${basePath}/maintenance`}
                       className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 group-hover:bg-sky-500/20 transition-colors mr-3">
@@ -293,7 +289,7 @@ const TransportationDashboard = () => {
                       />
                     </Link>
                     <Link
-                      to={`${isTransport ? "/transportation/jcb" : "/enterprise/jcb"}`}
+                      to={`${basePath}/jcb`}
                       className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 group-hover:bg-amber-500/20 transition-colors mr-3">
@@ -315,7 +311,6 @@ const TransportationDashboard = () => {
         </div>
       </div>
 
-      {/* --- STATS GRID --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Distance"
@@ -323,6 +318,7 @@ const TransportationDashboard = () => {
           icon={Gauge}
           color="blue"
           isTransport={isTransport}
+          linkTo={`${basePath}/logs/report`}
         />
         <StatCard
           title="Total Trips"
@@ -330,6 +326,7 @@ const TransportationDashboard = () => {
           icon={Truck}
           color="sky"
           isTransport={isTransport}
+          linkTo={`${basePath}/logs/report`}
         />
         <StatCard
           title="Fuel Expense"
@@ -337,6 +334,7 @@ const TransportationDashboard = () => {
           icon={Droplet}
           color="cyan"
           isTransport={isTransport}
+          linkTo={`${basePath}/fuel/report`}
         />
         <StatCard
           title="Repair Expense"
@@ -344,12 +342,11 @@ const TransportationDashboard = () => {
           icon={Wrench}
           color="indigo"
           isTransport={isTransport}
+          linkTo={`${basePath}/maintenance/report`}
         />
       </div>
 
-      {/* --- ANALYTICS & ACTIVITY SECTION --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:auto-rows-fr h-auto">
-        {/* CHART PANEL */}
         <div
           className={`lg:col-span-2 p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col h-full min-h-[400px] group ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md`}
         >
@@ -377,7 +374,6 @@ const TransportationDashboard = () => {
           </div>
         </div>
 
-        {/* Activity Feed */}
         <div
           className={`p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl flex flex-col w-full h-full min-h-[400px] overflow-hidden ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md hover:border-white/10`}
         >
@@ -400,6 +396,8 @@ const TransportationDashboard = () => {
                   key={index}
                   data={activity}
                   isTransport={isTransport}
+                  basePath={basePath}
+                  navigate={navigate}
                 />
               ))
             ) : (
@@ -414,7 +412,9 @@ const TransportationDashboard = () => {
   );
 };
 
-const StatCard = ({ title, value, icon: Icon, color, isTransport }) => {
+// 🚀 ENHANCED: StatCard with click navigation
+const StatCard = ({ title, value, icon: Icon, color, isTransport, linkTo }) => {
+  const navigate = useNavigate();
   const colors = isTransport
     ? {
         blue: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
@@ -438,7 +438,8 @@ const StatCard = ({ title, value, icon: Icon, color, isTransport }) => {
 
   return (
     <div
-      className={`bg-white/[0.02] backdrop-blur-md border border-white/5 p-6 rounded-2xl ${hoverBorder} transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden shadow-2xl shadow-black/20 hover:bg-white/[0.04] ${hoverShadow}`}
+      onClick={() => linkTo && navigate(linkTo)}
+      className={`bg-white/[0.02] backdrop-blur-md border border-white/5 p-6 rounded-2xl ${hoverBorder} transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden shadow-2xl shadow-black/20 hover:bg-white/[0.04] ${hoverShadow} ${linkTo ? "cursor-pointer" : ""}`}
     >
       <div className="flex justify-between items-start mb-4 relative z-10">
         <div className={`p-3.5 rounded-xl border ${theme}`}>
@@ -457,7 +458,7 @@ const StatCard = ({ title, value, icon: Icon, color, isTransport }) => {
   );
 };
 
-const ActivityItem = ({ data, isTransport }) => {
+const ActivityItem = ({ data, isTransport, basePath, navigate }) => {
   let Icon = Truck;
   let colorTheme = isTransport
     ? "text-cyan-400 bg-cyan-500/10 border-cyan-500/20"
@@ -465,47 +466,59 @@ const ActivityItem = ({ data, isTransport }) => {
   let title = `Trip: ${data.vehicleNo}`;
   let desc = `${data.loadingPoint || ""} to ${data.unloadingSite || ""}`;
   let amount = data.totalAmount ? `₹${data.totalAmount}` : null;
-  let hoverBg = "hover:bg-white/[0.04] hover:border-white/5";
+  let linkUrl = "";
 
-  if (data.activityType === "Fuel") {
+  if (data.activityType === "Trip") {
+    linkUrl = `${basePath}/logs/report?highlight=${data._id}`;
+  } else if (data.activityType === "Fuel") {
     Icon = Droplet;
     colorTheme = "text-sky-400 bg-sky-500/10 border-sky-500/20";
     title = `Refuel: ${data.vehicleNo}`;
     desc = `${data.liters} L at ${data.stationName || "Pump"}`;
     amount = `₹${data.totalCost}`;
+    linkUrl = `${basePath}/fuel/report?highlight=${data._id}`;
   } else if (data.activityType === "Maintenance") {
     Icon = Wrench;
     colorTheme = "text-blue-400 bg-blue-500/10 border-blue-500/20";
     title = `Repair: ${data.vehicleNo}`;
     desc = data.serviceType;
     amount = `₹${data.cost}`;
+    linkUrl = `${basePath}/maintenance/report?highlight=${data._id}`;
   } else if (data.activityType === "JCB") {
     Icon = Timer;
     colorTheme = "text-amber-400 bg-amber-500/10 border-amber-500/20";
     title = `JCB: ${data.vehicleNo}`;
     desc = `${data.totalHours}h ${data.totalMinutes}m • ${data.location}`;
     amount = null;
+    linkUrl = `${basePath}/jcb/report?highlight=${data._id}`;
   }
 
   return (
     <div
-      className={`flex items-start gap-4 p-3 rounded-xl transition-colors border border-transparent ${hoverBg}`}
+      onClick={() => navigate(linkUrl)}
+      className="flex items-start gap-4 p-3 rounded-xl transition-all border border-transparent cursor-pointer hover:bg-white/[0.04] hover:border-white/10 active:scale-[0.98]"
     >
-      <div className={`p-2 rounded-lg border shrink-0 ${colorTheme}`}>
+      <div
+        className={`p-2 rounded-lg border shrink-0 transition-colors ${colorTheme}`}
+      >
         <Icon size={16} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-start">
-          <p className="text-sm font-bold text-zinc-100 truncate">{title}</p>
+          <p className="text-sm font-bold text-zinc-100 truncate group-hover:text-white transition-colors">
+            {title}
+          </p>
           {amount && (
             <p
-              className={`text-xs font-bold font-mono ml-2 ${isTransport ? "text-cyan-400" : "text-indigo-400"}`}
+              className={`text-xs font-bold font-mono ml-2 transition-colors ${isTransport ? "text-cyan-400" : "text-indigo-400"}`}
             >
               {amount}
             </p>
           )}
         </div>
-        <p className="text-xs text-zinc-400 truncate mt-0.5">{desc}</p>
+        <p className="text-xs text-zinc-400 truncate mt-0.5 group-hover:text-zinc-300 transition-colors">
+          {desc}
+        </p>
         <p className="text-[10px] text-zinc-500 mt-1.5 font-mono flex items-center gap-1">
           <Calendar size={10} />
           {new Date(data.date || data.createdAt).toLocaleDateString("en-GB")}

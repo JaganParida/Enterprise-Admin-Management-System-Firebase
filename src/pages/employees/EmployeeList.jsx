@@ -28,6 +28,17 @@ import {
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
+import { collection, getDocs, query, limit } from "firebase/firestore";
+import { db } from "../../config/firebase";
+
+// 🚀 HELPER: Get Previous Month for Backup Warning
+const getPreviousMonth = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
 
 const EmployeeList = () => {
   const { toast } = useUI();
@@ -36,7 +47,18 @@ const EmployeeList = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🔥 THEME HOOK
+  // Pagination States
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // 🚀 URL se Highlight ID nikalna
+  const searchParams = new URLSearchParams(location.search);
+  const highlightId = searchParams.get("highlight");
+
+  // 🚀 NAYA: Active highlight state jo 5 sec baad hat jayega
+  const [activeHighlight, setActiveHighlight] = useState(highlightId);
+
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -69,7 +91,6 @@ const EmployeeList = () => {
       : "drop-shadow-[0_0_15px_rgba(99,102,241,0.4)]",
   };
 
-  // Filters State
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterSalary, setFilterSalary] = useState("All");
@@ -85,53 +106,108 @@ const EmployeeList = () => {
     data: [],
     itemName: "",
   });
+  const [idModal, setIdModal] = useState({ isOpen: false, data: null });
 
-  const [idModal, setIdModal] = useState({
-    isOpen: false,
-    data: null,
-  });
-
-  // Wipe Data States
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [wiping, setWiping] = useState(false);
 
+  // 🚀 SMART BACKUP STATES
+  const [backupMonth, setBackupMonth] = useState(getPreviousMonth());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
+
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  const fetchEmployees = async () => {
+  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
+  useEffect(() => {
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonth();
+
+      // Agar local storage me backup verified nahi hai
+      if (!localStorage.getItem(`backup_employees_${prevMonth}`)) {
+        try {
+          // Check karo ki kya database me kam se kam 1 employee hai ya nahi
+          const q = query(collection(db, "employees"), limit(1));
+          const snap = await getDocs(q);
+
+          // Agar data hai, toh hi warning dikhao
+          if (!snap.empty) {
+            setShowBackupWarning(prevMonth);
+          }
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
+      }
+    };
+
+    checkBackupNeeded();
+  }, []);
+
+  const fetchEmployees = async (isLoadMore = false) => {
+    if (isLoadMore) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const { data } = await employeeService.getAllEmployees();
-      setEmployees(data);
+      const response = await employeeService.getAllEmployees(
+        { status: filterStatus, search: searchTerm, salary: filterSalary },
+        isLoadMore ? lastDoc : null,
+      );
+
+      if (isLoadMore) {
+        setEmployees((prev) => [...prev, ...(response.data || [])]);
+      } else {
+        setEmployees(response.data || []);
+      }
+
+      setLastDoc(response.lastVisible || null);
+      setHasMore(response.data && response.data.length === 50);
     } catch (error) {
-      console.error("Error fetching employees:", error);
-      toast.error("Failed to load employee list");
+      if (error.message && error.message.toLowerCase().includes("index")) {
+        toast.error(
+          "Firebase Index required! Check browser console to click the create link.",
+          { duration: 6000 },
+        );
+      } else {
+        toast.error("Failed to load employee list");
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    fetchEmployees();
-  }, []);
+    const delayDebounceFn = setTimeout(() => {
+      fetchEmployees(false);
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm, filterStatus, filterSalary]);
 
-  // FILTER LOGIC
+  // 🚀 Auto-Scroll & 5-Second Blink Animation Logic
+  useEffect(() => {
+    if (highlightId && !loading) {
+      setActiveHighlight(highlightId);
+
+      setTimeout(() => {
+        const element = document.getElementById(highlightId);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 500);
+
+      const timer = setTimeout(() => {
+        setActiveHighlight(null);
+        window.history.replaceState({}, "", location.pathname);
+      }, 5000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [highlightId, loading, location.pathname]);
+
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp) => {
-      // Search
-      const matchesSearch =
-        (emp.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (emp.position || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (emp.phone || "").includes(searchTerm);
-      if (!matchesSearch) return false;
-
-      // Status Filter
-      const matchesStatus =
-        filterStatus === "All" || emp.status === filterStatus;
-      if (!matchesStatus) return false;
-
-      // Salary Taken Filter
       let matchSalary = true;
       const taken = Number(emp.salaryTaken) || 0;
       if (filterSalary === "No Salary Taken") matchSalary = taken === 0;
@@ -140,11 +216,9 @@ const EmployeeList = () => {
       else if (filterSalary === "₹10k - ₹50k")
         matchSalary = taken >= 10000 && taken <= 50000;
       else if (filterSalary === "Over ₹50k") matchSalary = taken > 50000;
-      if (!matchSalary) return false;
-
-      return true;
+      return matchSalary;
     });
-  }, [employees, searchTerm, filterStatus, filterSalary]);
+  }, [employees, filterSalary]);
 
   const activeFiltersCount = [filterStatus, filterSalary].filter(
     (f) => f !== "All",
@@ -153,7 +227,6 @@ const EmployeeList = () => {
   const handleDeleteClick = (id, name) => {
     setDeleteModal({ isOpen: true, id, name });
   };
-
   const handleDisabledClick = (action) => {
     setWarningTooltip(action);
     setTimeout(() => setWarningTooltip(null), 2500);
@@ -162,93 +235,121 @@ const EmployeeList = () => {
   const executeDelete = async () => {
     if (!deleteModal.id) return;
     try {
-      await employeeService.deleteEmployee(deleteModal.id);
+      const currentUser = admin?.data || admin || {};
+      await employeeService.deleteEmployee(deleteModal.id, currentUser);
       toast.info("Employee removed successfully");
-      fetchEmployees();
+      fetchEmployees(false);
     } catch (error) {
-      toast.error("Failed to remove employee");
+      toast.error(error.message || "Failed to remove employee");
     } finally {
       setDeleteModal({ isOpen: false, id: null, name: "" });
     }
   };
 
-  // EXPORT CSV (Filtered Data)
+  // 🚀 ONLY EXPORTS VISIBLE DATA (Maximum 50 or what is loaded in table)
   const handleExport = () => {
     try {
       if (filteredEmployees.length === 0)
-        return toast.info("No records to export");
+        return toast.info("No records to export.");
+
       const headers = [
         "Name",
         "Position",
         "Phone",
         "Address",
-        "ID Type",
-        "ID Number",
-        "Initial Salary",
-        "Salary Taken",
         "Status",
-        "Join Date",
+        "Base Salary",
+        "Salary Taken",
       ];
       const rows = filteredEmployees.map((emp) => {
-        const joinDate = emp.joinDate
-          ? `\t${new Date(emp.joinDate).toLocaleDateString("en-GB")}`
-          : "-";
-        return `"${emp.name || "-"}","${emp.position || "-"}","\t${emp.phone || "-"}","${emp.address || "-"}","${emp.idType || "-"}","\t${emp.idNumber || "-"}","${emp.initialSalary || 0}","${emp.salaryTaken || 0}","${emp.status || "Active"}","${joinDate}"`;
+        const name = `"${emp.name || ""}"`;
+        const position = `"${emp.position || ""}"`;
+        const phone = `"${emp.phone || ""}"`;
+        const address = `"${emp.address || ""}"`;
+        const status = `"${emp.status || "Active"}"`;
+        const baseSalary = Number(emp.initialSalary || emp.baseSalary || 0);
+        const salaryTaken = Number(emp.salaryTaken || 0);
+
+        return `${name},${position},${phone},${address},${status},${baseSalary},${salaryTaken}`;
       });
-      const csvContent = [headers.join(","), ...rows].join("\n");
+
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute(
         "download",
-        `Employees_Export_${new Date().toISOString().split("T")[0]}.csv`,
+        `Employees_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("List Exported Successfully!");
-    } catch (e) {
-      toast.error("Export failed");
+      toast.success("Visible records exported to CSV!");
+    } catch (error) {
+      toast.error("Export failed.");
     }
   };
 
-  // FULL BACKUP (All Data before Wipe)
-  const handleFullBackup = () => {
+  // 🚀 100% FULL DATABASE EXPORT (Bypasses Limit completely)
+  const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
-      if (employees.length === 0) return toast.info("Database is empty.");
+      if (!monthToFetch) return toast.error("Please select a month to backup.");
+      toast.info(`Fetching 100% database for backup... Please wait.`);
+
+      // Fetch all employees from server directly without pagination limit
+      const q = query(collection(db, "employees"));
+      const snapshot = await getDocs(q);
+      const allData = snapshot.docs.map((doc) => doc.data());
+
+      if (allData.length === 0) return toast.info("Database is empty.");
+
       const headers = [
         "Name",
         "Position",
         "Phone",
         "Address",
-        "ID Type",
-        "ID Number",
-        "Initial Salary",
-        "Salary Taken",
         "Status",
-        "Join Date",
+        "Base Salary",
+        "Salary Taken",
       ];
-      const rows = employees.map((emp) => {
-        const joinDate = emp.joinDate
-          ? `\t${new Date(emp.joinDate).toLocaleDateString("en-GB")}`
-          : "-";
-        return `"${emp.name || "-"}","${emp.position || "-"}","\t${emp.phone || "-"}","${emp.address || "-"}","${emp.idType || "-"}","\t${emp.idNumber || "-"}","${emp.initialSalary || 0}","${emp.salaryTaken || 0}","${emp.status || "Active"}","${joinDate}"`;
+      const rows = allData.map((emp) => {
+        const name = `"${emp.name || ""}"`;
+        const position = `"${emp.position || ""}"`;
+        const phone = `"${emp.phone || ""}"`;
+        const address = `"${emp.address || ""}"`;
+        const status = `"${emp.status || "Active"}"`;
+        const baseSalary = Number(emp.initialSalary || emp.baseSalary || 0);
+        const salaryTaken = Number(emp.salaryTaken || 0);
+
+        return `${name},${position},${phone},${address},${status},${baseSalary},${salaryTaken}`;
       });
-      const csvContent = [headers.join(","), ...rows].join("\n");
+
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
+      link.href = url;
       link.setAttribute(
         "download",
-        `Full_Employee_Backup_${new Date().toISOString().split("T")[0]}.csv`,
+        `Full_Backup_Employees_Snapshot_${monthToFetch}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Secure full backup generated!");
-    } catch (e) {
-      toast.error("Backup failed.");
+
+      toast.success(
+        `100% Backup snapshot for ${monthToFetch} downloaded securely!`,
+      );
+
+      // 🚀 Instantly removes the warning after successful backup
+      localStorage.setItem(`backup_employees_${monthToFetch}`, "true");
+      if (showBackupWarning === monthToFetch) {
+        setShowBackupWarning(null);
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to generate backup.");
     }
   };
 
@@ -257,16 +358,17 @@ const EmployeeList = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      const adminEmail = admin?.data?.email || admin?.email;
+      const currentUser = admin?.data || admin || {};
       await employeeService.deleteAllEmployees({
         password: deletePassword,
-        email: adminEmail,
+        email: currentUser.email,
+        user: currentUser,
       });
       toast.success("Employee database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchEmployees();
+      fetchEmployees(false);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
@@ -275,8 +377,11 @@ const EmployeeList = () => {
   };
 
   const openHistory = (emp) => {
-    const sortedHistory = emp.editHistory ? [...emp.editHistory].reverse() : [];
-    setHistoryModal({ isOpen: true, data: sortedHistory, itemName: emp.name });
+    setHistoryModal({
+      isOpen: true,
+      data: emp.editHistory ? [...emp.editHistory].reverse() : [],
+      itemName: emp.name,
+    });
   };
 
   const getStatusStyle = (status) => {
@@ -294,16 +399,13 @@ const EmployeeList = () => {
 
   const formatIdNumber = (type, number) => {
     if (!number) return "N/A";
-    if (type === "Aadhar" && number.length === 12) {
+    if (type === "Aadhar" && number.length === 12)
       return number.replace(/(\d{4})(\d{4})(\d{4})/, "$1 $2 $3");
-    }
     return number;
   };
 
-  if (loading) return <Loader />;
-
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative">
       {/* HEADER */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div>
@@ -328,9 +430,7 @@ const EmployeeList = () => {
                   ? handleDisabledClick("wipe-all")
                   : setIsDeleteAllOpen(true)
               }
-              className={`h-11 flex items-center gap-2 px-4 transition-all text-xs font-bold border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 whitespace-nowrap ${
-                isManager ? "opacity-50 !cursor-not-allowed" : ""
-              }`}
+              className={`h-11 flex items-center gap-2 px-4 transition-all text-xs font-bold border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 whitespace-nowrap ${isManager ? "opacity-50 !cursor-not-allowed" : ""}`}
             >
               <AlertOctagon size={16} /> Wipe Database
             </Button>
@@ -345,13 +445,12 @@ const EmployeeList = () => {
               </div>
             )}
           </div>
-          {/* TOP EXPORT BUTTON */}
           <Button
             variant="outline"
-            className="h-11 gap-2 text-xs border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 whitespace-nowrap"
+            className="h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors text-xs"
             onClick={handleExport}
           >
-            <Download size={16} /> Export CSV
+            <Download size={16} /> Export View
           </Button>
           <Link
             to={`${isTransport ? "/transportation/employees/add" : "/enterprise/employees/add"}`}
@@ -366,8 +465,45 @@ const EmployeeList = () => {
         </div>
       </div>
 
-      {/* FILTERS SECTION */}
-      <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 p-4">
+      {/* 🚀 SMART BACKUP WARNING */}
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the staff database snapshot for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
+
+      <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 p-4 relative">
+        {loading && !loadingMore && (
+          <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm">
+            <Loader />
+          </div>
+        )}
         <div className="relative w-full md:w-96 group">
           <Search
             size={16}
@@ -375,7 +511,7 @@ const EmployeeList = () => {
           />
           <input
             type="text"
-            placeholder="Search by name, position or phone..."
+            placeholder="Search by name..."
             className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -383,7 +519,7 @@ const EmployeeList = () => {
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 px-2 border-r border-zinc-800 mr-1">
-            <Filter size={14} /> Filter
+            <Filter size={14} /> Filter{" "}
             {activeFiltersCount > 0 && (
               <span
                 className={`px-1.5 rounded-full ml-1 border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
@@ -416,7 +552,6 @@ const EmployeeList = () => {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
             />
           </div>
-
           <div className="relative group">
             <select
               value={filterSalary}
@@ -424,62 +559,50 @@ const EmployeeList = () => {
               className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
               <option value="All" className="bg-[#09090B]">
-                Salary Taken: All
+                Salary: All
               </option>
               <option value="No Salary Taken" className="bg-[#09090B]">
-                No Salary Taken
+                Unpaid
               </option>
               <option value="Under ₹10k" className="bg-[#09090B]">
-                &lt; ₹10,000
+                &lt; ₹10k
               </option>
               <option value="₹10k - ₹50k" className="bg-[#09090B]">
                 ₹10k - ₹50k
               </option>
               <option value="Over ₹50k" className="bg-[#09090B]">
-                &gt; ₹50,000
+                &gt; ₹50k
               </option>
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
             />
           </div>
-
-          {activeFiltersCount > 0 && (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setFilterStatus("All");
-                setFilterSalary("All");
-                setSearchTerm("");
-              }}
-              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5"
-            >
-              <X size={14} /> Clear
-            </Button>
-          )}
         </div>
       </div>
 
-      {/* DIRECTORY GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredEmployees.map((emp) => (
           <div
             key={emp._id}
-            className={`bg-[#09090B] border border-zinc-800/60 rounded-2xl p-6 transition-all group relative flex flex-col ${theme.primaryHoverBorder}`}
+            id={emp._id}
+            className={`bg-[#09090B] border rounded-2xl p-6 transition-all duration-700 group relative flex flex-col ${
+              activeHighlight === emp._id
+                ? `animate-pulse bg-white/5 ring-1 ${isTransport ? "ring-cyan-500/50" : "ring-indigo-500/50"} border-transparent`
+                : `border-zinc-800/60 ${theme.primaryHoverBorder}`
+            }`}
           >
             <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
               <div
                 className={`absolute top-0 right-0 w-24 h-24 blur-2xl rounded-full transition-colors ${theme.glowOrb} ${theme.glowOrbHover}`}
               ></div>
             </div>
-
             <div className="flex justify-between items-start mb-4 relative z-10">
               <div className="p-3 bg-zinc-900/50 rounded-xl border border-zinc-800 text-zinc-300">
                 <User size={24} />
               </div>
               <div className="flex gap-2 items-center">
-                {/* ID CARD VIEW BUTTON */}
                 {emp.idNumber && (
                   <button
                     onClick={() => setIdModal({ isOpen: true, data: emp })}
@@ -489,18 +612,15 @@ const EmployeeList = () => {
                     <CreditCard size={18} />
                   </button>
                 )}
-
                 <Link
                   to={`${isTransport ? `/transportation/employees/edit/${emp._id}` : `/enterprise/employees/edit/${emp._id}`}`}
                 >
                   <button
                     className={`p-2 rounded-lg text-zinc-500 hover:${theme.primaryText} ${theme.primaryHoverBg} transition-colors`}
-                    title="Edit Profile"
                   >
                     <Edit size={18} />
                   </button>
                 </Link>
-
                 <div className="relative flex items-center">
                   <button
                     onClick={() =>
@@ -508,11 +628,7 @@ const EmployeeList = () => {
                         ? handleDisabledClick(emp._id)
                         : handleDeleteClick(emp._id, emp.name)
                     }
-                    className={`p-2 rounded-lg transition-colors ${
-                      isManager
-                        ? "text-zinc-600 opacity-50 cursor-not-allowed"
-                        : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
-                    }`}
+                    className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
                   >
                     <Trash2 size={18} />
                   </button>
@@ -534,7 +650,6 @@ const EmployeeList = () => {
               <h3 className="text-lg font-bold text-white mb-1">
                 {emp.name || "Unknown Employee"}
               </h3>
-
               <div className="flex items-center justify-between gap-3 mb-4">
                 <div className="flex items-center gap-2">
                   <p className="text-zinc-400 text-xs font-bold uppercase tracking-widest">
@@ -547,7 +662,6 @@ const EmployeeList = () => {
                   </span>
                 </div>
               </div>
-
               <div className="space-y-2 text-sm text-zinc-500 flex-1">
                 <div className="flex items-center gap-3">
                   <Phone size={14} className="text-zinc-600 min-w-[14px]" />
@@ -558,7 +672,6 @@ const EmployeeList = () => {
                   {emp.address || "No address"}
                 </div>
               </div>
-
               <div className="mt-5 pt-4 border-t border-zinc-800/60 flex flex-col justify-between">
                 <div className="flex justify-between items-center mb-1.5">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
@@ -579,63 +692,29 @@ const EmployeeList = () => {
                     ₹ {Number(emp.salaryTaken || 0).toLocaleString("en-IN")}
                   </span>
                 </div>
-
-                {emp.editHistory && emp.editHistory.length > 0 ? (
-                  <div
-                    onClick={() => openHistory(emp)}
-                    className="inline-flex flex-col gap-0.5 cursor-pointer bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 p-1.5 rounded-lg transition-all w-max"
-                    title="Click to view full edit history"
-                  >
-                    <div className="text-[10px] font-mono text-zinc-300 flex items-center gap-1.5 uppercase tracking-widest font-bold leading-none">
-                      <History size={10} />
-                      {emp.editHistory[emp.editHistory.length - 1].role ||
-                        "ADMIN"}
-                      {emp.editHistory.length > 1 && (
-                        <span className="bg-zinc-700/50 text-zinc-300 px-1 py-0.5 rounded text-[8px] font-bold ml-1">
-                          +{emp.editHistory.length - 1} MORE
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-zinc-500 text-[9px] ml-4 font-medium">
-                      {new Date(
-                        emp.editHistory[emp.editHistory.length - 1].at,
-                      ).toLocaleString("en-GB", {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                ) : emp.lastEditedRole ? (
-                  <div className="text-[10px] font-mono text-zinc-400 font-bold uppercase tracking-widest w-max flex flex-col gap-0.5">
-                    <span>✍️ {emp.lastEditedRole}</span>
-                    {emp.lastEditedAt && (
-                      <span className="text-zinc-500 text-[9px] ml-4 font-medium normal-case tracking-normal">
-                        {new Date(emp.lastEditedAt).toLocaleString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    )}
-                  </div>
-                ) : null}
               </div>
             </div>
           </div>
         ))}
-
-        {filteredEmployees.length === 0 && (
-          <div className="col-span-full flex flex-col items-center justify-center p-12 bg-[#09090B] border border-zinc-800/60 rounded-2xl text-zinc-500">
-            <Users size={48} className="mb-4 opacity-20" />
-            <p>No employees found matching your filters.</p>
-          </div>
-        )}
       </div>
 
-      {/* EDIT LOG MODAL */}
+      {hasMore && filteredEmployees.length > 0 && (
+        <div className="flex justify-center p-6">
+          <Button
+            onClick={() => fetchEmployees(true)}
+            disabled={loadingMore}
+            variant="outline"
+            className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+          >
+            {loadingMore ? (
+              <RefreshCcw size={16} className="animate-spin mr-2" />
+            ) : null}{" "}
+            {loadingMore ? "Loading..." : "Load Next 50 Employees"}
+          </Button>
+        </div>
+      )}
+
+      {/* MODALS */}
       {historyModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#09090B] border border-zinc-800/60 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
@@ -705,14 +784,12 @@ const EmployeeList = () => {
         </div>
       )}
 
-      {/* PREMIUM GLASSY ID CARD MODAL */}
       {idModal.isOpen && idModal.data && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
             className="absolute inset-0 cursor-pointer"
             onClick={() => setIdModal({ isOpen: false, data: null })}
           />
-
           <div className="relative w-full max-w-sm flex flex-col items-center animate-in zoom-in-95 duration-300 pointer-events-none">
             <button
               onClick={() => setIdModal({ isOpen: false, data: null })}
@@ -720,8 +797,6 @@ const EmployeeList = () => {
             >
               <X size={20} />
             </button>
-
-            {/* The ID Card */}
             <div
               className={`w-full bg-[#09090B] rounded-3xl border ${theme.primaryBorder} p-8 relative overflow-hidden ${theme.shadowGlow} pointer-events-auto`}
             >
@@ -733,8 +808,6 @@ const EmployeeList = () => {
               >
                 <ShieldCheck size={200} />
               </div>
-
-              {/* Header */}
               <div className="flex justify-between items-start relative z-10 mb-8">
                 <div>
                   <p
@@ -752,8 +825,6 @@ const EmployeeList = () => {
                   <CreditCard className={theme.primaryText} size={28} />
                 </div>
               </div>
-
-              {/* ID Number Box */}
               <div className="relative z-10 mb-8 bg-zinc-900/50 p-5 rounded-2xl border border-zinc-800 shadow-inner">
                 <p className="text-zinc-500 text-[10px] uppercase tracking-widest mb-2">
                   ID Number
@@ -764,8 +835,6 @@ const EmployeeList = () => {
                   {formatIdNumber(idModal.data.idType, idModal.data.idNumber)}
                 </p>
               </div>
-
-              {/* Footer details */}
               <div className="flex justify-between items-end relative z-10 pt-4 border-t border-zinc-800/60">
                 <div>
                   <p className="text-zinc-500 text-[10px] uppercase tracking-widest mb-1">
@@ -793,8 +862,8 @@ const EmployeeList = () => {
         </div>
       )}
 
-      {/* 🛑 SECURE WIPE DATA MODAL 🛑 */}
-      {isDeleteAllOpen && (
+      {/* Wipe Data Modal */}
+      {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
@@ -808,28 +877,37 @@ const EmployeeList = () => {
               </h2>
             </div>
 
-            {/* 🚀 BACKUP WARNING BOX */}
+            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
                   className="text-amber-500 shrink-0 mt-0.5"
                 />
-                <div>
+                <div className="w-full">
                   <h3 className="text-amber-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-amber-100/60 text-xs mb-4 leading-relaxed">
-                    Before wiping the database, we highly recommend downloading
-                    a complete CSV backup of all your current employee records.
+                  <p className="text-amber-100/60 text-xs mb-3 leading-relaxed">
+                    Before wiping, please download the backup for a specific
+                    month to prevent browser crash.
                   </p>
-                  <Button
-                    variant="outline"
-                    onClick={handleFullBackup}
-                    className="w-full sm:w-auto h-11 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"
-                  >
-                    <Download size={14} /> Download Full Database Backup
-                  </Button>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                    <input
+                      type="month"
+                      value={backupMonth}
+                      onChange={(e) => setBackupMonth(e.target.value)}
+                      style={{ colorScheme: "dark" }}
+                      className="w-full sm:w-32 bg-zinc-900/50 border border-amber-500/30 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none transition-all"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => handleFullBackup(backupMonth)}
+                      className="w-full sm:flex-1 h-9 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"
+                    >
+                      <Download size={14} className="mr-2" /> Download Backup
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -837,17 +915,15 @@ const EmployeeList = () => {
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
-              employee records from the system. Please enter your Admin password
-              to confirm.
+              employee records. Please enter Admin password.
             </p>
-
             <div className="relative mb-8">
               <input
                 type={showPassword ? "text" : "password"}
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
-                placeholder="Enter your admin password..."
-                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
+                placeholder="Enter password..."
+                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 transition-all outline-none"
               />
               <button
                 type="button"
@@ -857,7 +933,6 @@ const EmployeeList = () => {
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-
             <div className="flex justify-end gap-3">
               <Button
                 variant="outline"
@@ -866,20 +941,19 @@ const EmployeeList = () => {
                   setDeletePassword("");
                 }}
                 disabled={wiping}
-                className="h-11 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white"
+                className="h-11 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
               >
                 Cancel
               </Button>
-
               <Button
                 variant="danger"
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
-                className="h-11"
+                className="h-11 rounded-xl flex items-center gap-2"
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
-                ) : null}
+                ) : null}{" "}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </Button>
             </div>

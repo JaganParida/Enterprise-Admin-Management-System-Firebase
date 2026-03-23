@@ -1,5 +1,5 @@
 import React, { useEffect, useState, Suspense, lazy } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import dashboardService from "../../services/dashboardService";
 import { useUI } from "../../context/UIProvider";
 import {
@@ -29,6 +29,7 @@ const ChartSkeleton = () => (
 const Dashboard = () => {
   const { toast } = useUI();
   const location = useLocation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [showQuickMenu, setShowQuickMenu] = useState(false);
 
@@ -38,6 +39,7 @@ const Dashboard = () => {
       ? window.location.pathname
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
+  const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
     primaryText: isTransport ? "text-blue-400" : "text-indigo-400",
@@ -137,7 +139,7 @@ const Dashboard = () => {
         productNames: data.charts.production.map((d) => d.productName),
         backgroundColor: isTransport
           ? "rgba(6, 182, 212, 0.85)"
-          : "rgba(124, 58, 237, 0.85)", // Cyan vs Violet
+          : "rgba(124, 58, 237, 0.85)",
         hoverBackgroundColor: isTransport
           ? "rgba(8, 145, 178, 1)"
           : "rgba(139, 92, 246, 1)",
@@ -155,7 +157,7 @@ const Dashboard = () => {
         label: "Sales Revenue",
         data: data.charts.sales.map((d) => d.amount),
         productNames: data.charts.sales.map((d) => d.productName),
-        borderColor: isTransport ? "#0ea5e9" : "#3b82f6", // Sky vs Blue
+        borderColor: isTransport ? "#0ea5e9" : "#3b82f6",
         backgroundColor: isTransport
           ? "rgba(14, 165, 233, 0.15)"
           : "rgba(59, 130, 246, 0.15)",
@@ -174,10 +176,7 @@ const Dashboard = () => {
   const sharedOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    interaction: {
-      mode: "index",
-      intersect: false,
-    },
+    interaction: { mode: "index", intersect: false },
     layout: { padding: { left: 0, right: 0, top: 10, bottom: 0 } },
   };
 
@@ -187,7 +186,7 @@ const Dashboard = () => {
       legend: { display: false },
       tooltip: {
         backgroundColor: "rgba(9, 9, 11, 0.95)",
-        titleColor: isTransport ? "#22d3ee" : "#a78bfa", // Cyan vs Violet
+        titleColor: isTransport ? "#22d3ee" : "#a78bfa",
         bodyColor: "#f4f4f5",
         borderColor: "rgba(39, 39, 42, 1)",
         borderWidth: 1,
@@ -244,7 +243,7 @@ const Dashboard = () => {
       legend: { display: false },
       tooltip: {
         backgroundColor: "rgba(9, 9, 11, 0.95)",
-        titleColor: isTransport ? "#38bdf8" : "#60a5fa", // Sky vs Blue
+        titleColor: isTransport ? "#38bdf8" : "#60a5fa",
         bodyColor: "#f4f4f5",
         borderColor: "rgba(39, 39, 42, 1)",
         borderWidth: 1,
@@ -344,7 +343,7 @@ const Dashboard = () => {
                   </div>
                   <div className="space-y-1 p-1">
                     <Link
-                      to="/enterprise/sales"
+                      to={`${basePath}/sales`}
                       className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 transition-colors mr-3">
@@ -359,7 +358,7 @@ const Dashboard = () => {
                       />
                     </Link>
                     <Link
-                      to="/enterprise/production"
+                      to={`${basePath}/production`}
                       className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20 transition-colors mr-3">
@@ -374,7 +373,7 @@ const Dashboard = () => {
                       />
                     </Link>
                     <Link
-                      to="/enterprise/invoices/create"
+                      to={`${basePath}/invoices/create`}
                       className="quick-link-item group flex items-center p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 group-hover:bg-purple-500/20 transition-colors mr-3">
@@ -405,6 +404,7 @@ const Dashboard = () => {
           trend="Overall Dispatch"
           trendUp={true}
           isTransport={isTransport}
+          linkTo={`${basePath}/sales/report`}
         />
         <StatCard
           title="Stock Value"
@@ -414,7 +414,9 @@ const Dashboard = () => {
           trend={`${data.cards.lowStock} Low Stock Items`}
           trendUp={data.cards.lowStock === 0}
           isTransport={isTransport}
+          linkTo={`${basePath}/stock`}
         />
+        {/* 🔥 FIXED ROUTE TO '/invoices' instead of '/invoices/report' */}
         <StatCard
           title="Invoice Billed"
           value={`₹ ${data.cards.revenue.toLocaleString()}`}
@@ -423,6 +425,7 @@ const Dashboard = () => {
           trend={`${data.cards.pendingInvoices} Pending Invoices`}
           trendUp={true}
           isTransport={isTransport}
+          linkTo={`${basePath}/invoices`}
         />
         <StatCard
           title="Workforce"
@@ -432,33 +435,29 @@ const Dashboard = () => {
           trend="Active Personnel"
           trendUp={true}
           isTransport={isTransport}
+          linkTo={`${basePath}/employees`}
         />
       </div>
 
       <div className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* ========================================== */}
-          {/* PRODUCTION CHART */}
-          {/* ========================================== */}
           <div
             className={`lg:col-span-2 p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl relative flex flex-col w-full h-[450px] overflow-hidden group ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md`}
           >
             <div
               className={`absolute -left-10 -top-10 w-40 h-40 blur-[80px] rounded-full transition-colors duration-700 pointer-events-none ${theme.glowOrb}`}
             />
-
             <div className="flex justify-between items-center shrink-0 relative z-10 mb-6">
               <h3 className="text-xl font-bold text-white flex items-center gap-3">
                 <div className={`p-2 rounded-lg ${theme.primaryBg}`}>
                   <Activity size={18} className={theme.primaryText} />
-                </div>
+                </div>{" "}
                 Production Trend
               </h3>
               <span className="text-xs text-zinc-400 font-mono bg-zinc-800/30 px-3 py-1.5 rounded-lg border border-zinc-800/80">
                 Last 7 Days
               </span>
             </div>
-
             <div className="relative flex-1 w-full min-h-0 [&>div]:!h-full [&>div]:!w-full [&_canvas]:!h-full [&_canvas]:!w-full">
               {data.charts.production.length > 0 ? (
                 <Suspense fallback={<ChartSkeleton />}>
@@ -475,20 +474,16 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* ========================================== */}
-          {/* RECENT ACTIVITY */}
-          {/* ========================================== */}
           <div className="p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl flex flex-col w-full h-[450px] overflow-hidden hover:border-white/10 transition-all duration-500 backdrop-blur-md">
             <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-3 shrink-0">
               <div className="p-2 rounded-lg bg-zinc-800/50">
                 <Activity size={18} className="text-zinc-300" />
-              </div>
-              Recent Activity
+              </div>{" "}
+              Recent Activity{" "}
               <span className="text-xs font-normal text-zinc-500 ml-auto">
                 Top 10
               </span>
             </h3>
-
             <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar min-h-0">
               {data.recentActivity.length > 0 ? (
                 data.recentActivity.map((activity, index) => (
@@ -496,6 +491,7 @@ const Dashboard = () => {
                     key={index}
                     data={activity}
                     isTransport={isTransport}
+                    basePath={basePath}
                   />
                 ))
               ) : (
@@ -507,24 +503,19 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ========================================== */}
-        {/* SALES CHART */}
-        {/* ========================================== */}
         <div className="w-full p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl relative flex flex-col h-[450px] overflow-hidden group hover:border-blue-500/30 transition-all duration-500 backdrop-blur-md">
           <div className="absolute -left-10 -top-10 w-40 h-40 bg-blue-500/5 blur-[80px] rounded-full group-hover:bg-blue-500/10 transition-colors duration-700 pointer-events-none" />
-
           <div className="flex justify-between items-center shrink-0 relative z-10 mb-6">
             <h3 className="text-xl font-bold text-white flex items-center gap-3">
               <div className="p-2 rounded-lg bg-blue-500/10">
                 <TrendingUp size={18} className="text-blue-400" />
-              </div>
+              </div>{" "}
               Sales Revenue Trend
             </h3>
             <span className="text-xs text-zinc-400 font-mono bg-zinc-800/30 px-3 py-1.5 rounded-lg border border-zinc-800/80">
               Last 7 Days
             </span>
           </div>
-
           <div className="relative flex-1 w-full min-h-0 [&>div]:!h-full [&>div]:!w-full [&_canvas]:!h-full [&_canvas]:!w-full">
             {data.charts.sales.length > 0 ? (
               <Suspense fallback={<ChartSkeleton />}>
@@ -542,6 +533,7 @@ const Dashboard = () => {
   );
 };
 
+// 🚀 CLICKABLE STAT CARD
 const StatCard = ({
   title,
   value,
@@ -550,7 +542,9 @@ const StatCard = ({
   trend,
   trendUp,
   isTransport,
+  linkTo,
 }) => {
+  const navigate = useNavigate();
   const colors = isTransport
     ? {
         indigo: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
@@ -574,20 +568,15 @@ const StatCard = ({
 
   return (
     <div
-      className={`bg-white/[0.02] backdrop-blur-md border border-white/5 p-6 rounded-2xl ${hoverClass} transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden shadow-2xl shadow-black/20`}
+      onClick={() => navigate(linkTo)}
+      className={`bg-white/[0.02] backdrop-blur-md border border-white/5 p-6 rounded-2xl ${hoverClass} cursor-pointer transition-all duration-300 group hover:-translate-y-1 relative overflow-hidden shadow-2xl shadow-black/20`}
     >
       <div className="flex justify-between items-start mb-4 relative z-10">
         <div className={`p-3.5 rounded-xl border ${theme}`}>
           <Icon size={22} />
         </div>
         <span
-          className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border backdrop-blur-sm ${
-            trendUp
-              ? isTransport
-                ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
-              : "bg-rose-500/10 text-rose-400 border-rose-500/20"
-          }`}
+          className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border backdrop-blur-sm ${trendUp ? (isTransport ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20") : "bg-rose-500/10 text-rose-400 border-rose-500/20"}`}
         >
           {trend}
         </span>
@@ -604,46 +593,63 @@ const StatCard = ({
   );
 };
 
-const ActivityItem = ({ data, isTransport }) => {
+// 🚀 CLICKABLE ACTIVITY ITEM WITH HIGHLIGHT PARAMS
+const ActivityItem = ({ data, isTransport, basePath }) => {
+  const navigate = useNavigate();
+
   let Icon = Factory;
   let colorTheme = isTransport
-    ? "text-cyan-400 bg-cyan-500/10 border-cyan-500/20"
-    : "text-indigo-400 bg-indigo-500/10 border-indigo-500/20";
+    ? "text-cyan-400 bg-cyan-500/10 border-cyan-500/20 group-hover:bg-cyan-500/20"
+    : "text-indigo-400 bg-indigo-500/10 border-indigo-500/20 group-hover:bg-indigo-500/20";
   let title = `Production: ${data.productName || "Product"}`;
   let desc = `${Number(data.quantity || 0).toLocaleString()} Units Produced`;
   let amount = null;
+  // 🚀 Added ?highlight URL params so the list page knows which row to animate
+  let linkUrl = `${basePath}/production/report?highlight=${data._id}`;
 
   if (data.activityType === "Sale") {
     Icon = ShoppingCart;
-    colorTheme = "text-blue-400 bg-blue-500/10 border-blue-500/20";
-    title = `Sale: ${data.customerName || "Customer"}`;
+    colorTheme =
+      "text-blue-400 bg-blue-500/10 border-blue-500/20 group-hover:bg-blue-500/20";
+    title = `Sale: ${data.buyerName || "Customer"}`;
     desc = data.productName || "Items Sold";
     amount = `₹${Number(data.amount || 0).toLocaleString("en-IN")}`;
+    linkUrl = `${basePath}/sales/report?highlight=${data._id}`;
   } else if (data.activityType === "Invoice") {
     Icon = FileText;
     colorTheme = isTransport
-      ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/20"
-      : "text-purple-400 bg-purple-500/10 border-purple-500/20";
+      ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/20 group-hover:bg-indigo-500/20"
+      : "text-purple-400 bg-purple-500/10 border-purple-500/20 group-hover:bg-purple-500/20";
     title = `Invoice: ${data.invoiceNumber || "INV"}`;
-    desc = `Billed to ${data.clientName || "Client"}`;
+    desc = `Billed to ${data.client?.name || "Client"}`;
     amount = `₹${Number(data.grandTotal || 0).toLocaleString("en-IN")}`;
+    linkUrl = `${basePath}/invoices?highlight=${data._id}`;
   }
 
   return (
-    <div className="flex items-start gap-4 p-3 rounded-xl hover:bg-white/[0.04] transition-colors border border-transparent hover:border-white/5">
-      <div className={`p-2 rounded-lg border shrink-0 ${colorTheme}`}>
+    <div
+      onClick={() => navigate(linkUrl)}
+      className="group flex items-start gap-4 p-3 rounded-xl hover:bg-white/[0.04] cursor-pointer transition-all border border-transparent hover:border-white/10 active:scale-[0.98]"
+    >
+      <div
+        className={`p-2 rounded-lg border shrink-0 transition-colors ${colorTheme}`}
+      >
         <Icon size={16} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-start">
-          <p className="text-sm font-bold text-zinc-100 truncate">{title}</p>
+          <p className="text-sm font-bold text-zinc-100 truncate group-hover:text-white transition-colors">
+            {title}
+          </p>
           {amount && (
-            <p className="text-xs font-bold text-zinc-300 font-mono ml-2">
+            <p className="text-xs font-bold text-zinc-300 font-mono ml-2 group-hover:text-white transition-colors">
               {amount}
             </p>
           )}
         </div>
-        <p className="text-xs text-zinc-400 truncate mt-0.5">{desc}</p>
+        <p className="text-xs text-zinc-400 truncate mt-0.5 group-hover:text-zinc-300 transition-colors">
+          {desc}
+        </p>
         <p className="text-[10px] text-zinc-500 mt-1.5 font-mono flex items-center gap-1">
           <Calendar size={10} />
           {new Date(data.date || data.createdAt).toLocaleDateString("en-GB")}

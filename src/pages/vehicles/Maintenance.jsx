@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import maintenanceService from "../../services/maintenanceService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -58,17 +58,26 @@ const Maintenance = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
 
-  // 🔥 THEME HOOK
+  // 🚀 SERVER-SIDE STATS STATE
+  const [stats, setStats] = useState({ totalCost: 0, serviceCount: 0 });
+
+  // 🚀 Highlight Animation State
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
+
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
+  const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
     primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
@@ -94,22 +103,40 @@ const Maintenance = () => {
     cost: "",
     description: "",
   };
-
   const [formData, setFormData] = useState(initialForm);
 
-  const fetchLogs = async () => {
+  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element)
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 500);
+      const timer = setTimeout(() => setActiveHighlight(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
+
+  // 🚀 FETCH OPTIMIZED FOR TOP 10 AND AGGREGATE STATS
+  const fetchData = async () => {
     try {
-      const { data } = await maintenanceService.getLogs();
-      setLogs(Array.isArray(data) ? data : []);
+      const [statsRes, logsRes] = await Promise.all([
+        maintenanceService.getStats(),
+        maintenanceService.getLogs({}, null, 10), // Limit to top 10
+      ]);
+      setStats(statsRes);
+      setLogs(logsRes.data || []);
     } catch (err) {
-      toast.error("Failed to load maintenance records.");
+      toast.error("Failed to load tracking data.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLogs();
+    fetchData();
   }, []);
 
   useEffect(() => {
@@ -131,17 +158,6 @@ const Maintenance = () => {
     }
   }, [location]);
 
-  const stats = useMemo(() => {
-    const currentLogs = Array.isArray(logs) ? logs : [];
-    return {
-      totalCost: currentLogs.reduce(
-        (acc, log) => acc + (Number(log?.cost) || 0),
-        0,
-      ),
-      serviceCount: currentLogs.length,
-    };
-  }, [logs]);
-
   const handleVehicleNoChange = (e) => {
     let rawValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
     let state = rawValue.slice(0, 2).replace(/[^A-Z]/g, "");
@@ -157,12 +173,8 @@ const Maintenance = () => {
         formatted += "-";
         if (middleChars.length > 0) {
           formatted += middleChars;
-          if (lastDigits.length > 0) {
-            formatted += "-" + lastDigits;
-          }
-        } else {
-          formatted += lastDigits;
-        }
+          if (lastDigits.length > 0) formatted += "-" + lastDigits;
+        } else formatted += lastDigits;
       }
     }
     setFormData((prev) => ({ ...prev, vehicleNo: formatted }));
@@ -178,8 +190,7 @@ const Maintenance = () => {
 
     setSubmitting(true);
     try {
-      const currentUser = admin?.data ||
-        admin || { email: "Unknown", role: "admin" };
+      const currentUser = admin?.data || admin || {};
       const payload = { ...formData, cost: Number(formData.cost) || 0 };
 
       if (editId) {
@@ -190,7 +201,7 @@ const Maintenance = () => {
         toast.success("Logged successfully!");
       }
       resetForm();
-      fetchLogs();
+      fetchData();
     } catch (err) {
       toast.error("Failed to save record.");
     } finally {
@@ -198,7 +209,8 @@ const Maintenance = () => {
     }
   };
 
-  const openHistory = (log) => {
+  const openHistory = (e, log) => {
+    e.stopPropagation();
     const historyData = Array.isArray(log?.editHistory)
       ? [...log.editHistory].reverse()
       : [];
@@ -212,6 +224,17 @@ const Maintenance = () => {
   const resetForm = () => {
     setEditId(null);
     setFormData(initialForm);
+  };
+
+  // 🚀 REDIRECT TO REPORT HANDLER
+  const handleRowClick = (e, id) => {
+    if (
+      e.target.closest("button") ||
+      e.target.closest("a") ||
+      e.target.closest(".history-btn")
+    )
+      return;
+    navigate(`${basePath}/maintenance/report?highlight=${id}`);
   };
 
   if (loading)
@@ -395,13 +418,7 @@ const Maintenance = () => {
                   (Latest)
                 </span>
               </h3>
-              <Link
-                to={
-                  isTransport
-                    ? "/transportation/maintenance/report"
-                    : "/enterprise/maintenance/report"
-                }
-              >
+              <Link to={`${basePath}/maintenance/report`}>
                 <Button
                   variant="outline"
                   className={`!px-3 !py-1.5 !text-[10px] uppercase tracking-widest !h-auto ${theme.primaryBg} ${theme.primaryText} border ${theme.primaryBorder} hover:opacity-80`}
@@ -421,7 +438,7 @@ const Maintenance = () => {
                   </tr>
                 </thead>
                 <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
-                  {logs.slice(0, 10).map((log) => {
+                  {logs.map((log) => {
                     const historyArray = Array.isArray(log?.editHistory)
                       ? log.editHistory
                       : [];
@@ -433,7 +450,13 @@ const Maintenance = () => {
                     return (
                       <tr
                         key={log._id}
-                        className="hover:bg-zinc-800/30 transition-colors group"
+                        id={log._id}
+                        onClick={(e) => handleRowClick(e, log._id)}
+                        className={`transition-all duration-1000 ease-out group cursor-pointer border-l-4 ${
+                          activeHighlight === log._id
+                            ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                            : "border-transparent hover:bg-zinc-800/30"
+                        }`}
                       >
                         <td className="p-3 align-top">
                           <p className="text-[11px] font-mono text-zinc-400 mb-1">
@@ -449,11 +472,10 @@ const Maintenance = () => {
                               {log.meterKm} KM
                             </p>
                           )}
-
                           {historyArray.length > 0 && (
                             <div
-                              onClick={() => openHistory(log)}
-                              className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={(e) => openHistory(e, log)}
+                              className="history-btn mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                             >
                               <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
                                 <History size={10} className="text-zinc-400" />
@@ -461,7 +483,7 @@ const Maintenance = () => {
                                   {latestEdit.role || "ADMIN"}
                                 </span>
                                 {log.editHistory.length > 1 && (
-                                  <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                  <span className="bg-zinc-700/50 text-zinc-400 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
                                     +{log.editHistory.length - 1} MORE
                                   </span>
                                 )}
@@ -469,19 +491,19 @@ const Maintenance = () => {
                             </div>
                           )}
                         </td>
-
                         <td className="p-3 align-top">
-                          <div className="text-[11px] text-zinc-300 mb-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2 py-1 rounded font-medium border border-zinc-800 uppercase tracking-wide">
-                            <Wrench size={12} className="text-emerald-400" />{" "}
+                          <div
+                            className={`text-xs text-zinc-200 mb-2 flex items-center gap-1.5 ${theme.primaryBg} w-max px-2.5 py-1 rounded-md font-medium border ${theme.primaryBorder} uppercase tracking-wide`}
+                          >
+                            <Wrench size={12} className={theme.primaryText} />{" "}
                             {log.serviceType || "Routine"}
                           </div>
                           {log.description && (
-                            <div className="text-[10px] text-zinc-500 font-mono mt-1.5 line-clamp-2 pr-4">
+                            <div className="text-[10px] text-zinc-400 font-mono mt-1.5 line-clamp-2 pr-4">
                               {log.description}
                             </div>
                           )}
                         </td>
-
                         <td className="p-3 text-right align-top">
                           <p className="text-lg font-black text-white font-mono drop-shadow-sm mb-2">
                             ₹{(Number(log.cost) || 0).toLocaleString("en-IN")}
@@ -515,12 +537,15 @@ const Maintenance = () => {
               setHistoryModal({ isOpen: false, data: null, itemName: "" })
             }
           />
-          <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-            <div className="flex items-center justify-between p-5 border-b border-zinc-800/60 bg-[#09090B] shrink-0">
+          <div
+            className={`bg-[#09090B] border ${theme.primaryBorder} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200`}
+          >
+            <div
+              className={`flex items-center justify-between p-5 border-b ${theme.primaryBorder} ${theme.primaryBg} shrink-0`}
+            >
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className={theme.primaryText} />
-                Log History:{" "}
-                <span className="text-zinc-400 font-normal">
+                <History size={16} className={theme.primaryText} /> Log History:{" "}
+                <span className={`${theme.primaryText} font-normal`}>
                   {historyModal.itemName}
                 </span>
               </div>
@@ -528,17 +553,16 @@ const Maintenance = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-zinc-500 hover:text-white transition-colors"
+                className="text-zinc-400 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
             </div>
-
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-zinc-900/30 border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-[#09090B] border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
                     <div
@@ -547,13 +571,13 @@ const Maintenance = () => {
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-400"}`}
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-500"}`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
@@ -576,7 +600,7 @@ const Maintenance = () => {
                   </div>
                   {index === 0 && (
                     <div
-                      className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
                     >
                       LATEST
                     </div>

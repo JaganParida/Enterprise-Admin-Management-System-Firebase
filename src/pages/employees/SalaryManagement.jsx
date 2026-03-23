@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import employeeService from "../../services/employeeService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
-import { Banknote, Plus, History, Calendar } from "lucide-react";
+import { Banknote, Plus, History, Calendar, RefreshCcw } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -17,7 +17,14 @@ const SalaryManagement = () => {
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
 
-  // 🔥 THEME HOOK
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // 🚀 URL se Highlight ID nikalna
+  const searchParams = new URLSearchParams(location.search);
+  const highlightId = searchParams.get("highlight");
+
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -49,17 +56,44 @@ const SalaryManagement = () => {
 
       setEmployees(empRes.data);
       setHistory(histRes.data);
+      setLastDoc(histRes.lastVisible || null);
+      setHasMore(histRes.data && histRes.data.length === 50);
     } catch (error) {
-      console.error("Fetch Error:", error);
-      toast.error("Failed to load salary data");
+      toast.error("Failed to load initial data");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMoreHistory = async () => {
+    setLoadingMore(true);
+    try {
+      const response = await employeeService.getSalaryHistory(lastDoc);
+      setHistory((prev) => [...prev, ...(response.data || [])]);
+      setLastDoc(response.lastVisible || null);
+      setHasMore(response.data && response.data.length === 50);
+    } catch (error) {
+      toast.error("Failed to load more history");
+    } finally {
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  // 🚀 Auto-Scroll Animation Logic
+  useEffect(() => {
+    if (highlightId && !loading) {
+      setTimeout(() => {
+        const element = document.getElementById(highlightId);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 500);
+    }
+  }, [highlightId, loading]);
 
   const handlePayment = async (e) => {
     e.preventDefault();
@@ -70,11 +104,24 @@ const SalaryManagement = () => {
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
-      await employeeService.addSalaryPayment(paymentData, currentUser);
+      const selectedEmp = employees.find(
+        (emp) => emp._id === paymentData.employeeId,
+      );
 
+      const payloadToSave = {
+        ...paymentData,
+        employeeName: selectedEmp?.name || "Unknown",
+        employeePosition: selectedEmp?.position || "-",
+      };
+
+      await employeeService.addSalaryPayment(payloadToSave, currentUser);
       toast.success("Payment recorded successfully");
-      const { data } = await employeeService.getSalaryHistory();
+
+      const { data, lastVisible } = await employeeService.getSalaryHistory();
       setHistory(data);
+      setLastDoc(lastVisible || null);
+      setHasMore(data && data.length === 50);
+
       setPaymentData((prev) => ({ ...prev, amount: "", remarks: "" }));
     } catch (error) {
       toast.error("Failed to record payment");
@@ -107,7 +154,6 @@ const SalaryManagement = () => {
               </p>
             </div>
           </div>
-
           <form onSubmit={handlePayment} className="space-y-5">
             <div>
               <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2 ml-1">
@@ -143,7 +189,6 @@ const SalaryManagement = () => {
                 </div>
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Date"
@@ -184,7 +229,6 @@ const SalaryManagement = () => {
                 </div>
               </div>
             </div>
-
             <Input
               label="Amount (₹)"
               type="number"
@@ -203,7 +247,6 @@ const SalaryManagement = () => {
                 setPaymentData({ ...paymentData, remarks: e.target.value })
               }
             />
-
             <Button
               type="submit"
               variant="primary"
@@ -225,11 +268,10 @@ const SalaryManagement = () => {
                 className={`p-2 rounded-lg border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
               >
                 <History size={20} />
-              </div>
+              </div>{" "}
               Payment History
             </h2>
           </div>
-
           <div className="overflow-x-auto pb-4 custom-scrollbar">
             <table className="w-full text-left min-w-max">
               <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
@@ -246,14 +288,18 @@ const SalaryManagement = () => {
                 {history.map((record) => (
                   <tr
                     key={record._id}
-                    className="hover:bg-zinc-800/30 transition-colors group"
+                    id={record._id} // 🚀 Added ID for scrolling
+                    className={`transition-all duration-700 group ${
+                      highlightId === record._id
+                        ? `bg-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.05)] border-l-4 ${isTransport ? "border-cyan-500" : "border-indigo-500"}`
+                        : "hover:bg-zinc-800/30"
+                    }`}
                   >
                     <td className="p-5 md:pl-6 align-middle">
                       <div className="flex items-center gap-2 text-zinc-400 font-mono text-xs whitespace-nowrap">
                         <Calendar size={14} className="text-zinc-600" />
                         {new Date(record.date).toLocaleDateString("en-GB")}
                       </div>
-                      {/* 🛡️ Payer Name Tag */}
                       {record.recordedRole && (
                         <div className="text-[9px] font-mono text-zinc-500 font-bold mt-2 uppercase tracking-widest whitespace-nowrap">
                           Paid By: {record.recordedRole}
@@ -270,11 +316,7 @@ const SalaryManagement = () => {
                     </td>
                     <td className="p-5 align-middle whitespace-nowrap">
                       <span
-                        className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${
-                          record.type === "Advance"
-                            ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                            : `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`
-                        }`}
+                        className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${record.type === "Advance" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}`}
                       >
                         {record.type}
                       </span>
@@ -284,18 +326,24 @@ const SalaryManagement = () => {
                     </td>
                   </tr>
                 ))}
-                {history.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan="4"
-                      className="p-8 text-center text-zinc-500 italic"
-                    >
-                      No payment records found.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
+
+            {hasMore && history.length > 0 && (
+              <div className="flex justify-center p-6 border-t border-zinc-800/60">
+                <Button
+                  onClick={loadMoreHistory}
+                  disabled={loadingMore}
+                  variant="outline"
+                  className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+                >
+                  {loadingMore ? (
+                    <RefreshCcw size={16} className="animate-spin mr-2" />
+                  ) : null}{" "}
+                  {loadingMore ? "Loading..." : "Load Older Records"}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>

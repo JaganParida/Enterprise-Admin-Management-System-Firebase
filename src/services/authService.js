@@ -7,13 +7,13 @@ import {
 } from "firebase/auth";
 
 // 🔒 STRICT SECURITY & ROLES: Yahan email ke sath role define karna hai
-const ALLOWED_USERS = {
+export const ALLOWED_USERS = {
   "jagan.parida.dev@gmail.com": "admin", // Admin ko sab access hai
   "jaganparida39064@gmail.com": "manager", // Manager sirf view aur edit karega, delete nahi
 };
 
-// Helper function: Email check karne aur role nikalne ke liye
-const verifyAndGetRole = async (user) => {
+// 🚀 EXPORTED Helper function: Email check karne aur role nikalne ke liye
+export const verifyAndGetRole = async (user) => {
   const role = ALLOWED_USERS[user.email];
   if (!role) {
     await signOut(auth); // Unauthorized user ko turant bahar nikalo

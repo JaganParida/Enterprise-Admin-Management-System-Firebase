@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import invoiceService from "../../services/invoiceService";
 import { useUI } from "../../context/UIProvider";
@@ -24,6 +24,17 @@ import {
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
+import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { db } from "../../config/firebase";
+
+// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
+const getPreviousMonthString = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
 
 const InvoiceList = () => {
   const { toast } = useUI();
@@ -32,7 +43,15 @@ const InvoiceList = () => {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🔥 THEME HOOK
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // 🚀 Highlight Animation State
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
+
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -68,31 +87,151 @@ const InvoiceList = () => {
     itemName: "",
   });
 
-  // Wipe Data States
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [wiping, setWiping] = useState(false);
 
+  // 🚀 SMART BACKUP STATES
+  const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
+
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  const fetchInvoices = async () => {
+  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
+  useEffect(() => {
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonthString();
+
+      // Agar local storage me backup verified nahi hai
+      if (!localStorage.getItem(`backup_invoices_${prevMonth}`)) {
+        try {
+          // Check karo ki kya database me pichle mahine ka koi data hai (using prefix matching hack for ISO dates)
+          const q = query(
+            collection(db, "invoices"),
+            where("date", ">=", prevMonth),
+            where("date", "<=", prevMonth + "\uf8ff"),
+            limit(1),
+          );
+          const snap = await getDocs(q);
+
+          // Agar data hai, toh hi warning dikhao
+          if (!snap.empty) {
+            setShowBackupWarning(prevMonth);
+          }
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
+      }
+    };
+
+    checkBackupNeeded();
+  }, []);
+
+  const fetchInvoices = async (isLoadMore = false) => {
+    if (isLoadMore) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const { data } = await invoiceService.getAllInvoices();
-      setInvoices(data || []);
+      const response = await invoiceService.getAllInvoices(
+        {
+          status: filterStatus,
+          search: searchTerm,
+          amount: filterAmount,
+          date: filterDate,
+          exactDate: filterExactDate,
+        },
+        isLoadMore ? lastDoc : null,
+      );
+
+      if (isLoadMore) {
+        setInvoices((prev) => [...prev, ...(response.data || [])]);
+      } else {
+        setInvoices(response.data || []);
+      }
+
+      setLastDoc(response.lastVisible || null);
+      setHasMore(response.data && response.data.length === 50);
     } catch (error) {
-      toast.error("Failed to load invoices");
+      if (error.message && error.message.toLowerCase().includes("index")) {
+        toast.error(
+          "Firebase Index required! Check browser console to click the create link.",
+          { duration: 6000 },
+        );
+      } else {
+        toast.error("Failed to load invoices");
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    fetchInvoices();
-  }, []);
+    const delayDebounceFn = setTimeout(() => {
+      fetchInvoices(false);
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm, filterStatus, filterAmount, filterDate, filterExactDate]);
 
-  // Formatters
+  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 500);
+
+      const timer = setTimeout(() => {
+        setActiveHighlight(null);
+      }, 3500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
+
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((inv) => {
+      let matchesAmount = true;
+      if (filterAmount !== "All") {
+        const amount = Number(inv.grandTotal) || 0;
+        if (filterAmount === "Under10k") matchesAmount = amount < 10000;
+        else if (filterAmount === "10k-50k")
+          matchesAmount = amount >= 10000 && amount <= 50000;
+        else if (filterAmount === "Above50k") matchesAmount = amount > 50000;
+      }
+
+      let matchesDate = true;
+      if (filterExactDate && inv.date) {
+        const invDateObj = new Date(inv.date);
+        const formattedInvDate = `${invDateObj.getFullYear()}-${String(invDateObj.getMonth() + 1).padStart(2, "0")}-${String(invDateObj.getDate()).padStart(2, "0")}`;
+        matchesDate = formattedInvDate === filterExactDate;
+      } else if (filterDate !== "All" && inv.date) {
+        const invDate = new Date(inv.date);
+        const today = new Date();
+        const diffTime = Math.abs(today - invDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (filterDate === "Last7Days") matchesDate = diffDays <= 7;
+        else if (filterDate === "Last30Days") matchesDate = diffDays <= 30;
+        else if (filterDate === "ThisMonth")
+          matchesDate =
+            invDate.getMonth() === today.getMonth() &&
+            invDate.getFullYear() === today.getFullYear();
+      }
+      return matchesAmount && matchesDate;
+    });
+  }, [invoices, filterAmount, filterDate, filterExactDate]);
+
+  const activeFiltersCount =
+    [filterStatus, filterAmount, filterDate].filter((f) => f !== "All").length +
+    (filterExactDate ? 1 : 0);
+
   const formatModalDate = (isoString) => {
     if (!isoString) return "";
     const d = new Date(isoString);
@@ -117,114 +256,83 @@ const InvoiceList = () => {
     );
   };
 
-  const filteredInvoices = invoices.filter((inv) => {
-    const matchesSearch =
-      String(inv.client?.name || "")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      String(inv.invoiceNumber || "")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
-
-    const matchesStatus = filterStatus === "All" || inv.status === filterStatus;
-
-    let matchesAmount = true;
-    if (filterAmount !== "All") {
-      const amount = Number(inv.grandTotal) || 0;
-      if (filterAmount === "Under10k") matchesAmount = amount < 10000;
-      else if (filterAmount === "10k-50k")
-        matchesAmount = amount >= 10000 && amount <= 50000;
-      else if (filterAmount === "Above50k") matchesAmount = amount > 50000;
-    }
-
-    let matchesDate = true;
-    if (filterExactDate && inv.date) {
-      const invDateObj = new Date(inv.date);
-      const formattedInvDate = `${invDateObj.getFullYear()}-${String(invDateObj.getMonth() + 1).padStart(2, "0")}-${String(invDateObj.getDate()).padStart(2, "0")}`;
-      matchesDate = formattedInvDate === filterExactDate;
-    } else if (filterDate !== "All" && inv.date) {
-      const invDate = new Date(inv.date);
-      const today = new Date();
-      const diffTime = Math.abs(today - invDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      if (filterDate === "Last7Days") matchesDate = diffDays <= 7;
-      else if (filterDate === "Last30Days") matchesDate = diffDays <= 30;
-      else if (filterDate === "ThisMonth")
-        matchesDate =
-          invDate.getMonth() === today.getMonth() &&
-          invDate.getFullYear() === today.getFullYear();
-    }
-    return matchesSearch && matchesStatus && matchesAmount && matchesDate;
-  });
-
-  const activeFiltersCount =
-    [filterStatus, filterAmount, filterDate].filter((f) => f !== "All").length +
-    (filterExactDate ? 1 : 0);
-
+  // 🚀 ONLY EXPORTS VISIBLE DATA
   const handleExport = () => {
     try {
       if (filteredInvoices.length === 0)
-        return toast.info("No invoices to export");
-      const headers = [
-        "Date,Invoice No,Client Name,Status,SubTotal,GST Rate,Grand Total",
-      ];
-      const rows = filteredInvoices.map((inv) => {
-        const date = inv.date
-          ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
-          : "-";
-        const number = inv.invoiceNumber
-          ? String(inv.invoiceNumber).replace(/^INV-/i, "")
-          : "-";
-        const client = `"${inv.client?.name || "Unknown"}"`;
-        const status = inv.status || "Pending";
-        return `${date},${number},${client},${status},${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0}`;
-      });
-
-      const csvContent = [headers.join(","), ...rows].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute(
-        "download",
-        `Invoices_Export_${new Date().toISOString().split("T")[0]}.csv`,
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success("Exported successfully");
-    } catch (error) {
-      toast.error("Failed to export");
-    }
-  };
-
-  const handleFullBackup = () => {
-    try {
-      if (invoices.length === 0) return toast.info("Database is empty.");
+        return toast.info("No records to export.");
       const headers = [
         "Date,Invoice No,Client Name,SubTotal,GST Rate,Grand Total,Status",
       ];
-      const rows = invoices.map((inv) => {
+      const rows = filteredInvoices.map((inv) => {
         const dateStr = inv.date
           ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
           : "-";
         const number = String(inv.invoiceNumber || "").replace(/^INV-/i, "");
         return `${dateStr},"${number}","${inv.client?.name || ""}",${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0},"${inv.status || ""}"`;
       });
-      const csvContent = [headers.join(","), ...rows].join("\n");
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       link.setAttribute(
         "download",
-        `Full_Invoices_Database_Backup_${new Date().toISOString().split("T")[0]}.csv`,
+        `Invoice_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Secure full backup generated!");
+      toast.success("Visible records exported to CSV!");
+    } catch (error) {
+      toast.error("Export failed.");
+    }
+  };
+
+  // 🚀 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
+  const handleFullBackup = async (monthToFetch = backupMonth) => {
+    try {
+      if (!monthToFetch) return toast.error("Please select a month to backup.");
+      toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
+
+      const q = query(
+        collection(db, "invoices"),
+        where("date", ">=", monthToFetch),
+        where("date", "<=", monthToFetch + "\uf8ff"),
+      );
+      const snapshot = await getDocs(q);
+      const allData = snapshot.docs.map((doc) => doc.data());
+
+      if (allData.length === 0)
+        return toast.info(`No records found for ${monthToFetch}.`);
+
+      const headers = [
+        "Date,Invoice No,Client Name,SubTotal,GST Rate,Grand Total,Status",
+      ];
+      const rows = allData.map((inv) => {
+        const dateStr = inv.date
+          ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
+          : "-";
+        const number = String(inv.invoiceNumber || "").replace(/^INV-/i, "");
+        return `${dateStr},"${number}","${inv.client?.name || ""}",${inv.subTotal || 0},${inv.gstRate || 0}%,${inv.grandTotal || 0},"${inv.status || ""}"`;
+      });
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute("download", `Full_Backup_Invoices_${monthToFetch}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success(`Backup for ${monthToFetch} downloaded securely!`);
+
+      // 🚀 Instantly removes the warning after successful backup
+      localStorage.setItem(`backup_invoices_${monthToFetch}`, "true");
+      if (showBackupWarning === monthToFetch) {
+        setShowBackupWarning(null);
+      }
     } catch (e) {
+      console.error(e);
       toast.error("Backup failed.");
     }
   };
@@ -234,16 +342,17 @@ const InvoiceList = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      const adminEmail = admin?.data?.email || admin?.email;
+      const currentUser = admin?.data || admin || {};
       await invoiceService.deleteAllInvoices({
         password: deletePassword,
-        email: adminEmail,
+        email: currentUser.email,
+        user: currentUser,
       });
       toast.success("Invoices database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchInvoices();
+      fetchInvoices(false);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
@@ -264,12 +373,11 @@ const InvoiceList = () => {
       toast.success(`Status updated to ${newStatus}`);
     } catch (error) {
       toast.error("Failed to update status");
-      fetchInvoices();
+      fetchInvoices(false);
     }
   };
 
   const handleDeleteClick = (id) => setDeleteModal({ isOpen: true, id });
-
   const handleDisabledClick = (id) => {
     setWarningTooltip(id);
     setTimeout(() => setWarningTooltip(null), 2500);
@@ -278,11 +386,12 @@ const InvoiceList = () => {
   const executeDelete = async () => {
     if (!deleteModal.id) return;
     try {
-      await invoiceService.deleteInvoice(deleteModal.id);
+      const currentUser = admin?.data || admin || {};
+      await invoiceService.deleteInvoice(deleteModal.id, currentUser);
       toast.info("Invoice deleted successfully");
-      fetchInvoices();
+      fetchInvoices(false);
     } catch (error) {
-      toast.error("Failed to delete invoice");
+      toast.error(error.message || "Failed to delete invoice");
     } finally {
       setDeleteModal({ isOpen: false, id: null });
     }
@@ -303,17 +412,15 @@ const InvoiceList = () => {
     });
   };
 
-  if (loading) return <Loader />;
-
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4 print:w-full print:max-w-none print:m-0 print:p-0">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4 print:w-full print:max-w-none print:m-0 print:p-0 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3">
           <div
             className={`p-2 rounded-lg border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
           >
             <FileText size={24} />
-          </div>
+          </div>{" "}
           Invoice Ledger
         </h1>
         <div className="flex gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
@@ -328,9 +435,7 @@ const InvoiceList = () => {
                     })()
                   : setIsDeleteAllOpen(true)
               }
-              className={`h-11 flex items-center gap-2 px-4 transition-all text-xs font-bold border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 whitespace-nowrap ${
-                isManager ? "opacity-50 !cursor-not-allowed" : ""
-              }`}
+              className={`h-11 flex items-center gap-2 px-4 transition-all text-xs font-bold border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 whitespace-nowrap ${isManager ? "opacity-50 !cursor-not-allowed" : ""}`}
             >
               <AlertOctagon size={16} /> Wipe Database
             </Button>
@@ -347,10 +452,10 @@ const InvoiceList = () => {
           </div>
           <Button
             variant="outline"
-            className="h-11 gap-2 text-xs border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800/50 whitespace-nowrap"
+            className="h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors text-xs"
             onClick={handleExport}
           >
-            <Download size={16} /> Export
+            <Download size={16} /> Export View
           </Button>
           <Link
             to={`${isTransport ? "/transportation/invoices/create" : "/enterprise/invoices/create"}`}
@@ -365,7 +470,45 @@ const InvoiceList = () => {
         </div>
       </div>
 
+      {/* 🚀 SMART BACKUP WARNING */}
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the invoice backup for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
+
       <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-visible relative print:shadow-none print:border-none print:bg-white">
+        {loading && !loadingMore && (
+          <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm rounded-2xl">
+            <Loader />
+          </div>
+        )}
         <div className="p-5 border-b border-zinc-800/60 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#09090B] rounded-t-2xl print:hidden">
           <div className="relative w-full md:w-96 group">
             <Search
@@ -374,20 +517,17 @@ const InvoiceList = () => {
             />
             <input
               type="text"
-              placeholder="Search by client or invoice number..."
+              placeholder="Search by invoice number..."
               className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="text-zinc-500 text-xs font-mono">
-            Showing {filteredInvoices.length} bill(s)
-          </div>
         </div>
 
         <div className="p-4 border-b border-zinc-800/60 flex flex-wrap items-center gap-4 bg-zinc-900/20 print:hidden">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 px-3 py-1 border-r border-zinc-800 mr-1">
-            <Filter size={16} /> Filters
+            <Filter size={16} /> Filters{" "}
             {activeFiltersCount > 0 && (
               <span
                 className={`ml-1 px-1.5 rounded border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
@@ -485,7 +625,7 @@ const InvoiceList = () => {
                 if (e.target.value) setFilterDate("All");
               }}
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryBorder} ${theme.primaryText} ${theme.primaryBg}` : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"}`}
+              className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryBg} ${theme.primaryBorder} text-indigo-100` : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"}`}
             />
           </div>
           {activeFiltersCount > 0 && (
@@ -524,7 +664,12 @@ const InvoiceList = () => {
               {filteredInvoices.map((inv) => (
                 <tr
                   key={inv._id}
-                  className="hover:bg-zinc-800/30 transition-colors group print:text-black"
+                  id={inv._id}
+                  className={`transition-all duration-1000 ease-out group print:text-black border-l-4 ${
+                    activeHighlight === inv._id
+                      ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                      : "border-transparent hover:bg-zinc-800/30"
+                  }`}
                 >
                   <td className="p-5 md:pl-6 align-middle">
                     <div
@@ -575,13 +720,7 @@ const InvoiceList = () => {
                       onChange={(e) =>
                         handleStatusChange(inv._id, e.target.value)
                       }
-                      className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-md border outline-none cursor-pointer transition-colors print:appearance-none print:border-none print:bg-transparent print:text-black ${
-                        inv.status === "Paid"
-                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                          : inv.status === "Cancelled"
-                            ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                      }`}
+                      className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1.5 rounded-md border outline-none cursor-pointer transition-colors print:appearance-none print:border-none print:bg-transparent print:text-black ${inv.status === "Paid" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : inv.status === "Cancelled" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20"}`}
                     >
                       <option
                         value="Pending"
@@ -626,11 +765,7 @@ const InvoiceList = () => {
                               ? handleDisabledClick(inv._id)
                               : handleDeleteClick(inv._id)
                           }
-                          className={`p-1.5 rounded-md transition-colors ${
-                            isManager
-                              ? "text-zinc-600 opacity-50 cursor-not-allowed"
-                              : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
-                          }`}
+                          className={`p-1.5 rounded-md transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
                         >
                           <Trash2 size={16} />
                         </button>
@@ -647,18 +782,34 @@ const InvoiceList = () => {
                   </td>
                 </tr>
               ))}
-              {filteredInvoices.length === 0 && (
+              {filteredInvoices.length === 0 && !loading && (
                 <tr>
                   <td
                     colSpan="5"
                     className="p-10 text-center text-zinc-500 text-sm italic print:text-black"
                   >
-                    No invoices match your current filters.
+                    No invoices match your filters.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+
+          {hasMore && filteredInvoices.length > 0 && (
+            <div className="flex justify-center p-6 border-t border-zinc-800/60 print:hidden">
+              <Button
+                onClick={() => fetchInvoices(true)}
+                disabled={loadingMore}
+                variant="outline"
+                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+              >
+                {loadingMore ? (
+                  <RefreshCcw size={16} className="animate-spin mr-2" />
+                ) : null}{" "}
+                {loadingMore ? "Loading..." : "Load Next 50 Invoices"}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -686,7 +837,7 @@ const InvoiceList = () => {
               {historyModal.data.map((edit, idx) => (
                 <div
                   key={idx}
-                  className={`bg-zinc-900/30 border rounded-xl p-4 flex items-center justify-between group overflow-hidden relative ${theme.primaryHoverBorder} transition-colors ${idx === 0 ? theme.primaryBorder : "border-zinc-800"}`}
+                  className={`bg-zinc-900/30 border ${idx === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden group ${theme.primaryHoverBorder} transition-colors`}
                 >
                   {idx === 0 && (
                     <div
@@ -729,8 +880,8 @@ const InvoiceList = () => {
         </div>
       )}
 
-      {/* SECURE WIPE DATA MODAL */}
-      {isDeleteAllOpen && (
+      {/* Wipe Data Modal */}
+      {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 print:hidden">
           <div
             className="absolute inset-0"
@@ -744,27 +895,37 @@ const InvoiceList = () => {
               </h2>
             </div>
 
+            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
                   className="text-amber-500 shrink-0 mt-0.5"
                 />
-                <div>
+                <div className="w-full">
                   <h3 className="text-amber-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-amber-100/60 text-xs mb-4 leading-relaxed">
-                    Before wiping the database, we highly recommend downloading
-                    a complete CSV backup of all your current invoice records.
+                  <p className="text-amber-100/60 text-xs mb-3 leading-relaxed">
+                    Before wiping, please download the backup for a specific
+                    month to prevent browser crash.
                   </p>
-                  <Button
-                    variant="outline"
-                    onClick={handleFullBackup}
-                    className="w-full sm:w-auto h-11 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"
-                  >
-                    <Download size={14} /> Download Full Database Backup
-                  </Button>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                    <input
+                      type="month"
+                      value={backupMonth}
+                      onChange={(e) => setBackupMonth(e.target.value)}
+                      style={{ colorScheme: "dark" }}
+                      className="w-full sm:w-32 bg-zinc-900/50 border border-amber-500/30 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none transition-all"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => handleFullBackup(backupMonth)}
+                      className="w-full sm:flex-1 h-9 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"
+                    >
+                      <Download size={14} className="mr-2" /> Download Backup
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -774,14 +935,13 @@ const InvoiceList = () => {
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
               invoice records. Please enter your Admin password to confirm.
             </p>
-
             <div className="relative mb-8">
               <input
                 type={showPassword ? "text" : "password"}
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter your admin password..."
-                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all"
+                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 outline-none transition-all"
               />
               <button
                 type="button"
@@ -791,7 +951,6 @@ const InvoiceList = () => {
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-
             <div className="flex justify-end gap-3">
               <Button
                 variant="outline"
@@ -800,20 +959,19 @@ const InvoiceList = () => {
                   setDeletePassword("");
                 }}
                 disabled={wiping}
-                className="h-11 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white"
+                className="h-11 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
               >
                 Cancel
               </Button>
-
               <Button
                 variant="danger"
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
-                className="h-11"
+                className="h-11 rounded-xl flex items-center gap-2"
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
-                ) : null}
+                ) : null}{" "}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </Button>
             </div>

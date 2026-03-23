@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect, useMemo } from "react";
+import { Link, useLocation } from "react-router-dom";
 import stockService from "../../services/stockService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -17,14 +17,38 @@ import {
   ShieldAlert,
   Eye,
   EyeOff,
+  RefreshCcw,
+  ChevronDown,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
+import { collection, getDocs, query, limit } from "firebase/firestore";
+import { db } from "../../config/firebase";
+
+// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
+const getPreviousMonthString = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
 
 const StockList = () => {
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Pagination States
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // 🚀 Highlight Animation State
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
 
   // Filters State
   const [searchTerm, setSearchTerm] = useState("");
@@ -50,123 +74,240 @@ const StockList = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
 
-  // Role Detection
+  const currentPath =
+    typeof window !== "undefined" && location.pathname === "/"
+      ? window.location.pathname
+      : location.pathname;
+  const isTransport = currentPath.includes("/transportation");
+
+  const theme = {
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
+    primaryHoverBorder: isTransport
+      ? "hover:border-cyan-500/30"
+      : "hover:border-indigo-500/30",
+    primaryFocus: isTransport
+      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
+      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+  };
+
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
+  // 🚀 SMART BACKUP STATES
+  const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
+
+  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
   useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        const { data } = await stockService.getAllStocks();
-        setStocks(data || []);
-      } catch (error) {
-        console.error("Error fetching stocks:", error);
-        toast.error("Failed to load inventory data.");
-      } finally {
-        setLoading(false);
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonthString();
+
+      // Agar local storage me backup verified nahi hai
+      if (!localStorage.getItem(`backup_inventory_${prevMonth}`)) {
+        try {
+          // Check karo ki kya database me kam se kam 1 item exist karta hai
+          const q = query(
+            collection(db, "stocks"),
+            limit(1), // Super fast backend check
+          );
+          const snap = await getDocs(q);
+
+          // Agar data hai, toh hi warning dikhao
+          if (!snap.empty) {
+            setShowBackupWarning(prevMonth);
+          }
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
       }
     };
-    fetchInitialData();
-  }, [toast]);
 
-  const refreshStocks = async () => {
+    checkBackupNeeded();
+  }, []);
+
+  // 🚀 Fetch Logic with Pagination & Filters
+  const fetchStocks = async (isLoadMore = false) => {
+    if (isLoadMore) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const { data } = await stockService.getAllStocks();
-      setStocks(data || []);
+      const response = await stockService.getAllStocks(
+        {
+          category: filterCategory,
+          search: searchTerm,
+          stockLevel: filterStockLevel,
+        },
+        isLoadMore ? lastDoc : null,
+      );
+
+      if (isLoadMore) {
+        setStocks((prev) => [...prev, ...(response.data || [])]);
+      } else {
+        setStocks(response.data || []);
+      }
+
+      setLastDoc(response.lastVisible || null);
+      setHasMore(response.data && response.data.length === 50);
     } catch (error) {
-      console.error("Error refreshing:", error);
+      if (error.message && error.message.toLowerCase().includes("index")) {
+        toast.error("Firebase Index required! Check browser console.", {
+          duration: 6000,
+        });
+      } else {
+        toast.error("Failed to load inventory data.");
+      }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
     }
   };
 
-  // ADVANCED FILTERING LOGIC
-  const filteredStocks = stocks.filter((stock) => {
-    const matchesSearch = stock.name
-      ?.toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchesCategory =
-      filterCategory === "All" || stock.category === filterCategory;
+  // 🚀 Trigger Fetch on Filter Change
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      fetchStocks(false);
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm, filterCategory, filterStockLevel]);
 
-    let matchesStockLevel = true;
-    if (filterStockLevel !== "All") {
-      const qty = Number(stock.quantity) || 0;
-      if (filterStockLevel === "Low") matchesStockLevel = qty < 100;
-      else if (filterStockLevel === "Medium")
-        matchesStockLevel = qty >= 100 && qty <= 1000;
-      else if (filterStockLevel === "High") matchesStockLevel = qty > 1000;
+  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 500);
+
+      const timer = setTimeout(() => {
+        setActiveHighlight(null);
+      }, 3500);
+
+      return () => clearTimeout(timer);
     }
-    return matchesSearch && matchesCategory && matchesStockLevel;
-  });
+  }, [urlHighlightId, loading]);
+
+  // Client-Side Fallback Filtering (If multiple ranges used)
+  const filteredStocks = useMemo(() => {
+    return stocks.filter((stock) => {
+      let matchesStockLevel = true;
+      if (filterStockLevel !== "All") {
+        const qty = Number(stock.quantity) || 0;
+        if (filterStockLevel === "Low") matchesStockLevel = qty < 100;
+        else if (filterStockLevel === "Medium")
+          matchesStockLevel = qty >= 100 && qty <= 1000;
+        else if (filterStockLevel === "High") matchesStockLevel = qty > 1000;
+      }
+      return matchesStockLevel;
+    });
+  }, [stocks, filterStockLevel]);
 
   const activeFiltersCount = [filterCategory, filterStockLevel].filter(
     (f) => f !== "All",
   ).length;
 
-  // 🚀 STANDARD EXPORT
+  // 🚀 ONLY EXPORTS VISIBLE DATA
   const handleExport = () => {
     try {
-      if (filteredStocks.length === 0) return toast.info("No items to export");
+      if (filteredStocks.length === 0)
+        return toast.info("No records to export.");
+
       const headers = [
-        "Item Name,Category,Quantity,Unit,Unit Price,Total Value",
+        "Item Name",
+        "Category",
+        "Quantity",
+        "Unit",
+        "Unit Price",
+        "Total Value",
       ];
       const rows = filteredStocks.map((stock) => {
         const name = `"${stock.name || "Unknown"}"`;
-        const category = stock.category || "Purchasing Item";
+        const category = `"${stock.category || "Purchasing Item"}"`;
         const quantity = stock.quantity || 0;
-        const unit = stock.unit || "-";
+        const unit = `"${stock.unit || "-"}"`;
         const price = stock.price || 0;
         const total = Number(stock.quantity) * Number(stock.price) || 0;
         return `${name},${category},${quantity},${unit},${price},${total}`;
       });
 
-      const csvContent = [headers.join(","), ...rows].join("\n");
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute(
         "download",
-        `Inventory_Filtered_${new Date().toISOString().split("T")[0]}.csv`,
+        `Stock_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Filtered list exported successfully");
+      toast.success("Visible records exported to CSV!");
     } catch (error) {
-      toast.error("Failed to export inventory");
+      toast.error("Failed to export report.");
     }
   };
 
-  // 🚀 FULL BACKUP EXPORT
-  const handleFullBackup = () => {
+  // 🚀 100% FULL DATABASE EXPORT (Bypasses Limit completely)
+  const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
-      if (stocks.length === 0) return toast.info("Database is already empty.");
+      if (!monthToFetch) return toast.error("Please select a month to backup.");
+      toast.info(`Fetching 100% database for backup... Please wait.`);
+
+      // Since Inventory does not have a "month" concept inherently, we take a full snapshot
+      const q = query(collection(db, "stocks"));
+      const snapshot = await getDocs(q);
+      const allData = snapshot.docs.map((doc) => doc.data());
+
+      if (allData.length === 0) return toast.info("Database is empty.");
+
       const headers = [
-        "Item Name,Category,Quantity,Unit,Unit Price,Total Value",
+        "Item Name",
+        "Category",
+        "Quantity",
+        "Unit",
+        "Unit Price",
+        "Total Value",
       ];
-      const rows = stocks.map((stock) => {
+      const rows = allData.map((stock) => {
         const name = `"${stock.name || "Unknown"}"`;
-        const category = stock.category || "Purchasing Item";
+        const category = `"${stock.category || "Purchasing Item"}"`;
         const quantity = stock.quantity || 0;
-        const unit = stock.unit || "-";
+        const unit = `"${stock.unit || "-"}"`;
         const price = stock.price || 0;
         const total = Number(stock.quantity) * Number(stock.price) || 0;
         return `${name},${category},${quantity},${unit},${price},${total}`;
       });
 
-      const csvContent = [headers.join(","), ...rows].join("\n");
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute(
         "download",
-        `FULL_BACKUP_Inventory_${new Date().toISOString().split("T")[0]}.csv`,
+        `Full_Backup_Inventory_Snapshot_${monthToFetch}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Full database backup downloaded securely!");
+
+      toast.success(
+        `100% Backup snapshot for ${monthToFetch} downloaded securely!`,
+      );
+
+      // 🚀 Instantly removes the warning after successful backup
+      localStorage.setItem(`backup_inventory_${monthToFetch}`, "true");
+      if (showBackupWarning === monthToFetch) {
+        setShowBackupWarning(null);
+      }
     } catch (error) {
+      console.error(error);
       toast.error("Failed to generate full backup");
     }
   };
@@ -179,12 +320,12 @@ const StockList = () => {
   const confirmDelete = async () => {
     if (!stockToDelete) return;
     try {
-      await stockService.deleteStock(stockToDelete._id);
+      const currentUser = admin?.data || admin || {};
+      await stockService.deleteStock(stockToDelete._id, currentUser);
       toast.success("Stock item deleted successfully.");
-      refreshStocks();
+      fetchStocks(false);
     } catch (error) {
-      console.error("Error deleting stock:", error);
-      toast.error("Failed to delete item.");
+      toast.error(error.message || "Failed to delete item.");
     } finally {
       setIsDialogOpen(false);
       setStockToDelete(null);
@@ -192,26 +333,23 @@ const StockList = () => {
   };
 
   const handleWipeAll = async () => {
-    if (isManager)
-      return toast.error("Unauthorized: Only Admins can wipe data.");
-    if (!deletePassword)
-      return toast.error("Password is required to delete all items.");
-
+    if (isManager || !deletePassword)
+      return toast.error("Verification failed.");
     setWiping(true);
     try {
-      const adminEmail = admin?.data?.email || admin?.email;
+      const currentUser = admin?.data || admin || {};
       await stockService.deleteAllStocks({
         password: deletePassword,
-        email: adminEmail,
+        email: currentUser.email,
+        user: currentUser,
       });
       toast.success("All inventory records have been wiped.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      refreshStocks();
+      fetchStocks(false);
     } catch (error) {
-      console.error("Wipe Error:", error);
-      toast.error(error.message || "Authentication failed. Wipe aborted.");
+      toast.error(error.message || "Incorrect Admin Password.");
     } finally {
       setWiping(false);
     }
@@ -241,12 +379,14 @@ const StockList = () => {
     );
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
-              <Package className="text-indigo-400" size={28} />
+            <div
+              className={`p-2.5 ${theme.primaryBg} rounded-xl border ${theme.primaryBorder}`}
+            >
+              <Package className={theme.primaryText} size={28} />
             </div>
             Stock Inventory
           </h1>
@@ -256,7 +396,6 @@ const StockList = () => {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          {/* Wipe Data Button using Button Component */}
           <div className="relative">
             <Button
               variant="module"
@@ -265,13 +404,10 @@ const StockList = () => {
                   ? handleDisabledClick("wipe-all")
                   : setIsDeleteAllOpen(true)
               }
-              className={`h-11 px-5 border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${
-                isManager ? "opacity-50 !cursor-not-allowed" : ""
-              }`}
+              className={`h-11 px-5 border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${isManager ? "opacity-50 !cursor-not-allowed" : ""}`}
             >
               <AlertOctagon size={16} /> Wipe Data
             </Button>
-
             {warningTooltip === "wipe-all" && (
               <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[9999] animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
@@ -280,19 +416,16 @@ const StockList = () => {
                   </span>{" "}
                   Admin Only
                 </div>
-                <div className="absolute -top-1 right-6 md:left-1/2 md:-translate-x-1/2 w-2 h-2 bg-[#09090B] border-t border-l border-red-500/30 rotate-45"></div>
               </div>
             )}
           </div>
-
           <Button
             variant="outline"
             className="h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors text-xs"
             onClick={handleExport}
           >
-            <Download size={16} /> Export
+            <Download size={16} /> Export View
           </Button>
-
           <Link to="/enterprise/stock/add">
             <Button
               variant="primary"
@@ -304,88 +437,119 @@ const StockList = () => {
         </div>
       </div>
 
+      {/* 🚀 SMART BACKUP WARNING */}
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the inventory snapshot for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
+
       <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-visible relative">
-        {/* Top Search Bar */}
-        <div className="p-5 border-b border-zinc-800/60 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#09090B]">
+        {loading && !loadingMore && (
+          <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm rounded-2xl">
+            <Loader />
+          </div>
+        )}
+        <div className="p-5 border-b border-zinc-800/60 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#09090B] rounded-t-2xl">
           <h2 className="text-lg font-bold text-white">All Items</h2>
-          <div className="relative w-full md:w-80">
+          <div className="relative w-full md:w-80 group">
             <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+              className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors duration-300 ${searchTerm ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
               size={16}
             />
             <input
               type="text"
               placeholder="Search items..."
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-zinc-100 focus:border-indigo-500/50 outline-none transition-all"
+              className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
         </div>
 
-        {/* FILTER BAR */}
         <div className="p-3 border-b border-zinc-800/60 flex flex-wrap items-center gap-3 bg-zinc-900/20">
           <div className="flex items-center gap-1.5 text-zinc-400 text-xs font-bold uppercase tracking-wider px-2 border-r border-zinc-800 mr-2">
-            <Filter size={14} /> Filters
+            <Filter size={14} /> Filters{" "}
             {activeFiltersCount > 0 && (
               <span className="bg-indigo-500/20 text-indigo-400 px-1.5 rounded-full ml-1 border border-indigo-500/30">
                 {activeFiltersCount}
               </span>
             )}
           </div>
-
-          <select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
-              filterCategory !== "All"
-                ? "bg-indigo-500/10 border-indigo-500/40 text-indigo-400"
-                : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700"
-            }`}
-          >
-            <option value="All" className="bg-[#09090B] text-zinc-100">
-              All Categories
-            </option>
-            <option
-              value="Purchasing Item"
-              className="bg-[#09090B] text-zinc-100"
+          <div className="relative group">
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
-              Purchasing Item
-            </option>
-            <option
-              value="Finished Good"
-              className="bg-[#09090B] text-zinc-100"
+              <option value="All" className="bg-[#09090B]">
+                All Categories
+              </option>
+              <option value="Purchasing Item" className="bg-[#09090B]">
+                Purchasing Item
+              </option>
+              <option value="Finished Good" className="bg-[#09090B]">
+                Finished Good
+              </option>
+              <option value="Other" className="bg-[#09090B]">
+                Other
+              </option>
+            </select>
+            <ChevronDown
+              size={14}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
+            />
+          </div>
+          <div className="relative group">
+            <select
+              value={filterStockLevel}
+              onChange={(e) => setFilterStockLevel(e.target.value)}
+              className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
-              Finished Good
-            </option>
-            <option value="Other" className="bg-[#09090B] text-zinc-100">
-              Other
-            </option>
-          </select>
-
-          <select
-            value={filterStockLevel}
-            onChange={(e) => setFilterStockLevel(e.target.value)}
-            className={`text-xs px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
-              filterStockLevel !== "All"
-                ? "bg-indigo-500/10 border-indigo-500/40 text-indigo-400"
-                : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700"
-            }`}
-          >
-            <option value="All" className="bg-[#09090B] text-zinc-100">
-              Any Stock Level
-            </option>
-            <option value="Low" className="bg-[#09090B] text-zinc-100">
-              Low (&lt; 100)
-            </option>
-            <option value="Medium" className="bg-[#09090B] text-zinc-100">
-              Medium (100 - 1000)
-            </option>
-            <option value="High" className="bg-[#09090B] text-zinc-100">
-              High (&gt; 1000)
-            </option>
-          </select>
-
+              <option value="All" className="bg-[#09090B]">
+                Any Stock Level
+              </option>
+              <option value="Low" className="bg-[#09090B]">
+                Low (&lt; 100)
+              </option>
+              <option value="Medium" className="bg-[#09090B]">
+                Medium (100 - 1000)
+              </option>
+              <option value="High" className="bg-[#09090B]">
+                High (&gt; 1000)
+              </option>
+            </select>
+            <ChevronDown
+              size={14}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
+            />
+          </div>
           {activeFiltersCount > 0 && (
             <button
               onClick={() => {
@@ -393,14 +557,13 @@ const StockList = () => {
                 setFilterStockLevel("All");
                 setSearchTerm("");
               }}
-              className="text-xs text-zinc-500 hover:text-white underline underline-offset-2 ml-2 transition-colors flex items-center gap-1"
+              className="text-xs font-bold text-zinc-500 hover:text-white underline underline-offset-2 ml-2 transition-colors flex items-center gap-1"
             >
               <X size={12} /> Clear
             </button>
           )}
         </div>
 
-        {/* Table Area */}
         <div className="overflow-x-auto pb-4 custom-scrollbar">
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
@@ -421,7 +584,12 @@ const StockList = () => {
               {filteredStocks.map((stock) => (
                 <tr
                   key={stock._id}
-                  className="hover:bg-zinc-800/30 transition-colors group"
+                  id={stock._id}
+                  className={`transition-all duration-1000 ease-out group border-l-4 ${
+                    activeHighlight === stock._id
+                      ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                      : "border-transparent hover:bg-zinc-800/30"
+                  }`}
                 >
                   <td className="p-5 md:pl-6 align-middle">
                     <div className="font-medium text-zinc-100 group-hover:text-white whitespace-nowrap">
@@ -465,13 +633,7 @@ const StockList = () => {
                   </td>
                   <td className="p-5 align-middle whitespace-nowrap">
                     <span
-                      className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${
-                        stock.category === "Purchasing Item"
-                          ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                          : stock.category === "Finished Good"
-                            ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
-                            : "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                      }`}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${stock.category === "Purchasing Item" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : stock.category === "Finished Good" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}
                     >
                       {stock.category || "Purchasing Item"}
                     </span>
@@ -506,11 +668,7 @@ const StockList = () => {
                               ? handleDisabledClick(stock._id)
                               : handleDeleteClick(stock)
                           }
-                          className={`p-2 rounded-lg transition-colors ${
-                            isManager
-                              ? "text-zinc-600 cursor-not-allowed hover:bg-red-500/5 hover:text-red-400/50"
-                              : "text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
-                          }`}
+                          className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 cursor-not-allowed hover:bg-red-500/5 hover:text-red-400/50" : "text-zinc-400 hover:text-red-400 hover:bg-red-500/10"}`}
                         >
                           <Trash2 size={18} />
                         </button>
@@ -520,7 +678,7 @@ const StockList = () => {
                               <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
                                 🚫
                               </span>{" "}
-                              Action Denied
+                              Admin Only
                             </div>
                             <div className="absolute -bottom-1 right-3 w-2 h-2 bg-[#09090B] border-b border-r border-red-500/30 rotate-45"></div>
                           </div>
@@ -530,7 +688,7 @@ const StockList = () => {
                   </td>
                 </tr>
               ))}
-              {filteredStocks.length === 0 && (
+              {filteredStocks.length === 0 && !loading && (
                 <tr>
                   <td
                     colSpan="6"
@@ -542,10 +700,27 @@ const StockList = () => {
               )}
             </tbody>
           </table>
+
+          {/* 🚀 LOAD MORE BUTTON */}
+          {hasMore && filteredStocks.length > 0 && (
+            <div className="flex justify-center p-6 border-t border-zinc-800/60">
+              <Button
+                onClick={() => fetchStocks(true)}
+                disabled={loadingMore}
+                variant="outline"
+                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+              >
+                {loadingMore ? (
+                  <RefreshCcw size={16} className="animate-spin mr-2" />
+                ) : null}{" "}
+                {loadingMore ? "Loading..." : "Load Next 50 Records"}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 🚀 HISTORY MODAL */}
+      {/* HISTORY MODAL */}
       {historyModal.isOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
@@ -557,8 +732,7 @@ const StockList = () => {
           <div className="bg-[#09090B] border border-zinc-800/60 rounded-2xl w-full max-w-md relative z-10 overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-5 border-b border-zinc-800/60 bg-[#09090B] shrink-0">
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className="text-indigo-400" />
-                Edit History:{" "}
+                <History size={16} className="text-indigo-400" /> Edit History:{" "}
                 <span className="text-indigo-300 font-normal">
                   {historyModal.itemName}
                 </span>
@@ -576,38 +750,28 @@ const StockList = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-zinc-900/30 border ${
-                    index === 0 ? "border-indigo-500/30" : "border-zinc-800"
-                  } rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-zinc-900/30 border ${index === 0 ? "border-indigo-500/30" : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
                     <div className="absolute left-0 top-0 w-1 h-full bg-indigo-500"></div>
                   )}
                   <div className="flex items-center gap-4">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${
-                        index === 0
-                          ? "bg-indigo-500/10 text-indigo-400"
-                          : "bg-zinc-800/50 text-zinc-400"
-                      }`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-indigo-500/10 text-indigo-400" : "bg-zinc-800/50 text-zinc-400"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${
-                          index === 0 ? "text-white" : "text-zinc-400"
-                        }`}
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-400"}`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
                       <p className="text-zinc-500 text-[10px] font-mono mt-0.5">
-                        {log.by || "system@enterprise.com"}
+                        {log.email || log.by || "admin@system.com"}
                       </p>
                       <p
-                        className={`text-[10px] font-mono mt-1 ${
-                          index === 0 ? "text-indigo-400" : "text-zinc-500"
-                        }`}
+                        className={`text-[10px] font-mono mt-1 ${index === 0 ? "text-indigo-400" : "text-zinc-500"}`}
                       >
                         {new Date(log.at).toLocaleString("en-GB", {
                           day: "2-digit",
@@ -631,7 +795,7 @@ const StockList = () => {
         </div>
       )}
 
-      {/* 🚀 UPGRADED SECURE DELETE ALL MODAL */}
+      {/* UPGRADED SECURE DELETE ALL MODAL */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
           <div
@@ -646,26 +810,37 @@ const StockList = () => {
               </h2>
             </div>
 
+            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
                   className="text-amber-500 shrink-0 mt-0.5"
                 />
-                <div>
+                <div className="w-full">
                   <h3 className="text-amber-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-amber-100/60 text-xs mb-4 leading-relaxed">
-                    Before wiping the database, we highly recommend downloading
-                    a complete CSV backup of all your current inventory records.
+                  <p className="text-amber-100/60 text-xs mb-3 leading-relaxed">
+                    Before wiping, please download the backup for a specific
+                    month to prevent browser crash.
                   </p>
-                  <Button
-                    onClick={handleFullBackup}
-                    className="w-full sm:w-auto bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 !py-2 !px-4 !text-xs rounded-xl"
-                  >
-                    <Download size={14} /> Download Full Database Backup
-                  </Button>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                    <input
+                      type="month"
+                      value={backupMonth}
+                      onChange={(e) => setBackupMonth(e.target.value)}
+                      style={{ colorScheme: "dark" }}
+                      className="w-full sm:w-32 bg-zinc-900/50 border border-amber-500/30 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none transition-all"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => handleFullBackup(backupMonth)}
+                      className="w-full sm:flex-1 h-9 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"
+                    >
+                      <Download size={14} className="mr-2" /> Download Snapshot
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -675,7 +850,6 @@ const StockList = () => {
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
               inventory records. Please enter your Admin password to confirm.
             </p>
-
             <div className="relative mb-8">
               <input
                 type={showPassword ? "text" : "password"}
@@ -692,7 +866,6 @@ const StockList = () => {
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-
             <div className="flex justify-end gap-3">
               <Button
                 variant="outline"
@@ -701,7 +874,7 @@ const StockList = () => {
                   setDeletePassword("");
                 }}
                 disabled={wiping}
-                className="text-zinc-400 border-zinc-800 hover:bg-zinc-800/50 hover:text-white rounded-xl"
+                className="h-11 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
               >
                 Cancel
               </Button>
@@ -710,8 +883,11 @@ const StockList = () => {
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
                 isLoading={wiping}
-                className="rounded-xl"
+                className="h-11 rounded-xl flex items-center gap-2"
               >
+                {wiping ? (
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}{" "}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </Button>
             </div>

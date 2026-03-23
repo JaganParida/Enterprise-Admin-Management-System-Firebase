@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import salesService from "../../services/salesService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -19,6 +19,7 @@ import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const Sales = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { toast } = useUI();
   const { admin } = useAuth();
 
@@ -33,6 +34,7 @@ const Sales = () => {
       ? window.location.pathname
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
+  const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
     primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
@@ -48,6 +50,9 @@ const Sales = () => {
     paymentCash: isTransport
       ? "bg-blue-500 text-white border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]"
       : "bg-indigo-500 text-white border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.3)]",
+    primaryHoverBg: isTransport
+      ? "hover:bg-cyan-500/20"
+      : "hover:bg-indigo-500/20",
   };
 
   const [formData, setFormData] = useState({
@@ -155,10 +160,11 @@ const Sales = () => {
     return { name: fullName, size: "No unit" };
   };
 
-  const formatLogDate = (isoString) => {
-    if (!isoString) return "N/A";
-    const date = new Date(isoString);
-    return `${String(date.getDate()).padStart(2, "0")} ${date.toLocaleString("en-GB", { month: "short" })}, ${date.toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+  // 🚀 REDIRECT TO REPORT HANDLER
+  const handleRowClick = (e, id) => {
+    // Prevent redirect if user clicked Edit or Delete buttons
+    if (e.target.closest("button") || e.target.closest("a")) return;
+    navigate(`${basePath}/sales/report?highlight=${id}`);
   };
 
   if (loading)
@@ -334,13 +340,13 @@ const Sales = () => {
                         Zig Zag (80mm)
                       </option>
                       <option
-                        value="6/12 Brick (60mm)"
+                        value="6-12 Brick (60mm)"
                         className="text-zinc-100 font-normal"
                       >
                         6/12 Brick (60mm)
                       </option>
                       <option
-                        value="6/12 Brick (80mm)"
+                        value="6-12 Brick (80mm)"
                         className="text-zinc-100 font-normal"
                       >
                         6/12 Brick (80mm)
@@ -537,11 +543,7 @@ const Sales = () => {
               </span>
             </div>
             <Link
-              to={
-                isTransport
-                  ? "/transportation/sales/report"
-                  : "/enterprise/sales/report"
-              }
+              to={`${basePath}/sales/report`}
               className={`flex items-center gap-2 text-xs font-bold ${theme.primaryText} ${theme.primaryBg} hover:${theme.primaryHoverBg} border ${theme.primaryBorder} px-4 py-2 rounded-lg transition-all`}
             >
               View Full Report <ArrowRight size={14} />
@@ -562,17 +564,12 @@ const Sales = () => {
               <tbody className="divide-y divide-zinc-800/60 text-sm">
                 {sales.slice(0, 10).map((sale) => {
                   const { name, size } = parseProduct(sale.productName);
-                  const hasEdits =
-                    sale.editHistory && sale.editHistory.length > 0;
-                  const historyCount = hasEdits ? sale.editHistory.length : 0;
-                  const latestLog = hasEdits
-                    ? sale.editHistory[sale.editHistory.length - 1]
-                    : null;
 
                   return (
                     <tr
                       key={sale._id}
-                      className="hover:bg-zinc-800/30 transition-colors group"
+                      onClick={(e) => handleRowClick(e, sale._id)}
+                      className="hover:bg-zinc-800/30 transition-colors group cursor-pointer"
                     >
                       <td className="p-5 pl-6 align-middle">
                         <div className="font-mono text-zinc-400 text-xs">
@@ -583,25 +580,6 @@ const Sales = () => {
                         >
                           {sale.challanNo || "NO CHALLAN"}
                         </div>
-
-                        {hasEdits && (
-                          <div className="mt-1.5 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity">
-                            <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-md">
-                              <History size={10} className="text-zinc-400" />
-                              <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
-                                {latestLog.role || "ADMIN"}
-                              </span>
-                              {historyCount > 1 && (
-                                <span className="bg-zinc-700/50 text-zinc-400 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
-                                  +{historyCount - 1} MORE
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[9px] text-zinc-500 font-mono mt-1 pl-1">
-                              {formatLogDate(latestLog.at)}
-                            </div>
-                          </div>
-                        )}
                       </td>
                       <td className="p-5 align-middle">
                         <div className="font-bold text-white tracking-wide mb-1">

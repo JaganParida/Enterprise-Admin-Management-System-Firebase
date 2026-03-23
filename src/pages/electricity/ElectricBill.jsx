@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import electricService from "../../services/electricService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -27,20 +27,28 @@ import {
   RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Input from "../../components/common/Input";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
+import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { db } from "../../config/firebase";
 
-// LAZY LOAD CHART (With proper error boundary approach)
 const BarChart = lazy(() => import("../../components/charts/BarChart"));
 
 const ChartSkeleton = () => (
   <div className="w-full h-full bg-zinc-800/30 animate-pulse rounded-2xl border border-zinc-800/60"></div>
 );
 
-// Helper to get current month in YYYY-MM format
 const getCurrentMonth = () => {
   const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
+
+// 🚀 HELPER: Get Previous Month for Backup Warning
+const getPreviousMonth = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
   const m = String(d.getMonth() + 1).padStart(2, "0");
   return `${d.getFullYear()}-${m}`;
 };
@@ -52,8 +60,18 @@ const ElectricBill = () => {
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [stats, setStats] = useState({ paid: 0, pending: 0, overdue: 0 });
 
-  // 🔥 THEME HOOK
+  // 🚀 NEW: Pagination States
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // 🚀 Highlight Animation State
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
+
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -72,13 +90,12 @@ const ElectricBill = () => {
       ? "focus:border-blue-500/50 focus:ring-blue-500/50"
       : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
     glowOrb: isTransport ? "bg-blue-500/5" : "bg-indigo-500/5",
-    chartPaid: isTransport ? "#3b82f6" : "#6366f1", // Blue vs Indigo
-    chartPending: isTransport ? "#06b6d4" : "#3b82f6", // Cyan vs Blue
+    chartPaid: isTransport ? "#3b82f6" : "#6366f1",
+    chartPending: isTransport ? "#06b6d4" : "#3b82f6",
   };
 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
   const [editId, setEditId] = useState(null);
-
   const [warningTooltip, setWarningTooltip] = useState(null);
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
@@ -86,13 +103,11 @@ const ElectricBill = () => {
     itemName: "",
   });
 
-  // Wipe Data States
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [wiping, setWiping] = useState(false);
 
-  // TABS & FILTERS STATES
   const [activeTab, setActiveTab] = useState("All");
   const [filters, setFilters] = useState({
     search: "",
@@ -104,7 +119,6 @@ const ElectricBill = () => {
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  // Pre-filled Date Form
   const [formData, setFormData] = useState({
     caNumber: "",
     month: getCurrentMonth(),
@@ -118,51 +132,113 @@ const ElectricBill = () => {
     (parseFloat(formData.billAmount) || 0) +
     (parseFloat(formData.fineAmount) || 0);
 
-  const fetchBills = async () => {
+  // 🚀 SMART BACKUP STATES
+  const [backupMonth, setBackupMonth] = useState(getPreviousMonth());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
+
+  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
+  useEffect(() => {
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonth();
+
+      // 1. Agar local storage me backup verified nahi hai
+      if (!localStorage.getItem(`backup_electric_${prevMonth}`)) {
+        try {
+          // 2. Database me check karo ki kya pichle mahine ka koi bhi data exist karta hai
+          const q = query(
+            collection(db, "electricBills"),
+            where("month", "==", prevMonth),
+            limit(1), // Limit 1 for super fast backend check (takes only 1 read)
+          );
+          const snap = await getDocs(q);
+
+          // 3. Agar data hai, toh hi warning dikhao
+          if (!snap.empty) {
+            setShowBackupWarning(prevMonth);
+          }
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
+      }
+    };
+
+    checkBackupNeeded();
+  }, []);
+
+  // 🚀 UPDATED: Fetching Logic with Pagination Support
+  const fetchBills = async (isLoadMore = false) => {
+    if (isLoadMore) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const { data } = await electricService.getBills();
-      setBills(data || []);
+      if (!isLoadMore) {
+        const statsData = await electricService.getStats();
+        setStats(statsData);
+      }
+
+      const response = await electricService.getBills(
+        {
+          status: activeTab,
+          search: filters.search,
+          exactMonth: filters.exactMonth,
+        },
+        isLoadMore ? lastDoc : null,
+      );
+
+      if (isLoadMore) {
+        setBills((prev) => [...prev, ...(response.data || [])]);
+      } else {
+        setBills(response.data || []);
+      }
+
+      setLastDoc(response.lastVisible || null);
+      setHasMore(response.data && response.data.length === 50);
     } catch (error) {
-      console.error("Error fetching bills:", error);
-      toast.error("Failed to load bill history");
+      console.error(error);
+      if (error.message && error.message.toLowerCase().includes("index")) {
+        toast.error(
+          "Firebase Index required! Check browser console (F12) to click the create link.",
+          { duration: 6000 },
+        );
+      } else {
+        toast.error("Failed to load data");
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    fetchBills();
-  }, []);
+    const delayDebounceFn = setTimeout(() => {
+      fetchBills(false);
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [activeTab, filters.search, filters.exactMonth]);
 
-  // STATS CALCULATION
-  const stats = useMemo(() => {
-    return bills.reduce(
-      (acc, bill) => {
-        const amt = Number(bill.totalAmount) || 0;
-        if (bill.status === "Paid") acc.paid += amt;
-        else if (bill.status === "Pending") acc.pending += amt;
-        else if (bill.status === "Overdue") acc.overdue += amt;
-        return acc;
-      },
-      { paid: 0, pending: 0, overdue: 0 },
-    );
-  }, [bills]);
+  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
 
-  // ADVANCED FILTRATION LOGIC
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 500);
+
+      const timer = setTimeout(() => {
+        setActiveHighlight(null);
+      }, 3500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
+
   const filteredBills = useMemo(() => {
     return bills.filter((bill) => {
       if (activeTab !== "All" && bill.status !== activeTab) return false;
-
-      const searchTerm = String(filters.search || "").toLowerCase();
-      const matchSearch =
-        String(bill.caNumber || "")
-          .toLowerCase()
-          .includes(searchTerm) ||
-        String(bill.month || "")
-          .toLowerCase()
-          .includes(searchTerm);
-
-      if (!matchSearch) return false;
 
       let matchAmount = true;
       const amt = Number(bill.totalAmount) || 0;
@@ -170,14 +246,10 @@ const ElectricBill = () => {
       else if (filters.amountFilter === "₹10k - ₹50k")
         matchAmount = amt >= 10000 && amt <= 50000;
       else if (filters.amountFilter === "Over ₹50k") matchAmount = amt > 50000;
-
       if (!matchAmount) return false;
 
       let matchDate = true;
-
-      if (filters.exactMonth && bill.month) {
-        matchDate = bill.month === filters.exactMonth;
-      } else if (filters.dateFilter !== "All" && bill.billDate) {
+      if (filters.dateFilter !== "All" && bill.billDate) {
         const billDateObj = new Date(bill.billDate);
         const today = new Date();
         const diffTime = Math.abs(today - billDateObj);
@@ -190,19 +262,17 @@ const ElectricBill = () => {
             billDateObj.getMonth() === today.getMonth() &&
             billDateObj.getFullYear() === today.getFullYear();
       }
-
       if (!matchDate) return false;
 
       return true;
     });
-  }, [bills, filters, activeTab]);
+  }, [bills, activeTab, filters.amountFilter, filters.dateFilter]);
 
   const activeFiltersCount =
     [filters.amountFilter, filters.dateFilter].filter(
       (f) => f !== "Any Amount" && f !== "All",
     ).length + (filters.exactMonth ? 1 : 0);
 
-  // 1. HUGE BARS CONFIGURATION (UPDATED WITH DATES)
   const chartData = useMemo(() => {
     const allMonths = bills
       .map((b) => b.month)
@@ -210,20 +280,17 @@ const ElectricBill = () => {
     const uniqueMonths = [...new Set(allMonths)]
       .sort((a, b) => new Date(a) - new Date(b))
       .slice(-6);
-
     const formatMonth = (yyyy_mm) => {
       if (!yyyy_mm) return "Unknown";
       const [year, month] = yyyy_mm.split("-");
       const date = new Date(year, month - 1);
       return date.toLocaleString("en-US", { month: "short", year: "numeric" });
     };
-
     const getStatusSum = (month, status) => {
       return bills
         .filter((b) => b.month === month && b.status === status)
         .reduce((sum, b) => sum + (Number(b.totalAmount) || 0), 0);
     };
-
     const getStatusDates = (month, status) => {
       const monthBills = bills.filter(
         (b) => b.month === month && b.status === status && b.billDate,
@@ -237,10 +304,8 @@ const ElectricBill = () => {
       );
       return [...new Set(dates)].join(", ");
     };
-
     const formattedLabels =
       uniqueMonths.length > 0 ? uniqueMonths.map(formatMonth) : ["No Data"];
-
     return {
       labels: formattedLabels,
       datasets: [
@@ -284,7 +349,7 @@ const ElectricBill = () => {
             uniqueMonths.length > 0
               ? uniqueMonths.map((m) => getStatusDates(m, "Overdue"))
               : [""],
-          backgroundColor: "#e11d48", // rose-600 (kept standard for danger)
+          backgroundColor: "#e11d48",
           borderRadius: 4,
           barPercentage: 0.95,
           categoryPercentage: 0.95,
@@ -293,15 +358,11 @@ const ElectricBill = () => {
     };
   }, [bills, theme]);
 
-  // 2. PREMIUM TOOLTIPS & STACKED AXES LOGIC (UPDATED WITH PRICE FORMATTING)
   const chartOptions = useMemo(() => {
     return {
       responsive: true,
       maintainAspectRatio: false,
-      interaction: {
-        mode: "index",
-        intersect: false,
-      },
+      interaction: { mode: "index", intersect: false },
       plugins: {
         legend: {
           display: true,
@@ -314,7 +375,7 @@ const ElectricBill = () => {
         },
         tooltip: {
           backgroundColor: "rgba(9, 9, 11, 0.95)",
-          titleColor: isTransport ? "#60a5fa" : "#818cf8", // matching primary variant
+          titleColor: isTransport ? "#60a5fa" : "#818cf8",
           bodyColor: "#f4f4f5",
           borderColor: "rgba(39, 39, 42, 1)",
           borderWidth: 1,
@@ -328,31 +389,23 @@ const ElectricBill = () => {
               const status = context.dataset.label;
               const amount = context.raw || 0;
               if (amount === 0) return null;
-
               const dates = context.dataset.billDates[context.dataIndex];
-              const amountFormatted = `₹${amount.toLocaleString("en-IN")}`;
-
               return [
                 `Status : ${status}`,
-                `Amount : ${amountFormatted}`,
+                `Amount : ₹${amount.toLocaleString("en-IN")}`,
                 `Date(s): ${dates || "N/A"}`,
                 ` `,
               ];
             },
-            footer: (context) => {
-              const total = context.reduce(
-                (sum, item) => sum + (item.raw || 0),
-                0,
-              );
-              return `Total Billed: ₹${total.toLocaleString("en-IN")}`;
-            },
+            footer: (context) =>
+              `Total Billed: ₹${context.reduce((sum, item) => sum + (item.raw || 0), 0).toLocaleString("en-IN")}`,
           },
         },
       },
       scales: {
         x: {
           stacked: true,
-          grid: { display: false, color: "rgba(39, 39, 42, 0.1)" },
+          grid: { display: false },
           ticks: {
             color: "rgba(161, 161, 170, 0.8)",
             font: { family: "monospace", weight: "bold" },
@@ -377,10 +430,12 @@ const ElectricBill = () => {
     };
   }, [isTransport]);
 
+  // 🚀 ONLY EXPORTS VISIBLE DATA (Maximum 50 or what is loaded in table)
   const handleExport = () => {
     try {
       if (filteredBills.length === 0)
         return toast.info("No bill records to export");
+
       const headers = [
         "CA Number",
         "Month",
@@ -390,51 +445,100 @@ const ElectricBill = () => {
         "Total Amount",
         "Status",
       ];
-      const rows = filteredBills.map((bill) => {
-        const date = bill.billDate
-          ? `\t${new Date(bill.billDate).toLocaleDateString("en-GB")}`
-          : "-";
-        return `"${bill.caNumber || "-"}","${bill.month || "-"}",${date},${
-          bill.billAmount || 0
-        },${bill.fineAmount || 0},${bill.totalAmount || 0},${
-          bill.status || "-"
-        }`;
-      });
-      const csvContent = [headers.join(","), ...rows].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
+      const rows = filteredBills.map(
+        (bill) =>
+          `"${bill.caNumber || "-"}","${bill.month || "-"}",${bill.billDate ? `\t${new Date(bill.billDate).toLocaleDateString("en-GB")}` : "-"},${bill.billAmount || 0},${bill.fineAmount || 0},${bill.totalAmount || 0},"${bill.status || "-"}"`,
+      );
+
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const link = document.createElement("a");
-      link.href = url;
+      link.href = URL.createObjectURL(
+        new Blob([csvContent], { type: "text/csv;charset=utf-8;" }),
+      );
       link.setAttribute(
         "download",
-        `Electric_Bills_${new Date().toISOString().split("T")[0]}.csv`,
+        `Electric_Bills_View_${new Date().toISOString().split("T")[0]}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Utility records exported to Excel");
+      toast.success("Visible records exported to CSV");
     } catch (error) {
       toast.error("Failed to export bills");
     }
   };
 
-  const handleFullBackup = handleExport;
+  // 🚀 SMART MONTHLY BACKUP EXPORT (Bypasses Limit completely without crashing)
+  const handleFullBackup = async (monthToFetch = backupMonth) => {
+    try {
+      if (!monthToFetch) return toast.error("Please select a month to backup.");
+      toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
+
+      // Direct Query from server to only get data for that month
+      const q = query(
+        collection(db, "electricBills"),
+        where("month", "==", monthToFetch),
+      );
+      const snapshot = await getDocs(q);
+      const allData = snapshot.docs.map((doc) => doc.data());
+
+      if (allData.length === 0)
+        return toast.info(`No records found for ${monthToFetch}.`);
+
+      const headers = [
+        "CA Number",
+        "Month",
+        "Bill Date",
+        "Bill Amount",
+        "Fine Amount",
+        "Total Amount",
+        "Status",
+      ];
+
+      const rows = allData.map(
+        (bill) =>
+          `"${bill.caNumber || "-"}","${bill.month || "-"}",${bill.billDate ? `\t${new Date(bill.billDate).toLocaleDateString("en-GB")}` : "-"},${bill.billAmount || 0},${bill.fineAmount || 0},${bill.totalAmount || 0},"${bill.status || "-"}"`,
+      );
+
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(
+        new Blob([csvContent], { type: "text/csv;charset=utf-8;" }),
+      );
+      link.setAttribute("download", `Backup_Electricity_${monthToFetch}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success(`Backup for ${monthToFetch} downloaded securely!`);
+
+      // 🚀 FIXED: Instantly removes the warning after successful backup
+      localStorage.setItem(`backup_electric_${monthToFetch}`, "true");
+      if (showBackupWarning === monthToFetch) {
+        setShowBackupWarning(null);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Backup failed.");
+    }
+  };
 
   const handleWipeAll = async () => {
     if (isManager || !deletePassword)
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      const adminEmail = admin?.data?.email || admin?.email;
+      const currentUser = admin?.data || admin || {};
       await electricService.deleteAllBills({
         password: deletePassword,
-        email: adminEmail,
+        email: currentUser.email,
+        user: currentUser,
       });
       toast.success("Electric Bills database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchBills();
+      fetchBills(false);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
@@ -446,8 +550,7 @@ const ElectricBill = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      const currentUser = admin?.data ||
-        admin || { email: "Unknown", role: "admin" };
+      const currentUser = admin?.data || admin || {};
       if (editId) {
         await electricService.updateBill(editId, formData, currentUser);
         toast.success("Bill updated successfully!");
@@ -455,7 +558,7 @@ const ElectricBill = () => {
         await electricService.addBill(formData, currentUser);
         toast.success("New bill recorded!");
       }
-      await fetchBills();
+      fetchBills(false);
       resetForm();
     } catch (error) {
       toast.error("Failed to save bill");
@@ -479,33 +582,26 @@ const ElectricBill = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleDeleteClick = (id) => setDeleteModal({ isOpen: true, id });
-
-  const handleDisabledClick = (action) => {
-    setWarningTooltip(action);
-    setTimeout(() => setWarningTooltip(null), 2500);
-  };
-
   const executeDelete = async () => {
     if (!deleteModal.id) return;
     try {
-      await electricService.deleteBill(deleteModal.id);
+      const currentUser = admin?.data || admin || {};
+      await electricService.deleteBill(deleteModal.id, currentUser);
       toast.info("Bill deleted successfully");
-      fetchBills();
+      fetchBills(false);
     } catch (error) {
-      toast.error("Failed to delete bill");
+      toast.error(error.message || "Failed to delete bill");
     } finally {
       setDeleteModal({ isOpen: false, id: null });
     }
   };
 
   const openHistory = (bill) => {
-    const sortedHistory = Array.isArray(bill.editHistory)
-      ? [...bill.editHistory].reverse().slice(0, 10)
-      : [];
     setHistoryModal({
       isOpen: true,
-      data: sortedHistory,
+      data: Array.isArray(bill.editHistory)
+        ? [...bill.editHistory].reverse().slice(0, 10)
+        : [],
       itemName: `CA: ${bill.caNumber || "N/A"} (${bill.month || "N/A"})`,
     });
   };
@@ -524,16 +620,16 @@ const ElectricBill = () => {
 
   const handleCAChange = (e) => {
     const val = e.target.value.replace(/\D/g, "");
-    if (val.length <= 12) {
-      setFormData({ ...formData, caNumber: val });
-    }
+    if (val.length <= 12) setFormData({ ...formData, caNumber: val });
   };
 
-  if (loading) return <Loader />;
+  const handleDisabledClick = (id) => {
+    setWarningTooltip(id);
+    setTimeout(() => setWarningTooltip(null), 2500);
+  };
 
   return (
-    <div className="w-full h-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      {/* HEADER */}
+    <div className="w-full h-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-20 w-full">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
@@ -554,12 +650,11 @@ const ElectricBill = () => {
               variant="module"
               onClick={() =>
                 isManager
-                  ? handleDisabledClick("wipe-all")
+                  ? (setWarningTooltip("wipe-all"),
+                    setTimeout(() => setWarningTooltip(null), 2500))
                   : setIsDeleteAllOpen(true)
               }
-              className={`h-11 px-5 border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${
-                isManager ? "opacity-50 !cursor-not-allowed" : ""
-              }`}
+              className={`h-11 px-5 border-rose-500/40 text-rose-400 bg-rose-950/30 hover:bg-rose-900/40 hover:border-rose-400/60 ${isManager ? "opacity-50 !cursor-not-allowed" : ""}`}
             >
               <AlertOctagon size={16} /> Wipe Data
             </Button>
@@ -579,12 +674,44 @@ const ElectricBill = () => {
             className="h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors text-xs"
             onClick={handleExport}
           >
-            <Download size={16} /> Export CSV
+            <Download size={16} /> Export View
           </Button>
         </div>
       </div>
 
-      {/* OVERDUE SUGGESTION ALERT */}
+      {/* 🚀 SMART BACKUP WARNING */}
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the backup for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
+
       {stats.overdue > 0 && (
         <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex items-start sm:items-center gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(225,29,72,0.1)] w-full">
           <div className="bg-rose-500/20 p-2.5 rounded-full text-rose-500 animate-pulse">
@@ -599,14 +726,12 @@ const ElectricBill = () => {
               <strong className="text-rose-300 font-mono">
                 ₹{stats.overdue.toLocaleString("en-IN")}
               </strong>
-              . Please clear them immediately to avoid extra fines or line
-              disconnection.
+              . Please clear them immediately.
             </p>
           </div>
         </div>
       )}
 
-      {/* STATS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
         <div
           className={`bg-[#09090B] border border-zinc-800/60 p-6 rounded-2xl relative overflow-hidden group ${theme.primaryHoverBorder} transition-all`}
@@ -649,21 +774,14 @@ const ElectricBill = () => {
         </div>
       </div>
 
-      {/* FORM & CHART SECTION */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:items-stretch w-full">
-        {/* FORM CONTAINER */}
         <div className="lg:col-span-1 flex flex-col h-full w-full">
           <div
-            className={`flex-1 flex flex-col justify-between w-full rounded-2xl shadow-lg border p-6 md:p-8 relative overflow-hidden transition-colors ${
-              editId
-                ? `bg-zinc-900/30 ${theme.primaryBorder}`
-                : "bg-[#09090B] border-zinc-800/60"
-            }`}
+            className={`flex-1 flex flex-col justify-between w-full rounded-2xl shadow-lg border p-6 md:p-8 relative overflow-hidden transition-colors ${editId ? `bg-zinc-900/30 ${theme.primaryBorder}` : "bg-[#09090B] border-zinc-800/60"}`}
           >
             <div
               className={`absolute -top-10 -right-10 w-40 h-40 blur-[60px] rounded-full pointer-events-none ${theme.glowOrb}`}
             />
-
             <div className="flex items-center gap-3 mb-8 relative z-10 shrink-0">
               <div
                 className={`p-3 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
@@ -679,7 +797,6 @@ const ElectricBill = () => {
                 </p>
               </div>
             </div>
-
             <form
               onSubmit={handleSubmit}
               className="space-y-6 relative z-10 flex-1 flex flex-col w-full"
@@ -698,11 +815,7 @@ const ElectricBill = () => {
                     required
                     className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 outline-none transition-all font-mono tracking-wider placeholder:text-zinc-600 ${theme.primaryFocus}`}
                   />
-                  <p className="text-[9px] text-zinc-600 font-mono ml-1">
-                    {formData.caNumber.length}/12 Digits
-                  </p>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4 w-full">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
@@ -719,7 +832,6 @@ const ElectricBill = () => {
                       style={{ colorScheme: "dark" }}
                     />
                   </div>
-
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                       Bill Date
@@ -736,7 +848,6 @@ const ElectricBill = () => {
                     />
                   </div>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4 w-full">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
@@ -755,10 +866,9 @@ const ElectricBill = () => {
                       className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
                     />
                   </div>
-
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
-                      Fine Amount (Opt)
+                      Fine Amount
                     </label>
                     <input
                       type="number"
@@ -773,7 +883,6 @@ const ElectricBill = () => {
                     />
                   </div>
                 </div>
-
                 <div className="p-5 bg-zinc-900/30 rounded-2xl border border-zinc-800 space-y-4 mt-2 w-full">
                   <div className="flex justify-between items-center border-b border-zinc-800 pb-4">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
@@ -784,13 +893,7 @@ const ElectricBill = () => {
                       onChange={(e) =>
                         setFormData({ ...formData, status: e.target.value })
                       }
-                      className={`text-xs rounded-lg px-3 py-1.5 outline-none border font-bold cursor-pointer appearance-none transition-all ${
-                        formData.status === "Paid"
-                          ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`
-                          : formData.status === "Overdue"
-                            ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                            : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-                      }`}
+                      className={`text-xs rounded-lg px-3 py-1.5 outline-none border font-bold cursor-pointer appearance-none transition-all ${formData.status === "Paid" ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}` : formData.status === "Overdue" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"}`}
                     >
                       <option
                         className="bg-[#09090B] text-cyan-400"
@@ -828,7 +931,6 @@ const ElectricBill = () => {
                   </div>
                 </div>
               </div>
-
               <div className="flex gap-3 pt-6 mt-auto border-t border-zinc-800/60 w-full shrink-0">
                 {editId && (
                   <button
@@ -857,7 +959,6 @@ const ElectricBill = () => {
           </div>
         </div>
 
-        {/* PREMIUM CHART UI */}
         <div className="lg:col-span-2 flex flex-col h-full w-full">
           <div
             className={`flex-1 w-full p-6 md:p-8 rounded-2xl bg-[#09090B] border border-zinc-800/60 shadow-lg relative flex flex-col min-h-[450px] overflow-hidden ${theme.primaryHoverBorder} transition-all duration-500`}
@@ -865,19 +966,17 @@ const ElectricBill = () => {
             <div
               className={`absolute top-0 right-0 p-8 w-64 h-64 blur-[80px] rounded-full pointer-events-none ${theme.glowOrb}`}
             />
-
             <div className="flex justify-between items-center mb-6 relative z-10 w-full shrink-0">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <div className={`p-2 rounded-lg ${theme.primaryBg}`}>
                   <Activity size={18} className={theme.primaryText} />
-                </div>
+                </div>{" "}
                 Monthly Trend
               </h3>
               <span className="text-[10px] text-zinc-400 font-mono font-bold uppercase tracking-widest bg-zinc-800/30 px-3 py-1.5 rounded-lg border border-zinc-800/80">
                 Last 6 Months
               </span>
             </div>
-
             <div className="relative flex-1 w-full min-h-0 z-10">
               <div className="absolute inset-0 w-full h-full [&>div]:!h-full [&>div]:!w-full [&_canvas]:!h-full [&_canvas]:!w-full">
                 {bills.length > 0 ? (
@@ -886,7 +985,7 @@ const ElectricBill = () => {
                   </Suspense>
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-zinc-500 text-sm italic border border-dashed border-zinc-800/60 rounded-2xl">
-                    No data available to plot
+                    No data available
                   </div>
                 )}
               </div>
@@ -895,66 +994,49 @@ const ElectricBill = () => {
         </div>
       </div>
 
-      {/* TABLE SECTION WITH TABS & FILTERS */}
       <div className="w-full">
-        <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden flex flex-col w-full">
+        <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden flex flex-col w-full relative">
+          {loading && (
+            <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm">
+              <Loader />
+            </div>
+          )}
           <div className="p-6 md:p-8 border-b border-zinc-800/60 bg-[#09090B] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
             <div className="flex gap-2 p-1.5 bg-zinc-900/50 rounded-xl border border-zinc-800 w-full sm:w-auto overflow-x-auto">
               <button
                 onClick={() => setActiveTab("All")}
-                className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${
-                  activeTab === "All"
-                    ? `${theme.primaryTabBg} text-white`
-                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-                }`}
+                className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${activeTab === "All" ? `${theme.primaryTabBg} text-white` : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"}`}
               >
                 <FileText size={14} /> All Bills
               </button>
               <button
                 onClick={() => setActiveTab("Paid")}
-                className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${
-                  activeTab === "Paid"
-                    ? `${theme.primaryTabBg} text-white`
-                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-                }`}
+                className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${activeTab === "Paid" ? `${theme.primaryTabBg} text-white` : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"}`}
               >
                 <CheckCircle size={14} /> Paid
               </button>
               <button
                 onClick={() => setActiveTab("Pending")}
-                className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${
-                  activeTab === "Pending"
-                    ? `${theme.primaryTabBg} text-white`
-                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-                }`}
+                className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${activeTab === "Pending" ? `${theme.primaryTabBg} text-white` : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"}`}
               >
                 <Clock size={14} /> Pending
               </button>
               <button
                 onClick={() => setActiveTab("Overdue")}
-                className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${
-                  activeTab === "Overdue"
-                    ? `${theme.primaryTabBg} text-white`
-                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-                }`}
+                className={`px-5 py-2 sm:py-1.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center whitespace-nowrap ${activeTab === "Overdue" ? `${theme.primaryTabBg} text-white` : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"}`}
               >
                 <AlertCircle size={14} /> Overdue
               </button>
             </div>
-
             <div className="flex items-center gap-3 w-full xl:w-auto justify-between xl:justify-end">
               <div className="relative flex-1 sm:w-80 group">
                 <Search
                   size={16}
-                  className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${
-                    filters.search
-                      ? theme.primaryText
-                      : "text-zinc-500 group-hover:text-zinc-400"
-                  }`}
+                  className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
                 />
                 <input
                   type="text"
-                  placeholder="Search CA Number or Month..."
+                  placeholder="Search CA Number..."
                   className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                   value={filters.search}
                   onChange={(e) =>
@@ -965,10 +1047,9 @@ const ElectricBill = () => {
             </div>
           </div>
 
-          {/* PROFESSIONAL FILTRATION UI */}
           <div className="p-4 border-b border-zinc-800/60 bg-zinc-900/20 flex flex-wrap items-center gap-4 relative z-20 w-full">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 px-3 py-1 border-r border-zinc-800 mr-1">
-              <Filter size={16} /> Filters
+              <Filter size={16} /> Filters{" "}
               {activeFiltersCount > 0 && (
                 <span
                   className={`ml-1 px-1.5 rounded border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
@@ -977,92 +1058,26 @@ const ElectricBill = () => {
                 </span>
               )}
             </div>
-
-            <div className="relative group">
-              <select
-                value={filters.amountFilter}
-                onChange={(e) =>
-                  setFilters({ ...filters, amountFilter: e.target.value })
-                }
-                className="appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all"
-              >
-                <option value="Any Amount" className="bg-[#09090B]">
-                  Any Amount
-                </option>
-                <option value="Under ₹10k" className="bg-[#09090B]">
-                  &lt; ₹10,000
-                </option>
-                <option value="₹10k - ₹50k" className="bg-[#09090B]">
-                  ₹10k - ₹50k
-                </option>
-                <option value="Over ₹50k" className="bg-[#09090B]">
-                  &gt; ₹50,000
-                </option>
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
-              />
-            </div>
-
-            <div className="relative group">
-              <select
-                value={filters.dateFilter}
-                onChange={(e) => {
-                  setFilters({
-                    ...filters,
-                    dateFilter: e.target.value,
-                    exactMonth: "",
-                  });
-                }}
-                className="appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all"
-              >
-                <option value="All" className="bg-[#09090B]">
-                  Timeline: All
-                </option>
-                <option value="Today" className="bg-[#09090B]">
-                  Today
-                </option>
-                <option value="Last7Days" className="bg-[#09090B]">
-                  Last 7 Days
-                </option>
-                <option value="ThisMonth" className="bg-[#09090B]">
-                  This Month
-                </option>
-              </select>
-              <ChevronDown
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
-              />
-            </div>
-
             <div className="relative group flex items-center">
               <div
-                className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${
-                  filters.exactMonth ? theme.primaryText : "text-zinc-500"
-                }`}
+                className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filters.exactMonth ? theme.primaryText : "text-zinc-500"}`}
               >
                 <Calendar size={14} />
               </div>
               <input
                 type="month"
                 value={filters.exactMonth}
-                onChange={(e) => {
+                onChange={(e) =>
                   setFilters({
                     ...filters,
                     exactMonth: e.target.value,
                     dateFilter: "All",
-                  });
-                }}
+                  })
+                }
                 style={{ colorScheme: "dark" }}
-                className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${
-                  filters.exactMonth
-                    ? `text-zinc-100 ${theme.primaryBg} ${theme.primaryBorder}`
-                    : "text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-300"
-                }`}
+                className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${filters.exactMonth ? `text-zinc-100 ${theme.primaryBg} ${theme.primaryBorder}` : "text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-300"}`}
               />
             </div>
-
             {activeFiltersCount > 0 && (
               <button
                 onClick={() =>
@@ -1097,15 +1112,15 @@ const ElectricBill = () => {
                 {filteredBills.map((bill) => {
                   const hasEdits =
                     bill.editHistory && bill.editHistory.length > 0;
-                  const historyCount = hasEdits ? bill.editHistory.length : 0;
-                  const latestLog = hasEdits
-                    ? bill.editHistory[bill.editHistory.length - 1]
-                    : null;
-
                   return (
                     <tr
                       key={bill._id}
-                      className="hover:bg-zinc-800/30 transition-colors group"
+                      id={bill._id}
+                      className={`transition-all duration-1000 ease-out group border-l-4 ${
+                        activeHighlight === bill._id
+                          ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                          : "border-transparent hover:bg-zinc-800/30"
+                      }`}
                     >
                       <td className="p-5 pl-6 align-middle">
                         <div
@@ -1116,7 +1131,6 @@ const ElectricBill = () => {
                         <div className="text-zinc-300 font-bold whitespace-nowrap">
                           {bill.month}
                         </div>
-
                         {hasEdits && (
                           <div
                             onClick={() => openHistory(bill)}
@@ -1127,21 +1141,9 @@ const ElectricBill = () => {
                                 size={10}
                                 className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
                               />
-                              {latestLog.role || "ADMIN"}
-                              {historyCount > 1 && (
-                                <span className="bg-zinc-700/50 text-zinc-400 px-1 py-0.5 rounded text-[8px] font-bold ml-1">
-                                  +{historyCount - 1} MORE
-                                </span>
-                              )}
+                              {bill.editHistory[bill.editHistory.length - 1]
+                                .role || "ADMIN"}
                             </div>
-                            <span className="text-zinc-500 text-[9px] ml-4 font-medium tracking-wide">
-                              {new Date(latestLog.at).toLocaleString("en-GB", {
-                                day: "2-digit",
-                                month: "short",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
                           </div>
                         )}
                       </td>
@@ -1161,19 +1163,13 @@ const ElectricBill = () => {
                       </td>
                       <td className="p-5 text-center align-middle">
                         <span
-                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border inline-flex items-center gap-1.5 ${
-                            bill.status === "Paid"
-                              ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`
-                              : bill.status === "Overdue"
-                                ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                                : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-                          }`}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border inline-flex items-center gap-1.5 ${bill.status === "Paid" ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}` : bill.status === "Overdue" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"}`}
                         >
                           {bill.status === "Paid" ? (
                             <CheckCircle size={12} />
                           ) : (
                             <AlertCircle size={12} />
-                          )}
+                          )}{" "}
                           {bill.status}
                         </span>
                       </td>
@@ -1185,66 +1181,78 @@ const ElectricBill = () => {
                           >
                             <Edit2 size={16} />
                           </button>
-                          <div className="relative flex items-center">
-                            <button
-                              onClick={() =>
-                                isManager
-                                  ? handleDisabledClick(bill._id)
-                                  : handleDeleteClick(bill._id)
-                              }
-                              className={`p-2 rounded-xl transition-all ${
-                                isManager
-                                  ? "text-zinc-600 opacity-50 cursor-not-allowed"
-                                  : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
-                              }`}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                            {warningTooltip === bill._id && (
-                              <div className="absolute bottom-full right-0 mb-2 z-[99] animate-in fade-in zoom-in-95 duration-200">
-                                <div className="bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
-                                  <span className="bg-red-500/20 p-1 rounded-md text-[10px] leading-none">
-                                    🚫
-                                  </span>{" "}
-                                  Action Denied
-                                </div>
-                                <div className="absolute -bottom-1 right-3 w-2 h-2 bg-[#09090B] border-b border-r border-red-500/30 rotate-45"></div>
-                              </div>
-                            )}
-                          </div>
+                          <button
+                            onClick={() =>
+                              isManager
+                                ? (setWarningTooltip(bill._id),
+                                  setTimeout(
+                                    () => setWarningTooltip(null),
+                                    2500,
+                                  ))
+                                : setDeleteModal({
+                                    isOpen: true,
+                                    id: bill._id,
+                                  })
+                            }
+                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                          {warningTooltip === bill._id && (
+                            <div className="absolute top-full right-0 mb-2 z-[9999] bg-[#09090B] border border-red-500/30 shadow-2xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                              <span className="bg-red-500/20 p-1 rounded text-[8px] leading-none">
+                                🚫
+                              </span>{" "}
+                              Access Denied
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
                   );
                 })}
-                {filteredBills.length === 0 && (
-                  <tr>
-                    <td colSpan="7" className="p-12 text-center">
-                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-zinc-800/50 text-zinc-500 mb-4">
-                        <FileText size={32} />
-                      </div>
-                      <p className="text-zinc-500 text-sm">
-                        No bill records match your filters.
-                      </p>
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
+
+            {/* 🚀 NEW: LOAD MORE BUTTON */}
+            {hasMore && filteredBills.length > 0 && (
+              <div className="flex justify-center p-6 border-t border-zinc-800/60">
+                <Button
+                  onClick={() => fetchBills(true)}
+                  disabled={loadingMore}
+                  variant="outline"
+                  className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+                >
+                  {loadingMore ? (
+                    <RefreshCcw size={16} className="animate-spin mr-2" />
+                  ) : null}
+                  {loadingMore ? "Loading..." : "Load Next 50 Bills"}
+                </Button>
+              </div>
+            )}
+
+            {filteredBills.length === 0 && !loading && (
+              <div className="p-12 text-center w-full flex flex-col items-center border-t border-zinc-800/60">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-zinc-800/50 text-zinc-500 mb-4">
+                  <FileText size={32} />
+                </div>
+                <p className="text-zinc-500 text-sm">
+                  No bill records match your filters.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* LOG HISTORY MODAL */}
+      {/* History Modal */}
       {historyModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div
-            className={`bg-[#09090B] border border-zinc-800/60 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200`}
-          >
+          <div className="bg-[#09090B] border border-zinc-800/60 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative Z-50">
             <div className="p-5 border-b border-zinc-800/60 flex justify-between items-center bg-[#09090B]">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <History size={18} className={theme.primaryText} /> Log:{" "}
-                <span className="text-zinc-400 text-sm font-mono">
+                <History size={18} className={theme.primaryText} /> Log History:{" "}
+                <span className="text-zinc-300 text-sm ml-1">
                   {historyModal.itemName}
                 </span>
               </h3>
@@ -1252,67 +1260,57 @@ const ElectricBill = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: [], itemName: "" })
                 }
-                className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800/50 transition-colors"
+                className="text-zinc-500 hover:text-white transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
-            <div className="p-5 max-h-[60vh] overflow-y-auto space-y-3 custom-scrollbar relative">
+            <div className="p-5 max-h-[60vh] overflow-y-auto space-y-3 custom-scrollbar">
               {historyModal.data.map((edit, idx) => (
                 <div
                   key={idx}
-                  className={`flex justify-between items-center bg-zinc-900/30 p-4 rounded-xl border group ${theme.primaryHoverBorder} transition-colors relative overflow-hidden ${idx === 0 ? theme.primaryBorder : "border-zinc-800"}`}
+                  className={`bg-zinc-900/30 border ${idx === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden group ${theme.primaryHoverBorder} transition-colors`}
                 >
                   {idx === 0 && (
                     <div
-                      className={`absolute left-0 top-0 w-1 h-full ${theme.primaryTabBg}`}
+                      className={`absolute left-0 top-0 w-1 h-full ${theme.primaryBg}`}
                     ></div>
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm uppercase ${
-                        idx === 0
-                          ? `${theme.primaryBg} ${theme.primaryText}`
-                          : "bg-zinc-800/50 text-zinc-400"
-                      }`}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg uppercase ${idx === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
                     >
                       {edit.role ? edit.role.charAt(0) : "A"}
                     </div>
                     <div>
-                      <p
-                        className={`text-sm font-bold uppercase tracking-widest ${
-                          idx === 0 ? "text-white" : "text-zinc-400"
-                        }`}
+                      <div
+                        className={`font-bold uppercase tracking-widest text-sm ${idx === 0 ? "text-white" : "text-zinc-400"}`}
                       >
                         {edit.role || "Admin"}
-                      </p>
-                      <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
-                        {edit.email || edit.by}
-                      </p>
-                      <p
-                        className={`text-[10px] font-mono mt-1 ${
-                          idx === 0
-                            ? `${theme.primaryText} font-bold`
-                            : "text-zinc-600"
-                        }`}
+                      </div>
+                      <div className="text-zinc-500 text-[10px] font-mono lowercase">
+                        {edit.email || edit.by || "admin@system.com"}
+                      </div>
+                      <div
+                        className={`text-[10px] font-mono mt-1 tracking-wider ${idx === 0 ? theme.primaryText : "text-zinc-500"}`}
                       >
                         {new Date(edit.at).toLocaleString("en-GB", {
-                          day: "numeric",
+                          day: "2-digit",
                           month: "short",
                           year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
                           second: "2-digit",
                         })}
-                      </p>
+                      </div>
                     </div>
                   </div>
                   {idx === 0 && (
-                    <span
-                      className={`relative z-10 text-[9px] px-2 py-1 rounded-md uppercase font-black tracking-widest border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+                    <div
+                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] px-3 py-1 rounded-md font-bold tracking-widest uppercase`}
                     >
-                      Latest
-                    </span>
+                      LATEST
+                    </div>
                   )}
                 </div>
               ))}
@@ -1321,19 +1319,8 @@ const ElectricBill = () => {
         </div>
       )}
 
-      {/* DELETE MODAL */}
-      <ConfirmDialog
-        isOpen={deleteModal.isOpen}
-        onClose={() => setDeleteModal({ isOpen: false, id: null })}
-        onConfirm={executeDelete}
-        title="Delete Bill?"
-        message="Are you sure you want to delete this bill record? This cannot be undone."
-        confirmText="Delete"
-        isDestructive={true}
-      />
-
-      {/* SECURE WIPE DATA MODAL */}
-      {isDeleteAllOpen && (
+      {/* Wipe Data Modal */}
+      {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
@@ -1343,36 +1330,49 @@ const ElectricBill = () => {
             <div className="flex items-center gap-3 text-red-500 mb-6">
               <AlertOctagon size={28} />
               <h2 className="text-xl font-bold tracking-wide">
-                Wipe Electric Database
+                Wipe Invoice Database
               </h2>
             </div>
+
+            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
                   className="text-amber-500 shrink-0 mt-0.5"
                 />
-                <div>
+                <div className="w-full">
                   <h3 className="text-amber-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-amber-100/60 text-xs mb-4 leading-relaxed">
-                    Before wiping the database, we highly recommend downloading
-                    a complete CSV backup of all your electricity records.
+                  <p className="text-amber-100/60 text-xs mb-3 leading-relaxed">
+                    Before wiping, please download the backup for a specific
+                    month to prevent browser crash.
                   </p>
-                  <button
-                    onClick={handleFullBackup}
-                    className="w-full sm:w-auto px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Download size={14} /> Download Full Database Backup
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                    <input
+                      type="month"
+                      value={backupMonth}
+                      onChange={(e) => setBackupMonth(e.target.value)}
+                      style={{ colorScheme: "dark" }}
+                      className="w-full sm:w-32 bg-zinc-900/50 border border-amber-500/30 rounded-xl px-3 py-2 text-xs text-zinc-200 outline-none transition-all"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => handleFullBackup(backupMonth)}
+                      className="w-full sm:flex-1 h-9 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"
+                    >
+                      <Download size={14} className="mr-2" /> Download Backup
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
+
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
-              electric bills. Please enter your Admin password to confirm.
+              invoice records. Please enter your Admin password to confirm.
             </p>
             <div className="relative mb-8">
               <input
@@ -1380,7 +1380,7 @@ const ElectricBill = () => {
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter your admin password..."
-                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 placeholder:text-red-100/20 outline-none transition-all font-mono"
+                className="w-full bg-zinc-900/50 border border-red-900/30 focus:border-red-500/50 rounded-xl px-4 py-3 text-red-100 outline-none transition-all"
               />
               <button
                 type="button"
@@ -1391,31 +1391,42 @@ const ElectricBill = () => {
               </button>
             </div>
             <div className="flex justify-end gap-3">
-              <button
+              <Button
+                variant="outline"
                 onClick={() => {
                   setIsDeleteAllOpen(false);
                   setDeletePassword("");
                 }}
                 disabled={wiping}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-400 border border-zinc-800 hover:text-white hover:bg-zinc-800/50 transition-colors disabled:opacity-50"
+                className="h-11 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
               >
                 Cancel
-              </button>
-
-              <button
+              </Button>
+              <Button
+                variant="danger"
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold bg-red-600/20 text-red-500 border border-red-600/30 hover:bg-red-600 hover:text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-11 rounded-xl flex items-center gap-2"
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
-                ) : null}
+                ) : null}{" "}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, id: null })}
+        onConfirm={executeDelete}
+        title="Delete Invoice?"
+        message="Are you sure you want to delete this invoice?"
+        confirmText="Delete"
+        isDestructive={true}
+      />
     </div>
   );
 };

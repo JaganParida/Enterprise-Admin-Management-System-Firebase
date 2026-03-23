@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import React, { useState, useEffect, useMemo } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import vehicleService from "../../services/vehicleService";
 import {
   Truck,
@@ -18,21 +18,19 @@ import {
   Search,
   Filter,
   ChevronDown,
-  CheckCircle,
-  Clock,
-  AlertCircle,
+  RefreshCcw,
   AlertOctagon,
   ShieldAlert,
   Download,
   Eye,
   EyeOff,
-  RefreshCcw,
 } from "lucide-react";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
 import Loader from "../../components/common/Loader";
+import Button from "../../components/common/Button";
+import ConfirmDialog from "../../components/common/ConfirmDialog";
 
-// 🚀 CUSTOM GLASSY INPUT COMPONENT FOR DYNAMIC THEME
 const GlassInput = ({
   label,
   icon: Icon,
@@ -72,8 +70,14 @@ const VehicleLog = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("trips");
+
+  // 🚀 Highlight Animation State
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
 
   // 🔥 THEME HOOK
   const currentPath =
@@ -81,6 +85,7 @@ const VehicleLog = () => {
       ? window.location.pathname
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
+  const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
     primaryText: isTransport ? "text-[#38bdf8]" : "text-indigo-400",
@@ -125,7 +130,6 @@ const VehicleLog = () => {
     amountDue: "",
     totalAmount: 0,
   };
-
   const initialExpenseForm = {
     date: new Date().toISOString().split("T")[0],
     reason: "",
@@ -134,6 +138,20 @@ const VehicleLog = () => {
 
   const [formData, setFormData] = useState(initialTripForm);
   const [expenseData, setExpenseData] = useState(initialExpenseForm);
+
+  // 🚀 Scroll & Highlight Effect
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element)
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 500);
+      const timer = setTimeout(() => setActiveHighlight(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
 
   useEffect(() => {
     if (location.state && location.state.editLog) {
@@ -153,7 +171,6 @@ const VehicleLog = () => {
     const rate = Number(formData.rate) || 0;
     const food = Number(formData.foodCharge) || 0;
     const paid = Number(formData.amountPaid) || 0;
-
     const total = qty * rate + food;
     const calculatedDue = total - paid;
 
@@ -173,8 +190,8 @@ const VehicleLog = () => {
   const fetchData = async () => {
     try {
       const [tripRes, expRes] = await Promise.all([
-        vehicleService.getLogs(),
-        vehicleService.getExpenses(),
+        vehicleService.getLogs({}, null, 10), // Limit Dashboard views to 10
+        vehicleService.getExpenses({}, null, 10),
       ]);
       setLogs(tripRes.data || []);
       setExpenses(expRes.data || []);
@@ -203,14 +220,12 @@ const VehicleLog = () => {
       !formData.vehicleNo.match(
         /^[A-Z]{2}[-][0-9]{2}[-][A-Z0-9]{1,2}[-][0-9]{4}$/i,
       )
-    ) {
+    )
       return toast.error("Invalid Vehicle Number format.");
-    }
 
     setSubmitting(true);
     try {
-      const currentUser = admin?.data ||
-        admin || { email: "Unknown", role: "admin" };
+      const currentUser = admin?.data || admin || {};
       if (editId) {
         await vehicleService.updateLog(editId, formData, currentUser);
         toast.success("Trip record updated!");
@@ -232,8 +247,7 @@ const VehicleLog = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const currentUser = admin?.data ||
-        admin || { email: "Unknown", role: "admin" };
+      const currentUser = admin?.data || admin || {};
       if (editId) {
         await vehicleService.updateExpense(editId, expenseData, currentUser);
         toast.success("Expense updated!");
@@ -277,7 +291,8 @@ const VehicleLog = () => {
     else setExpenseData(initialExpenseForm);
   };
 
-  const openHistory = (item, type) => {
+  const openHistory = (e, item, type) => {
+    e.stopPropagation();
     const sortedHistory = item.editHistory
       ? [...item.editHistory].reverse()
       : [];
@@ -288,11 +303,21 @@ const VehicleLog = () => {
     });
   };
 
+  // 🚀 REDIRECT TO REPORT HANDLER
+  const handleRowClick = (e, id, type) => {
+    if (
+      e.target.closest("button") ||
+      e.target.closest("a") ||
+      e.target.closest(".history-btn")
+    )
+      return;
+    navigate(`${basePath}/logs/report?highlight=${id}`);
+  };
+
   if (loading) return <Loader />;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-2 sm:px-4">
-      {/* HEADER SECTION MATCHING THE IMAGE EXACTLY */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div className="flex items-center gap-4">
           <div
@@ -332,7 +357,6 @@ const VehicleLog = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-        {/* 🚀 LEFT COLUMN: FORM */}
         <div className="xl:col-span-5">
           <div
             className={`bg-[#09090B] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? (activeTab === "trips" ? (isTransport ? "border-[#0ea5e9]/50 ring-1 ring-[#0ea5e9]/20" : "border-indigo-500/50 ring-1 ring-indigo-500/20") : "border-rose-500/50 ring-1 ring-rose-500/20") : "border-zinc-800/60"}`}
@@ -622,7 +646,6 @@ const VehicleLog = () => {
           </div>
         </div>
 
-        {/* 🚀 RIGHT COLUMN: LIST SECTION */}
         <div className="xl:col-span-7">
           <div
             className={`bg-[#09090B] border rounded-3xl overflow-hidden shadow-2xl transition-colors duration-300 ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/30"}`}
@@ -636,13 +659,7 @@ const VehicleLog = () => {
                   (Top 10)
                 </span>
               </h3>
-              <Link
-                to={
-                  isTransport
-                    ? "/transportation/logs/report"
-                    : "/enterprise/logs/report"
-                }
-              >
+              <Link to={`${basePath}/logs/report`}>
                 <button
                   className={`h-9 px-4 rounded-xl text-[10px] font-bold uppercase tracking-[0.15em] border transition-colors ${activeTab === "trips" ? `border-zinc-800 text-zinc-300 bg-transparent hover:text-white hover:bg-zinc-800/50` : "text-rose-400 bg-transparent border-rose-900/40 hover:bg-rose-500/10"}`}
                 >
@@ -671,7 +688,7 @@ const VehicleLog = () => {
                     </tr>
                   </thead>
                   <tbody className="text-sm divide-y divide-zinc-800/60">
-                    {logs.slice(0, 10).map((log) => {
+                    {logs.map((log) => {
                       const hasEdits =
                         log.editHistory && log.editHistory.length > 0;
                       const latestLog = hasEdits
@@ -681,7 +698,13 @@ const VehicleLog = () => {
                       return (
                         <tr
                           key={log._id}
-                          className="hover:bg-zinc-800/30 transition-colors group"
+                          id={log._id}
+                          onClick={(e) => handleRowClick(e, log._id, "trips")}
+                          className={`transition-all duration-1000 ease-out group cursor-pointer border-l-4 ${
+                            activeHighlight === log._id
+                              ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                              : "border-transparent hover:bg-zinc-800/30"
+                          }`}
                         >
                           <td className="p-4 align-top">
                             <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
@@ -703,8 +726,8 @@ const VehicleLog = () => {
                             </div>
                             {hasEdits && (
                               <div
-                                onClick={() => openHistory(log, "trips")}
-                                className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={(e) => openHistory(e, log, "trips")}
+                                className="history-btn mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                               >
                                 <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
                                   <History
@@ -720,34 +743,28 @@ const VehicleLog = () => {
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[9px] text-zinc-500 font-mono mt-1.5 pl-1">
-                                  {new Date(latestLog.at).toLocaleString(
-                                    "en-GB",
-                                    {
-                                      day: "2-digit",
-                                      month: "short",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    },
-                                  )}
-                                </div>
                               </div>
                             )}
                           </td>
                           <td className="p-4 align-top">
                             <div className="flex flex-col gap-2.5">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-start gap-2">
                                 <div
-                                  className={`w-6 h-6 rounded-full ${theme.primaryBg} flex items-center justify-center border ${theme.primaryBorder} shrink-0`}
+                                  className={`mt-0.5 w-5 h-5 rounded-full ${theme.primaryBg} flex items-center justify-center border ${theme.primaryBorder} shrink-0`}
                                 >
                                   <MapPin
-                                    size={12}
+                                    size={10}
                                     className={theme.iconColor}
                                   />
                                 </div>
-                                <span className="text-xs font-semibold text-zinc-300">
-                                  {log.loadingPoint}
-                                </span>
+                                <div>
+                                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">
+                                    Origin
+                                  </p>
+                                  <span className="text-xs font-semibold text-zinc-300">
+                                    {log.loadingPoint}
+                                  </span>
+                                </div>
                               </div>
                               <div className="w-0.5 h-3 bg-zinc-800 ml-3"></div>
                               <div className="flex items-center gap-2">
@@ -813,7 +830,7 @@ const VehicleLog = () => {
                     </tr>
                   </thead>
                   <tbody className="text-sm divide-y divide-rose-900/10">
-                    {expenses.slice(0, 10).map((exp) => {
+                    {expenses.map((exp) => {
                       const hasEdits =
                         exp.editHistory && exp.editHistory.length > 0;
                       const latestLog = hasEdits
@@ -823,7 +840,15 @@ const VehicleLog = () => {
                       return (
                         <tr
                           key={exp._id}
-                          className="hover:bg-rose-900/10 transition-colors group"
+                          id={exp._id}
+                          onClick={(e) =>
+                            handleRowClick(e, exp._id, "expenses")
+                          }
+                          className={`transition-all duration-1000 ease-out group cursor-pointer border-l-4 ${
+                            activeHighlight === exp._id
+                              ? `bg-rose-500/[0.08] shadow-[inset_0_0_20px_rgba(244,63,94,0.05)] border-rose-500`
+                              : "border-transparent hover:bg-rose-900/10"
+                          }`}
                         >
                           <td className="p-4 align-top">
                             <div className="text-[11px] font-mono text-rose-400 mb-1.5">
@@ -831,8 +856,8 @@ const VehicleLog = () => {
                             </div>
                             {hasEdits && (
                               <div
-                                onClick={() => openHistory(exp, "expenses")}
-                                className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={(e) => openHistory(e, exp, "expenses")}
+                                className="history-btn mt-2 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                               >
                                 <div className="flex items-center gap-1.5 bg-rose-950/30 border border-rose-900/50 px-2 py-1 rounded-lg">
                                   <History
@@ -846,17 +871,6 @@ const VehicleLog = () => {
                                     <span className="bg-rose-900/80 text-rose-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
                                       +{exp.editHistory.length - 1} MORE
                                     </span>
-                                  )}
-                                </div>
-                                <div className="text-[9px] text-rose-100/40 font-mono mt-1.5 pl-1">
-                                  {new Date(latestLog.at).toLocaleString(
-                                    "en-GB",
-                                    {
-                                      day: "2-digit",
-                                      month: "short",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    },
                                   )}
                                 </div>
                               </div>
@@ -891,7 +905,6 @@ const VehicleLog = () => {
         </div>
       </div>
 
-      {/* 🚀 HISTORY MODAL REFINED UI */}
       {historyModal.isOpen && historyModal.data && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
@@ -912,7 +925,7 @@ const VehicleLog = () => {
                   className={
                     activeTab === "trips" ? theme.primaryText : "text-rose-400"
                   }
-                />
+                />{" "}
                 Log History:{" "}
                 <span
                   className={`${activeTab === "trips" ? theme.primaryText : "text-rose-400"} font-normal`}
@@ -924,12 +937,11 @@ const VehicleLog = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-zinc-500 hover:text-white transition-colors"
+                className="text-zinc-400 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
             </div>
-
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
               {historyModal.data.map((log, index) => (
                 <div

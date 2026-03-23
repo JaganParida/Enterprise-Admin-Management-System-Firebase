@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import productionService from "../../services/productionService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -19,41 +19,36 @@ import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const DailyProduction = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { toast } = useUI();
   const { admin } = useAuth();
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
+  const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
     primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
-    primaryTextMuted: isTransport ? "text-cyan-500" : "text-indigo-500",
     primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
     primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
-    primaryHoverBorder: isTransport
-      ? "hover:border-cyan-500/30"
-      : "hover:border-indigo-500/30",
+    primaryTabBg: isTransport ? "bg-cyan-600" : "bg-indigo-600",
     primaryFocus: isTransport
       ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
       : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
-    primaryTabBg: isTransport ? "bg-cyan-600" : "bg-indigo-600",
     glowOrb: isTransport ? "bg-cyan-500/5" : "bg-indigo-500/5",
   };
 
-  // GLOBAL MODULE TAB STATE
-  const [activeModule, setActiveModule] = useState("production"); // 'production', 'payouts', 'dues'
-
+  const [activeModule, setActiveModule] = useState("production");
   const [entries, setEntries] = useState([]);
   const [labourEntries, setLabourEntries] = useState([]);
+  const [duesEntries, setDuesEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submittingLabour, setSubmittingLabour] = useState(false);
 
-  // CONFIRM DIALOG STATE
   const [confirmDialog, setConfirmDialog] = useState({
     isOpen: false,
     type: "",
@@ -64,7 +59,6 @@ const DailyProduction = () => {
     productName: "",
     quantity: "",
   });
-
   const [labourData, setLabourData] = useState({
     date: new Date().toISOString().split("T")[0],
     labourName: "",
@@ -77,15 +71,19 @@ const DailyProduction = () => {
 
   const categories = ["Labour", "Contractor", "Consumer", "Other"];
 
-  const fetchAllData = async () => {
+  // 🚀 OPTIMIZED: Fetch only Top 10 for dashboard!
+  const fetchTopData = async () => {
+    setLoading(true);
     try {
-      const prodRes = await productionService.getAllProduction();
+      const [prodRes, labRes, duesRes] = await Promise.all([
+        productionService.getAllProduction({}, null, 10),
+        productionService.getAllLabourPayouts({}, null, 10, false),
+        productionService.getAllLabourPayouts({}, null, 10, true),
+      ]);
       setEntries(prodRes.data || []);
-
-      const labRes = await productionService.getAllLabourPayouts();
       setLabourEntries(labRes.data || []);
+      setDuesEntries(duesRes.data || []);
     } catch (error) {
-      console.error("Error fetching data:", error);
       toast.error("Failed to load history.");
     } finally {
       setLoading(false);
@@ -93,21 +91,8 @@ const DailyProduction = () => {
   };
 
   useEffect(() => {
-    fetchAllData();
+    fetchTopData();
   }, []);
-
-  // ONLY TOP 10 RECENT ENTRIES
-  const topProductionEntries = entries.slice(0, 10);
-  const topLabourEntries = labourEntries.slice(0, 10);
-  const duesEntries = labourEntries.filter((e) => Number(e.amountDue) > 0);
-  const topDuesEntries = duesEntries.slice(0, 10);
-
-  const getActiveTotalCount = () => {
-    if (activeModule === "production") return entries.length;
-    if (activeModule === "payouts") return labourEntries.length;
-    if (activeModule === "dues") return duesEntries.length;
-    return 0;
-  };
 
   const parseProduct = (fullName) => {
     if (!fullName) return { name: "-", size: "-" };
@@ -120,7 +105,6 @@ const DailyProduction = () => {
 
   const handleProdChange = (e) =>
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-
   const handleProdSubmit = (e) => {
     e.preventDefault();
     setConfirmDialog({ isOpen: true, type: "production" });
@@ -129,11 +113,9 @@ const DailyProduction = () => {
   const executeProdSubmit = async () => {
     setSubmitting(true);
     try {
-      const currentUser = admin?.data ||
-        admin || { email: "Unknown", role: "admin" };
-      await productionService.addProduction(formData, currentUser);
-      toast.success("Production log entry saved!");
-      fetchAllData();
+      await productionService.addProduction(formData, admin);
+      toast.success("Production log saved!");
+      fetchTopData();
       setFormData({
         date: new Date().toISOString().split("T")[0],
         productName: "",
@@ -148,11 +130,9 @@ const DailyProduction = () => {
 
   const handleLabourChange = (e) => {
     const { name, value } = e.target;
-
     setLabourData((prev) => {
       let newData = { ...prev, [name]: value };
       const cost = Number(newData.cost) || 0;
-
       if (name === "cost") {
         const paid = Number(newData.amountPaid) || 0;
         newData.amountDue = cost > 0 ? Math.max(0, cost - paid).toString() : "";
@@ -161,9 +141,7 @@ const DailyProduction = () => {
         newData.amountDue = cost > 0 ? Math.max(0, cost - paid).toString() : "";
       } else if (name === "amountDue") {
         const due = Number(value) || 0;
-        if (cost > 0) {
-          newData.amountPaid = Math.max(0, cost - due).toString();
-        }
+        if (cost > 0) newData.amountPaid = Math.max(0, cost - due).toString();
       }
       return newData;
     });
@@ -177,11 +155,9 @@ const DailyProduction = () => {
   const executeLabourSubmit = async () => {
     setSubmittingLabour(true);
     try {
-      const currentUser = admin?.data ||
-        admin || { email: "Unknown", role: "admin" };
-      await productionService.addLabourPayout(labourData, currentUser);
+      await productionService.addLabourPayout(labourData, admin);
       toast.success(`Record for ${labourData.labourName} saved!`);
-      fetchAllData();
+      fetchTopData();
       setLabourData({
         date: new Date().toISOString().split("T")[0],
         labourName: "",
@@ -199,11 +175,15 @@ const DailyProduction = () => {
   };
 
   const handleDialogConfirm = () => {
-    if (confirmDialog.type === "production") {
-      executeProdSubmit();
-    } else if (confirmDialog.type === "labour") {
-      executeLabourSubmit();
-    }
+    if (confirmDialog.type === "production") executeProdSubmit();
+    else if (confirmDialog.type === "labour") executeLabourSubmit();
+  };
+
+  // 🚀 REDIRECT TO REPORT HANDLER
+  const handleRowClick = (e, id) => {
+    // Prevent redirect if user clicked Edit or Delete buttons
+    if (e.target.closest("button") || e.target.closest("a")) return;
+    navigate(`${basePath}/production/report?highlight=${id}`);
   };
 
   if (loading)
@@ -215,7 +195,6 @@ const DailyProduction = () => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      {/* TOP HEADER WITH RESPONSIVE PILL TABS */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
@@ -223,43 +202,29 @@ const DailyProduction = () => {
               className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
             >
               <Factory size={28} />
-            </div>
+            </div>{" "}
             Log Management
           </h1>
           <p className="text-zinc-400 mt-2 text-sm font-medium">
             Track daily output and manage payouts.
           </p>
         </div>
-
-        {/* PILL TABS */}
         <div className="w-full xl:w-auto bg-[#09090B] p-1.5 rounded-2xl md:rounded-full border border-zinc-800/60 grid grid-cols-3 md:flex md:items-center gap-1">
           <button
             onClick={() => setActiveModule("production")}
-            className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
-              activeModule === "production"
-                ? `${theme.primaryTabBg} text-white`
-                : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
-            }`}
+            className={`col-span-1 px-2 md:px-8 py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${activeModule === "production" ? `${theme.primaryTabBg} text-white` : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
           >
             Output
           </button>
           <button
             onClick={() => setActiveModule("payouts")}
-            className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
-              activeModule === "payouts"
-                ? `${theme.primaryTabBg} text-white`
-                : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
-            }`}
+            className={`col-span-1 px-2 md:px-8 py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${activeModule === "payouts" ? `${theme.primaryTabBg} text-white` : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
           >
             Payouts
           </button>
           <button
             onClick={() => setActiveModule("dues")}
-            className={`col-span-1 px-2 md:px-8 py-2 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${
-              activeModule === "dues"
-                ? `${theme.primaryTabBg} text-white`
-                : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
-            }`}
+            className={`col-span-1 px-2 md:px-8 py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${activeModule === "dues" ? `${theme.primaryTabBg} text-white` : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
           >
             Dues
           </button>
@@ -267,13 +232,11 @@ const DailyProduction = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* LEFT COLUMN: FORMS */}
         <div className="lg:col-span-1">
           <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden transition-colors duration-700">
             <div
               className={`absolute top-0 right-0 w-40 h-40 blur-3xl rounded-full pointer-events-none transition-colors duration-700 ${theme.glowOrb}`}
             ></div>
-
             <div className="relative z-10">
               {activeModule === "production" ? (
                 <div
@@ -292,7 +255,6 @@ const DailyProduction = () => {
                       </h2>
                     </div>
                   </div>
-
                   <form onSubmit={handleProdSubmit} className="space-y-4">
                     <div>
                       <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -308,7 +270,6 @@ const DailyProduction = () => {
                         style={{ colorScheme: "dark" }}
                       />
                     </div>
-
                     <div>
                       <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                         Brick Type / Product
@@ -427,7 +388,6 @@ const DailyProduction = () => {
                         />
                       </div>
                     </div>
-
                     <div>
                       <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                         Output Quantity (Pcs)
@@ -443,7 +403,6 @@ const DailyProduction = () => {
                         className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                       />
                     </div>
-
                     <Button
                       type="submit"
                       variant="primary"
@@ -472,7 +431,6 @@ const DailyProduction = () => {
                       </h2>
                     </div>
                   </div>
-
                   <form onSubmit={handleLabourSubmit} className="space-y-4">
                     <div>
                       <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 ml-1">
@@ -489,18 +447,13 @@ const DailyProduction = () => {
                                 payoutCategory: cat,
                               })
                             }
-                            className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all border ${
-                              labourData.payoutCategory === cat
-                                ? `${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText}`
-                                : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-white"
-                            }`}
+                            className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all border ${labourData.payoutCategory === cat ? `${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText}` : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-white"}`}
                           >
                             {cat}
                           </button>
                         ))}
                       </div>
                     </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                       <div>
                         <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -531,7 +484,6 @@ const DailyProduction = () => {
                         />
                       </div>
                     </div>
-
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -562,7 +514,6 @@ const DailyProduction = () => {
                         />
                       </div>
                     </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -595,7 +546,6 @@ const DailyProduction = () => {
                         />
                       </div>
                     </div>
-
                     <Button
                       type="submit"
                       variant="primary"
@@ -612,10 +562,9 @@ const DailyProduction = () => {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: TOP 10 RECENT LOGS */}
+        {/* RECENT LOGS TABLE */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-visible transition-colors duration-500">
-            {/* STRUCTURED RECENT LOGS HEADER */}
             <div className="p-6 border-b border-zinc-800/60 flex items-center justify-between">
               <h3 className="text-white font-bold text-lg flex items-center gap-2">
                 Recent Logs{" "}
@@ -623,19 +572,13 @@ const DailyProduction = () => {
                   (Top 10)
                 </span>
               </h3>
-
               <Link
-                to={
-                  isTransport
-                    ? "/transportation/production/report"
-                    : "/enterprise/production/report"
-                }
+                to={`${basePath}/production/report`}
                 className={`text-[10px] sm:text-xs font-bold ${theme.primaryText} ${theme.primaryBg} border ${theme.primaryBorder} px-3 sm:px-4 py-1.5 rounded-lg hover:bg-${isTransport ? "cyan" : "indigo"}-500/20 transition-colors uppercase tracking-widest whitespace-nowrap`}
               >
-                VIEW ALL {getActiveTotalCount()}
+                VIEW ALL REPORTS
               </Link>
             </div>
-
             <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
               {activeModule === "production" && (
                 <table className="w-full text-left animate-in fade-in duration-300">
@@ -650,12 +593,13 @@ const DailyProduction = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/60 text-sm">
-                    {topProductionEntries.map((entry) => {
+                    {entries.map((entry) => {
                       const { name, size } = parseProduct(entry.productName);
                       return (
                         <tr
                           key={entry._id}
-                          className="hover:bg-zinc-800/30 transition-colors group"
+                          onClick={(e) => handleRowClick(e, entry._id)}
+                          className="hover:bg-zinc-800/30 transition-colors group cursor-pointer"
                         >
                           <td className="p-5 md:pl-6 align-middle">
                             <div className="text-zinc-400 font-mono text-xs">
@@ -682,7 +626,7 @@ const DailyProduction = () => {
                         </tr>
                       );
                     })}
-                    {topProductionEntries.length === 0 && (
+                    {entries.length === 0 && (
                       <tr>
                         <td
                           colSpan="4"
@@ -695,7 +639,6 @@ const DailyProduction = () => {
                   </tbody>
                 </table>
               )}
-
               {activeModule === "payouts" && (
                 <table className="w-full text-left animate-in fade-in duration-300">
                   <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
@@ -711,10 +654,11 @@ const DailyProduction = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/60 text-sm">
-                    {topLabourEntries.map((entry) => (
+                    {labourEntries.map((entry) => (
                       <tr
                         key={entry._id}
-                        className="hover:bg-zinc-800/30 transition-colors group"
+                        onClick={(e) => handleRowClick(e, entry._id)}
+                        className="hover:bg-zinc-800/30 transition-colors group cursor-pointer"
                       >
                         <td className="p-5 md:pl-6 align-middle">
                           <div className="font-bold text-zinc-100 group-hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap tracking-wide">
@@ -745,7 +689,7 @@ const DailyProduction = () => {
                         </td>
                       </tr>
                     ))}
-                    {topLabourEntries.length === 0 && (
+                    {labourEntries.length === 0 && (
                       <tr>
                         <td colSpan="4" className="p-16 text-center">
                           <div
@@ -762,7 +706,6 @@ const DailyProduction = () => {
                   </tbody>
                 </table>
               )}
-
               {activeModule === "dues" && (
                 <table className="w-full text-left animate-in fade-in duration-300">
                   <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
@@ -779,10 +722,11 @@ const DailyProduction = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/60 text-sm">
-                    {topDuesEntries.map((entry) => (
+                    {duesEntries.map((entry) => (
                       <tr
                         key={entry._id}
-                        className="hover:bg-zinc-800/30 transition-colors group"
+                        onClick={(e) => handleRowClick(e, entry._id)}
+                        className="hover:bg-zinc-800/30 transition-colors group cursor-pointer"
                       >
                         <td className="p-5 md:pl-6 align-middle">
                           <div className="font-bold text-zinc-100 group-hover:text-white transition-colors flex items-center gap-2 whitespace-nowrap tracking-wide">
@@ -808,7 +752,7 @@ const DailyProduction = () => {
                         </td>
                       </tr>
                     ))}
-                    {topDuesEntries.length === 0 && (
+                    {duesEntries.length === 0 && (
                       <tr>
                         <td colSpan="3" className="p-16 text-center">
                           <div className="w-16 h-16 rounded-full bg-zinc-800/50 border border-zinc-800 flex items-center justify-center text-zinc-400 mx-auto mb-4">
@@ -817,9 +761,6 @@ const DailyProduction = () => {
                           <h3 className="text-white font-bold text-lg mb-1">
                             No Pending Dues!
                           </h3>
-                          <p className="text-zinc-500 text-sm max-w-sm mx-auto">
-                            All accounts are settled. Great job!
-                          </p>
                         </td>
                       </tr>
                     )}
@@ -829,18 +770,16 @@ const DailyProduction = () => {
             </div>
           </div>
         </div>
-
-        {/* CONFIRM DIALOG */}
-        <ConfirmDialog
-          isOpen={confirmDialog.isOpen}
-          onClose={() => setConfirmDialog({ isOpen: false, type: "" })}
-          onConfirm={handleDialogConfirm}
-          title="Save Record"
-          message="Are you sure you want to log this record to the database?"
-          confirmText="Save Record"
-          isDestructive={false}
-        />
       </div>
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, type: "" })}
+        onConfirm={handleDialogConfirm}
+        title="Save Record"
+        message="Are you sure you want to log this record to the database?"
+        confirmText="Save Record"
+        isDestructive={false}
+      />
     </div>
   );
 };

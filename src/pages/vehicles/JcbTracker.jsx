@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import jcbService from "../../services/jcbService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -93,11 +93,17 @@ const JcbTracker = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
   const [activeTab, setActiveTab] = useState("logs");
+
+  // 🚀 Highlight Animation State
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
 
   // 🔥 THEME HOOK
   const currentPath =
@@ -105,6 +111,7 @@ const JcbTracker = () => {
       ? window.location.pathname
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
+  const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
     primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
@@ -137,9 +144,24 @@ const JcbTracker = () => {
 
   const [formData, setFormData] = useState(initialForm);
 
+  // 🚀 Scroll & Highlight Effect
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element)
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 500);
+      const timer = setTimeout(() => setActiveHighlight(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
+
+  // 🚀 Fetching Top 50 logs for Dashboard & Summary
   const fetchLogs = async () => {
     try {
-      const { data } = await jcbService.getLogs();
+      const { data } = await jcbService.getLogs({}, null, 50);
       setLogs(Array.isArray(data) ? data : []);
     } catch (err) {
       toast.error("Failed to load records.");
@@ -152,7 +174,6 @@ const JcbTracker = () => {
     fetchLogs();
   }, []);
 
-  // Catch edit triggers from the Report page
   useEffect(() => {
     if (location.state && location.state.editLog) {
       const log = location.state.editLog;
@@ -215,14 +236,14 @@ const JcbTracker = () => {
       return toast.error("Phone number must be exactly 10 digits.");
     setSubmitting(true);
     try {
-      const currentUser = admin?.data ||
-        admin || { email: "Unknown", role: "admin" };
+      const currentUser = admin?.data || admin || {};
       const payload = {
         ...formData,
         totalHours: duration.hours,
         totalMinutes: duration.minutes,
         totalMins: duration.totalMins,
       };
+
       if (editId) {
         await jcbService.updateLog(editId, payload, currentUser);
         toast.success("Updated successfully!");
@@ -239,7 +260,8 @@ const JcbTracker = () => {
     }
   };
 
-  const openHistory = (log) => {
+  const openHistory = (e, log) => {
+    e.stopPropagation();
     const historyData = Array.isArray(log?.editHistory)
       ? [...log.editHistory].reverse()
       : [];
@@ -253,6 +275,17 @@ const JcbTracker = () => {
   const resetForm = () => {
     setEditId(null);
     setFormData(initialForm);
+  };
+
+  // 🚀 REDIRECT TO REPORT HANDLER
+  const handleRowClick = (e, id) => {
+    if (
+      e.target.closest("button") ||
+      e.target.closest("a") ||
+      e.target.closest(".history-btn")
+    )
+      return;
+    navigate(`${basePath}/jcb/report?highlight=${id}`);
   };
 
   if (loading)
@@ -467,7 +500,6 @@ const JcbTracker = () => {
           </div>
         </div>
 
-        {/* 🚀 LIST SECTION (RIGHT COLUMN) */}
         <div className="lg:col-span-7 space-y-6">
           <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl overflow-hidden shadow-xl">
             <div className="p-6 border-b border-zinc-800/60 flex justify-between items-center bg-zinc-900/10">
@@ -481,13 +513,7 @@ const JcbTracker = () => {
                   </span>
                 )}
               </h3>
-              <Link
-                to={
-                  isTransport
-                    ? "/transportation/jcb/report"
-                    : "/enterprise/jcb/report"
-                }
-              >
+              <Link to={`${basePath}/jcb/report`}>
                 <Button
                   variant="outline"
                   className={`!px-3 !py-1.5 !text-[10px] uppercase tracking-widest !h-auto ${theme.primaryBg} ${theme.primaryText} border ${theme.primaryBorder} hover:opacity-80`}
@@ -518,7 +544,13 @@ const JcbTracker = () => {
                       return (
                         <tr
                           key={log._id}
-                          className="hover:bg-zinc-800/30 group transition-colors"
+                          id={log._id}
+                          onClick={(e) => handleRowClick(e, log._id)}
+                          className={`transition-all duration-1000 ease-out group cursor-pointer border-l-4 ${
+                            activeHighlight === log._id
+                              ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                              : "border-transparent hover:bg-zinc-800/30"
+                          }`}
                         >
                           <td className="p-4 align-top">
                             <p className="text-[11px] font-mono text-zinc-400 mb-1">
@@ -530,8 +562,8 @@ const JcbTracker = () => {
                             </p>
                             {hasEdits && (
                               <div
-                                onClick={() => openHistory(log)}
-                                className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={(e) => openHistory(e, log)}
+                                className="history-btn mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                               >
                                 <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
                                   <History
@@ -647,7 +679,6 @@ const JcbTracker = () => {
         </div>
       </div>
 
-      {/* 🚀 HISTORY MODAL REFINED UI */}
       {historyModal.isOpen && historyModal.data && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div
@@ -659,8 +690,7 @@ const JcbTracker = () => {
           <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
             <div className="flex items-center justify-between p-5 border-b border-zinc-800/60 bg-[#09090B] shrink-0">
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className={theme.primaryText} />
-                Log History:{" "}
+                <History size={16} className={theme.primaryText} /> Log History:{" "}
                 <span className="text-zinc-400 font-normal">
                   {historyModal.itemName}
                 </span>
@@ -716,7 +746,7 @@ const JcbTracker = () => {
                   </div>
                   {index === 0 && (
                     <div
-                      className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
                     >
                       LATEST
                     </div>

@@ -195,7 +195,9 @@ const Login = () => {
               <Loader className="animate-spin text-white" size={22} />
             ) : (
               <>
-                <span className="text-sm font-bold tracking-wide uppercase">Access Dashboard</span>
+                <span className="text-sm font-bold tracking-wide uppercase">
+                  Access Dashboard
+                </span>
                 <ArrowRight
                   size={18}
                   className="group-hover:translate-x-1 transition-transform"

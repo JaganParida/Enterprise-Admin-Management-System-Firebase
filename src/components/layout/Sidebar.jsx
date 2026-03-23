@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { auth } from "../../config/firebase";
@@ -32,6 +32,7 @@ import {
   AlertTriangle,
   Home,
   Fuel,
+  CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useUI } from "../../context/UIProvider";
@@ -40,8 +41,6 @@ import Input from "../common/Input";
 
 const useThemeColors = () => {
   const location = useLocation();
-
-  // 🔥 FIX 1: Instantly read the actual URL before React Router hydrates
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -73,7 +72,7 @@ const useThemeColors = () => {
           inputIcon: "text-zinc-500 hover:text-zinc-300",
           gradientBtn:
             "from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500",
-          shadowGlow: "shadow-[0_0_30px_rgba(59,130,246,0.1)]",
+          shadowGlow: "shadow-[0_0_30px_rgba(59,130,246,0.15)]",
         }
       : {
           bgMain: "bg-[#09090B]",
@@ -96,57 +95,154 @@ const useThemeColors = () => {
           inputIcon: "text-zinc-500 hover:text-zinc-300",
           gradientBtn:
             "from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500",
-          shadowGlow: "shadow-[0_0_30px_rgba(99,102,241,0.1)]",
+          shadowGlow: "shadow-[0_0_30px_rgba(99,102,241,0.15)]",
         },
   };
 };
 
 const GoogleTranslate = ({ isCollapsed }) => {
   const { colors } = useThemeColors();
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const languages = [
+    { code: "en", name: "English (Default)" },
+    { code: "hi", name: "Hindi" },
+    { code: "or", name: "Odia" },
+    { code: "bn", name: "Bengali" },
+    { code: "te", name: "Telugu" },
+    { code: "mr", name: "Marathi" },
+    { code: "ta", name: "Tamil" },
+    { code: "gu", name: "Gujarati" },
+    { code: "kn", name: "Kannada" },
+    { code: "ml", name: "Malayalam" },
+    { code: "pa", name: "Punjabi" },
+  ];
+
   useEffect(() => {
-    if (
-      window.googleTranslateElementInit ||
-      document.getElementById("google-translate-script")
-    )
-      return;
-    window.googleTranslateElementInit = () => {
-      new window.google.translate.TranslateElement(
-        {
-          pageLanguage: "en",
-          includedLanguages: "en,hi,or,bn,te,mr,ta,gu,kn,ml,pa",
-          layout: window.google.translate.TranslateElement.InlineLayout.SIMPLE,
-          autoDisplay: false,
-        },
-        "google_translate_element",
-      );
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
     };
-    const script = document.createElement("script");
-    script.id = "google-translate-script";
-    script.src =
-      "//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
-    script.async = true;
-    document.body.appendChild(script);
+    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
+
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.innerHTML = `
+      .goog-te-banner-frame { display: none !important; }
+      .skiptranslate { display: none !important; }
+      body { top: 0px !important; }
+      #goog-gt-tt { display: none !important; }
+    `;
+    document.head.appendChild(style);
+
+    const addScript = () => {
+      if (document.getElementById("google-translate-script")) return;
+      window.googleTranslateElementInit = () => {
+        new window.google.translate.TranslateElement(
+          {
+            pageLanguage: "en",
+            layout:
+              window.google.translate.TranslateElement.InlineLayout.SIMPLE,
+            autoDisplay: false,
+          },
+          "google_translate_element",
+        );
+      };
+      const script = document.createElement("script");
+      script.id = "google-translate-script";
+      script.src =
+        "//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
+      script.async = true;
+      document.body.appendChild(script);
+    };
+
+    addScript();
   }, []);
+
+  const changeLanguage = (langCode) => {
+    // Standard Google Translate Cookie Method
+    const cookieValue = `/en/${langCode}`;
+    document.cookie = `googtrans=${cookieValue}; path=/`;
+    document.cookie = `googtrans=${cookieValue}; path=/; domain=${window.location.hostname}`;
+
+    // Fallback for immediate UI change if element is ready
+    const select = document.querySelector(".goog-te-combo");
+    if (select) {
+      select.value = langCode;
+      select.dispatchEvent(new Event("change"));
+    } else {
+      // If select isn't ready, reload to apply cookie
+      window.location.reload();
+    }
+    setIsOpen(false);
+  };
+
+  const resetTranslation = () => {
+    // Clear all possible translation cookies
+    const cookies = ["googtrans", "googtrans=/en/en"];
+    cookies.forEach((c) => {
+      document.cookie = `${c}; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      document.cookie = `${c}; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname}`;
+    });
+    window.location.reload();
+  };
+
   return (
     <div
-      className={`px-3 py-4 border-t ${colors.border} mt-auto ${isCollapsed ? "flex justify-center" : ""}`}
+      ref={dropdownRef}
+      className={`px-3 py-4 border-t ${colors.border} mt-auto relative ${isCollapsed ? "flex justify-center" : ""}`}
     >
       <div id="google_translate_element" style={{ display: "none" }}></div>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            className={`absolute bottom-[110%] ${isCollapsed ? "left-2 w-44" : "left-3 right-3"} bg-[#09090B] border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[300px]`}
+          >
+            <div className="px-4 py-3 border-b border-zinc-800/80 bg-zinc-900/30 flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                Language
+              </span>
+              <button
+                onClick={resetTranslation}
+                className="text-[9px] font-bold uppercase text-rose-400 hover:text-rose-300 transition-colors"
+              >
+                Reset
+              </button>
+            </div>
+            <div className="overflow-y-auto py-1 custom-scrollbar">
+              {languages.map((lang) => (
+                <button
+                  key={lang.code}
+                  onClick={() => changeLanguage(lang.code)}
+                  className="w-full text-left px-4 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
+                >
+                  {lang.name}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <button
-        onClick={() =>
-          document.querySelector(".goog-te-gadget-simple")?.click()
-        }
+        onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-3 w-full rounded-xl transition-all group ${colors.hoverBg} ${isCollapsed ? "p-3 justify-center w-11 h-11" : "px-4 py-3"}`}
       >
         <Languages
           size={20}
-          className={`${colors.textSubtle} group-hover:${colors.textHighlight} shrink-0 transition-colors`}
+          className={`${colors.textSubtle} group-hover:${colors.textHighlight} transition-colors`}
         />
         {!isCollapsed && (
           <span
-            className={`text-sm font-medium ${colors.textSubtle} group-hover:text-zinc-100 transition-colors`}
+            className={`text-sm font-medium ${colors.textSubtle} group-hover:text-zinc-100`}
           >
-            Translate Page
+            Translate
           </span>
         )}
       </button>
@@ -184,23 +280,19 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
     { label: "Strong", color: isTransport ? "bg-cyan-500" : "bg-violet-500" },
   ];
 
+  const isMatch =
+    formData.newPassword.length > 0 &&
+    formData.newPassword === formData.confirmPassword;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (formData.newPassword !== formData.confirmPassword) {
-      return toast.error("Confirmation password does not match.");
-    }
-    if (formData.oldPassword === formData.newPassword) {
-      return toast.error("New password cannot be the same as current.");
-    }
-    if (strength < 3) {
-      return toast.error(
-        "Password is too weak. Add capital letters or symbols.",
-      );
-    }
+    if (!isMatch) return toast.error("Confirmation password does not match.");
+    if (formData.oldPassword === formData.newPassword)
+      return toast.error("New password cannot be same as current.");
+    if (strength < 3) return toast.error("Password is too weak.");
 
     setLoading(true);
     const user = auth.currentUser;
-
     try {
       if (!user) throw new Error("No active user session.");
       const credential = EmailAuthProvider.credential(
@@ -209,19 +301,11 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
       );
       await reauthenticateWithCredential(user, credential);
       await updatePassword(user, formData.newPassword);
-
-      toast.success("Security credentials updated successfully!");
+      toast.success("Password updated successfully!");
       setFormData({ oldPassword: "", newPassword: "", confirmPassword: "" });
       onClose();
     } catch (error) {
-      console.error("Firebase Auth Error Code:", error.code);
-      if (error.code === "auth/wrong-password") {
-        toast.error("Current password is incorrect.");
-      } else if (error.code === "auth/too-many-requests") {
-        toast.error("Too many attempts. Account temporarily locked.");
-      } else {
-        toast.error("Update failed. Please verify your current password.");
-      }
+      toast.error("Verify your current password.");
     } finally {
       setLoading(false);
     }
@@ -234,124 +318,141 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
         >
-          <div className="absolute inset-0" onClick={onClose} />
+          <div className="absolute inset-0 cursor-pointer" onClick={onClose} />
           <motion.div
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            className={`w-full max-w-md bg-zinc-900/95 backdrop-blur-2xl border ${colors.modalBorder} p-8 rounded-3xl shadow-2xl relative z-10`}
+            className={`w-full max-w-md bg-[#09090B] border border-zinc-800/80 p-8 rounded-[2rem] shadow-2xl relative z-10 overflow-hidden`}
           >
+            <div
+              className={`absolute -top-20 -right-20 w-64 h-64 blur-[80px] rounded-full pointer-events-none opacity-20 ${colors.strengthStrong}`}
+            />
             <button
               onClick={onClose}
-              className={`absolute top-5 right-5 p-2 rounded-full ${colors.hoverBg} ${colors.textSubtle} hover:text-white transition-all`}
+              className="absolute top-6 right-6 p-2 rounded-full bg-zinc-900/50 border border-zinc-800/80 text-zinc-400 hover:text-white transition-all z-20"
             >
               <X size={18} />
             </button>
-            <div className="text-center mb-8">
+            <div className="text-center mb-8 relative z-10">
               <div
-                className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center mb-4 border ${colors.activeBorder} ${colors.activeBg} ${colors.shadowGlow}`}
+                className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center mb-5 border ${colors.activeBorder} ${colors.activeBg} ${colors.shadowGlow} backdrop-blur-md`}
               >
                 <ShieldCheck size={32} className={colors.textHighlight} />
               </div>
               <h3 className="text-2xl font-black text-white tracking-tight">
-                Security Update
+                Security Settings
               </h3>
             </div>
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="relative group">
-                <Input
-                  label="Current Password"
-                  type={showOld ? "text" : "password"}
-                  icon={Key}
-                  required
-                  value={formData.oldPassword}
-                  onChange={(e) =>
-                    setFormData({ ...formData, oldPassword: e.target.value })
-                  }
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowOld(!showOld)}
-                  className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
-                >
-                  {showOld ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
+            <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
+              <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-800/60">
+                <div className="relative group">
+                  <Input
+                    label="Current Password"
+                    type={showOld ? "text" : "password"}
+                    icon={Key}
+                    required
+                    value={formData.oldPassword}
+                    onChange={(e) =>
+                      setFormData({ ...formData, oldPassword: e.target.value })
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOld(!showOld)}
+                    className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
+                  >
+                    {showOld ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
-              <div className="relative group">
-                <Input
-                  label="New Password"
-                  type={showNew ? "text" : "password"}
-                  icon={Lock}
-                  required
-                  value={formData.newPassword}
-                  onChange={(e) =>
-                    setFormData({ ...formData, newPassword: e.target.value })
-                  }
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNew(!showNew)}
-                  className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
-                >
-                  {showNew ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-                {formData.newPassword && (
-                  <div className="mt-3">
-                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest mb-1.5 px-1">
-                      <span className={colors.textSubtle}>Strength</span>
+              <div className="flex items-center justify-center gap-4 py-1">
+                <div className="h-px bg-zinc-800/60 flex-1" />
+                <div className="w-1.5 h-1.5 rounded-full bg-zinc-800" />
+                <div className="h-px bg-zinc-800/60 flex-1" />
+              </div>
+              <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-800/60 space-y-5">
+                <div className="relative group">
+                  <Input
+                    label="New Password"
+                    type={showNew ? "text" : "password"}
+                    icon={Lock}
+                    required
+                    value={formData.newPassword}
+                    onChange={(e) =>
+                      setFormData({ ...formData, newPassword: e.target.value })
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNew(!showNew)}
+                    className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
+                  >
+                    {showNew ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                  <div className="mt-3.5 px-1">
+                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest mb-2">
+                      <span className="text-zinc-500">Strength</span>
                       <span
                         className={
                           strength > 2 ? colors.strengthGood : "text-rose-400"
                         }
                       >
-                        {strengthData[strength].label}
+                        {formData.newPassword
+                          ? strengthData[strength].label
+                          : "None"}
                       </span>
                     </div>
-                    <div className="flex gap-1.5 h-1.5 px-1">
+                    <div className="flex gap-1.5 h-1">
                       {[1, 2, 3, 4].map((i) => (
                         <div
                           key={i}
-                          className={`flex-1 rounded-full transition-all duration-500 ${strength >= i ? strengthData[strength].color : "bg-zinc-800"}`}
+                          className={`flex-1 rounded-full transition-all duration-500 ${formData.newPassword && strength >= i ? strengthData[strength].color : "bg-zinc-800"}`}
                         />
                       ))}
                     </div>
                   </div>
-                )}
-              </div>
-              <div className="relative group">
-                <Input
-                  label="Confirm New Password"
-                  type={showConfirm ? "text" : "password"}
-                  icon={Lock}
-                  required
-                  value={formData.confirmPassword}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      confirmPassword: e.target.value,
-                    })
-                  }
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirm(!showConfirm)}
-                  className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
-                >
-                  {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
+                </div>
+                <div className="relative group">
+                  <Input
+                    label="Confirm New Password"
+                    type={showConfirm ? "text" : "password"}
+                    icon={(p) => (
+                      <CheckCircle2
+                        {...p}
+                        className={`${p.className} ${isMatch ? "!text-emerald-500" : ""}`}
+                      />
+                    )}
+                    required
+                    value={formData.confirmPassword}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        confirmPassword: e.target.value,
+                      })
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm(!showConfirm)}
+                    className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
+                  >
+                    {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
               <button
                 type="submit"
-                disabled={loading}
-                className={`w-full mt-6 bg-gradient-to-r ${colors.gradientBtn} text-white font-bold py-4 rounded-xl shadow-lg border border-white/5 transition-all duration-300 transform active:scale-[0.95] flex items-center justify-center gap-2`}
+                disabled={loading || !isMatch}
+                className={`w-full mt-8 bg-gradient-to-r ${colors.gradientBtn} text-white font-bold py-4 rounded-xl shadow-lg border border-white/10 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2`}
               >
                 {loading ? (
                   <RefreshCcw className="animate-spin" size={20} />
                 ) : (
                   <>
-                    <Save size={18} /> Update Security
+                    <Save size={18} /> Update Password
                   </>
                 )}
               </button>
@@ -444,14 +545,12 @@ const Sidebar = ({
             <X size={20} />
           </button>
         </div>
-
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
           className={`hidden md:flex absolute -right-3 top-24 w-6 h-6 rounded-full items-center justify-center shadow-lg border border-zinc-700 z-50 transition-all text-white ${colors.toggleBtn}`}
         >
           {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
-
         <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
           <ul className="space-y-1.5 relative">
             {allLinks.map((item) => (
@@ -469,8 +568,8 @@ const Sidebar = ({
                         <motion.div
                           layoutId="active-nav-bg"
                           className={`absolute inset-0 rounded-xl ${colors.activeBg} border ${colors.activeBorder}`}
-                          initial={{ opacity: 1, scale: 1 }} // 🔥 FIX 2: Added initial values here
-                          animate={{ opacity: 1, scale: 1 }} // Added animate values here
+                          initial={{ opacity: 1, scale: 1 }}
+                          animate={{ opacity: 1, scale: 1 }}
                           transition={{
                             type: "spring",
                             stiffness: 300,
@@ -494,9 +593,7 @@ const Sidebar = ({
             ))}
           </ul>
         </nav>
-
         <GoogleTranslate isCollapsed={isCollapsed} />
-
         <div
           className={`p-4 border-t ${colors.border} ${colors.bgMain} space-y-1.5`}
         >
@@ -541,7 +638,6 @@ const Sidebar = ({
           </button>
         </div>
       </aside>
-
       <ChangePasswordModal
         isOpen={isPassModalOpen}
         onClose={() => setIsPassModalOpen(false)}

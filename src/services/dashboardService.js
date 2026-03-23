@@ -44,8 +44,8 @@ const dashboardService = {
         activities.push({
           ...d,
           activityType: "Invoice",
-          id: doc.id,
-          date: d.invoiceDate || d.date,
+          _id: doc.id, // Explicitly pass ID for routing
+          date: d.date || d.createdAt,
         });
       });
 
@@ -60,7 +60,7 @@ const dashboardService = {
       salesSnap.forEach((doc) => {
         const d = doc.data();
         totalSalesRevenue += Number(d.amount) || 0;
-        activities.push({ ...d, activityType: "Sale", id: doc.id });
+        activities.push({ ...d, activityType: "Sale", _id: doc.id }); // Explicitly pass ID
 
         const saleDate = new Date(d.date);
         if (saleDate >= sevenDaysAgo) {
@@ -80,7 +80,7 @@ const dashboardService = {
       const productionData = [];
       prodSnap.forEach((doc) => {
         const d = doc.data();
-        activities.push({ ...d, activityType: "Production", id: doc.id });
+        activities.push({ ...d, activityType: "Production", _id: doc.id }); // Explicitly pass ID
 
         const prodDate = new Date(d.date);
         if (prodDate >= sevenDaysAgo) {
@@ -98,8 +98,8 @@ const dashboardService = {
 
       // 5. 🚀 Sort all activities by EXACT creation time or date (Newest first)
       activities.sort((a, b) => {
-        const dateA = new Date(a.createdAt || a.date || 0);
-        const dateB = new Date(b.createdAt || b.date || 0);
+        const dateA = new Date(a.createdAt || a.date || 0).getTime();
+        const dateB = new Date(b.createdAt || b.date || 0).getTime();
         return dateB - dateA;
       });
 

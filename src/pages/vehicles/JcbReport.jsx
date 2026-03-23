@@ -27,6 +27,18 @@ import {
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+import Button from "../../components/common/Button";
+// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
+import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { db } from "../../config/firebase";
+
+// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
+const getPreviousMonthString = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
 
 const JcbReport = () => {
   const { toast } = useUI();
@@ -35,6 +47,16 @@ const JcbReport = () => {
   const location = useLocation();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // 🚀 Pagination States
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // 🚀 Highlight Animation State
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
 
   // 🔥 THEME HOOK
   const currentPath =
@@ -77,23 +99,90 @@ const JcbReport = () => {
     exactDate: "",
   });
 
+  // 🚀 SMART BACKUP STATES
+  const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
+
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  const fetchLogs = async () => {
+  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
+  useEffect(() => {
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonthString();
+
+      // Agar local storage me backup verified nahi hai
+      if (!localStorage.getItem(`backup_jcb_${prevMonth}`)) {
+        try {
+          // Database me check karo ki kya pichle mahine ka koi bhi data exist karta hai
+          const q = query(
+            collection(db, "jcb_logs"),
+            where("date", ">=", prevMonth),
+            where("date", "<=", prevMonth + "\uf8ff"),
+            limit(1),
+          );
+          const snap = await getDocs(q);
+
+          // Agar data hai, toh hi warning dikhao
+          if (!snap.empty) {
+            setShowBackupWarning(prevMonth);
+          }
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
+      }
+    };
+
+    checkBackupNeeded();
+  }, []);
+
+  // 🚀 Scroll & Highlight Effect
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element)
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 500);
+      const timer = setTimeout(() => setActiveHighlight(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
+
+  // 🚀 Fetch Logic with Pagination
+  const fetchLogs = async (isLoadMore = false) => {
+    if (isLoadMore) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const { data } = await jcbService.getLogs();
-      setLogs(data || []);
+      const response = await jcbService.getLogs(
+        filters,
+        isLoadMore ? lastDoc : null,
+      );
+      if (isLoadMore) setLogs((prev) => [...prev, ...(response.data || [])]);
+      else setLogs(response.data || []);
+      setLastDoc(response.lastVisible || null);
+      setHasMore(response.data && response.data.length === 50);
     } catch (error) {
-      toast.error("Failed to load report data.");
+      if (error.message && error.message.toLowerCase().includes("index")) {
+        toast.error("Firebase Index required! Check browser console.");
+      } else {
+        toast.error("Failed to load report data.");
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
+  // Trigger Fetch on Filter Change
   useEffect(() => {
-    fetchLogs();
-  }, []);
+    const delayDebounceFn = setTimeout(() => {
+      fetchLogs(false);
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [filters]);
 
   const handleDisabledClick = (action) => {
     setWarningTooltip(action);
@@ -103,11 +192,12 @@ const JcbReport = () => {
   const executeDelete = async () => {
     if (!deleteModal.id) return;
     try {
-      await jcbService.deleteLog(deleteModal.id);
+      const currentUser = admin?.data || admin || {};
+      await jcbService.deleteLog(deleteModal.id, currentUser);
       toast.success("JCB record deleted successfully");
-      fetchLogs();
+      fetchLogs(false);
     } catch (error) {
-      toast.error("Failed to delete record");
+      toast.error(error.message || "Failed to delete record");
     } finally {
       setDeleteModal({ isOpen: false, id: null });
     }
@@ -122,52 +212,27 @@ const JcbReport = () => {
     });
   };
 
-  const filteredLogs = useMemo(() => {
-    return logs.filter((log) => {
-      const logDateObj = log.date ? new Date(log.date) : new Date();
-      const searchTerm = String(filters.search || "").toLowerCase();
-
-      const matchSearch =
-        String(log.customerName || "")
-          .toLowerCase()
-          .includes(searchTerm) ||
-        String(log.location || "")
-          .toLowerCase()
-          .includes(searchTerm) ||
-        String(log.phone || "")
-          .toLowerCase()
-          .includes(searchTerm);
-
-      const matchVehicle =
-        filters.vehicleFilter === "All" ||
-        log.vehicleNo === filters.vehicleFilter;
-
-      let matchDate = true;
-      if (filters.exactDate && log.date) {
-        matchDate = log.date.startsWith(filters.exactDate);
-      } else if (filters.dateFilter !== "All" && log.date) {
-        const today = new Date();
-        const diffTime = Math.abs(today - logDateObj);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        if (filters.dateFilter === "Today") matchDate = diffDays <= 1;
-        else if (filters.dateFilter === "Last7Days") matchDate = diffDays <= 7;
-        else if (filters.dateFilter === "ThisMonth")
-          matchDate =
-            logDateObj.getMonth() === today.getMonth() &&
-            logDateObj.getFullYear() === today.getFullYear();
-      }
-
-      return matchSearch && matchVehicle && matchDate;
-    });
-  }, [logs, filters]);
-
   const activeFiltersCount =
     [filters.vehicleFilter, filters.dateFilter].filter((f) => f !== "All")
       .length + (filters.exactDate ? 1 : 0);
 
-  const handleFullBackup = () => {
+  // 🚀 FIXED: 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
+  const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
-      if (logs.length === 0) return toast.info("Database is empty.");
+      if (!monthToFetch) return toast.error("Please select a month to backup.");
+      toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
+
+      const q = query(
+        collection(db, "jcb_logs"),
+        where("date", ">=", monthToFetch),
+        where("date", "<=", monthToFetch + "\uf8ff"),
+      );
+      const snapshot = await getDocs(q);
+      const allData = snapshot.docs.map((doc) => doc.data());
+
+      if (allData.length === 0)
+        return toast.info(`No records found for ${monthToFetch}.`);
+
       const headers = [
         "Date",
         "Vehicle No",
@@ -180,32 +245,38 @@ const JcbReport = () => {
         "Total Minutes",
         "Total Mins (Agg)",
       ];
-      const rows = logs.map((log) => {
+      const rows = allData.map((log) => {
         let dateStr = log.date
           ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
           : "-";
         return `${dateStr},"${log.vehicleNo}","${log.customerName}","${log.phone}","${log.location}","${log.startTime}","${log.endTime}",${log.totalHours},${log.totalMinutes},${log.totalMins}`;
       });
-      const csvContent = [headers.join(","), ...rows].join("\n");
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.setAttribute(
-        "download",
-        `Full_JCB_Backup_${new Date().toISOString().split("T")[0]}.csv`,
-      );
+      link.setAttribute("download", `Full_Backup_JCB_${monthToFetch}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Secure full backup generated!");
+
+      toast.success(`Backup for ${monthToFetch} downloaded securely!`);
+
+      // 🚀 Instantly removes the warning after successful backup
+      localStorage.setItem(`backup_jcb_${monthToFetch}`, "true");
+      if (showBackupWarning === monthToFetch) {
+        setShowBackupWarning(null);
+      }
     } catch (e) {
+      console.error(e);
       toast.error("Backup failed.");
     }
   };
 
+  // 🚀 ONLY EXPORTS VISIBLE DATA
   const handleExport = () => {
     try {
-      if (filteredLogs.length === 0) return toast.info("No records to export");
+      if (logs.length === 0) return toast.info("No records to export");
       const headers = [
         "Date",
         "Vehicle No",
@@ -217,24 +288,24 @@ const JcbReport = () => {
         "Total Hours",
         "Total Minutes",
       ];
-      const rows = filteredLogs.map((log) => {
+      const rows = logs.map((log) => {
         let dateStr = log.date
           ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
           : "-";
         return `${dateStr},"${log.vehicleNo}","${log.customerName}","${log.phone}","${log.location}","${log.startTime}","${log.endTime}",${log.totalHours},${log.totalMinutes}`;
       });
-      const csvContent = [headers.join(","), ...rows].join("\n");
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       link.setAttribute(
         "download",
-        `JCB_Report_${new Date().toISOString().split("T")[0]}.csv`,
+        `JCB_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Exported successfully");
+      toast.success("Visible records exported to CSV");
     } catch (error) {
       toast.error("Export failed");
     }
@@ -245,16 +316,17 @@ const JcbReport = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      const adminEmail = admin?.data?.email || admin?.email;
+      const currentUser = admin?.data || admin || {};
       await jcbService.deleteAllLogs({
         password: deletePassword,
-        email: adminEmail,
+        email: currentUser.email,
+        user: currentUser,
       });
       toast.success("JCB database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchLogs();
+      fetchLogs(false);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
@@ -271,7 +343,6 @@ const JcbReport = () => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
-      {/* HEADER SECTION MATCHING THE IMAGE EXACTLY */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div
@@ -318,9 +389,40 @@ const JcbReport = () => {
         </div>
       </div>
 
-      {/* MAIN DATA SECTION */}
+      {/* 🚀 SMART BACKUP WARNING */}
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the JCB logs backup for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
+
       <div className="bg-[#09090B] rounded-3xl border border-zinc-800/60 overflow-visible shadow-2xl">
-        {/* SEARCH & EXPORT BAR */}
         <div className="p-5 border-b border-zinc-800/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5">
           <div className="relative w-full sm:w-80 xl:w-96 group">
             <Search
@@ -330,7 +432,7 @@ const JcbReport = () => {
             <input
               type="text"
               placeholder="Search customer, location or phone..."
-              className={`w-full bg-transparent border border-zinc-800 rounded-xl pl-12 pr-4 py-3 text-sm text-zinc-100 outline-none transition-all focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 placeholder:text-zinc-600`}
+              className="w-full bg-transparent border border-zinc-800 rounded-xl pl-12 pr-4 py-3 text-sm text-zinc-100 outline-none transition-all focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 placeholder:text-zinc-600"
               value={filters.search}
               onChange={(e) =>
                 setFilters({ ...filters, search: e.target.value })
@@ -341,11 +443,10 @@ const JcbReport = () => {
             onClick={handleExport}
             className="flex items-center gap-2 h-11 px-5 rounded-xl text-xs font-bold tracking-widest uppercase border border-zinc-800 text-zinc-300 bg-transparent hover:text-white hover:bg-zinc-800/50 transition-colors w-full sm:w-auto justify-center"
           >
-            <Download size={16} /> Export
+            <Download size={16} /> Export View
           </button>
         </div>
 
-        {/* PROFESSIONAL FILTRATION UI */}
         <div className="p-4 border-b border-zinc-800/60 flex flex-wrap items-center gap-4 relative z-20">
           <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] px-3 py-1 border-r border-zinc-800 mr-2 text-zinc-500">
             <Filter size={16} /> FILTERS
@@ -364,7 +465,7 @@ const JcbReport = () => {
               onChange={(e) =>
                 setFilters({ ...filters, vehicleFilter: e.target.value })
               }
-              className={`appearance-none bg-transparent border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50`}
+              className="appearance-none bg-transparent border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
             >
               <option value="All" className="bg-[#09090B] text-zinc-300">
                 All Vehicles
@@ -395,7 +496,7 @@ const JcbReport = () => {
                   exactDate: "",
                 })
               }
-              className={`appearance-none bg-transparent border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50`}
+              className="appearance-none bg-transparent border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
             >
               <option value="All">Timeline: All</option>
               <option value="Today">Today</option>
@@ -425,7 +526,7 @@ const JcbReport = () => {
                 })
               }
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-transparent border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50 ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
+              className={`appearance-none bg-transparent border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50 ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
 
@@ -446,7 +547,6 @@ const JcbReport = () => {
           )}
         </div>
 
-        {/* 🚀 TABLE SECTION */}
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
           <table className="w-full text-left min-w-[850px] animate-in fade-in duration-300">
             <thead className="bg-transparent text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800/60">
@@ -460,7 +560,7 @@ const JcbReport = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/60 text-sm">
-              {filteredLogs.map((log) => {
+              {logs.map((log) => {
                 const hasEdits = log.editHistory && log.editHistory.length > 0;
                 const latestLog = hasEdits
                   ? log.editHistory[log.editHistory.length - 1]
@@ -469,7 +569,12 @@ const JcbReport = () => {
                 return (
                   <tr
                     key={log._id}
-                    className="hover:bg-zinc-800/30 transition-colors group"
+                    id={log._id}
+                    className={`transition-all duration-1000 ease-out group border-l-4 ${
+                      activeHighlight === log._id
+                        ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                        : "border-transparent hover:bg-zinc-800/30"
+                    }`}
                   >
                     <td className="p-5 px-6 align-top">
                       <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
@@ -488,6 +593,11 @@ const JcbReport = () => {
                           <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
                             {latestLog.role || "ADMIN"}
                           </span>
+                          {log.editHistory.length > 1 && (
+                            <span className="bg-zinc-700/50 text-zinc-300 px-1 py-0.5 rounded text-[8px] ml-1">
+                              +{log.editHistory.length - 1} MORE
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>
@@ -540,7 +650,7 @@ const JcbReport = () => {
                           <Trash2 size={16} />
                         </button>
                         {warningTooltip === log._id && (
-                          <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg w-max shadow-xl">
+                          <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
                             🚫 Access Denied
                           </div>
                         )}
@@ -549,7 +659,7 @@ const JcbReport = () => {
                   </tr>
                 );
               })}
-              {filteredLogs.length === 0 && (
+              {logs.length === 0 && !loading && (
                 <tr>
                   <td
                     colSpan="4"
@@ -561,6 +671,23 @@ const JcbReport = () => {
               )}
             </tbody>
           </table>
+
+          {/* 🚀 LOAD MORE BUTTON */}
+          {hasMore && logs.length > 0 && (
+            <div className="flex justify-center p-6 border-t border-zinc-800/60">
+              <Button
+                onClick={() => fetchLogs(true)}
+                disabled={loadingMore}
+                variant="outline"
+                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+              >
+                {loadingMore ? (
+                  <RefreshCcw size={16} className="animate-spin mr-2" />
+                ) : null}
+                {loadingMore ? "Loading..." : "Load Next 50 Records"}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -575,8 +702,8 @@ const JcbReport = () => {
       />
 
       {/* 🛑 SECURE WIPE DATA MODAL */}
-      {isDeleteAllOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+      {isDeleteAllOpen && !isManager && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
             onClick={() => !wiping && setIsDeleteAllOpen(false)}
@@ -589,26 +716,36 @@ const JcbReport = () => {
               </h2>
             </div>
 
+            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-2xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
                   className="text-yellow-500 shrink-0 mt-0.5"
                 />
-                <div>
+                <div className="w-full">
                   <h3 className="text-yellow-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-zinc-400 text-xs mb-4 leading-relaxed">
+                  <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
                     Before wiping the database, we highly recommend downloading
-                    a complete CSV backup of all your current records.
+                    a complete CSV backup for a specific month.
                   </p>
-                  <button
-                    onClick={handleFullBackup}
-                    className="w-full sm:w-auto px-4 py-2.5 bg-transparent border border-yellow-600/40 text-yellow-500 hover:bg-yellow-500/10 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Download size={14} /> Download Full Backup
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                    <input
+                      type="month"
+                      value={backupMonth}
+                      onChange={(e) => setBackupMonth(e.target.value)}
+                      style={{ colorScheme: "dark" }}
+                      className="w-full sm:w-32 bg-zinc-900/50 border border-yellow-500/30 rounded-xl px-3 py-2.5 text-xs text-zinc-200 outline-none transition-all"
+                    />
+                    <button
+                      onClick={() => handleFullBackup(backupMonth)}
+                      className="w-full sm:flex-1 py-2.5 bg-transparent border border-yellow-600/40 text-yellow-500 hover:bg-yellow-500/10 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Download size={14} /> Download Backup
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -618,7 +755,6 @@ const JcbReport = () => {
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
               JCB records. Please enter your Admin password to confirm.
             </p>
-
             <div className="relative mb-8">
               <input
                 type={showPassword ? "text" : "password"}
@@ -635,7 +771,6 @@ const JcbReport = () => {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-
             <div className="flex justify-end gap-3 items-center">
               <button
                 onClick={() => {
@@ -654,7 +789,7 @@ const JcbReport = () => {
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
-                ) : null}
+                ) : null}{" "}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
@@ -678,8 +813,7 @@ const JcbReport = () => {
               className={`flex items-center justify-between p-5 border-b ${theme.primaryBorder} ${theme.primaryBg} shrink-0`}
             >
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className={theme.primaryText} />
-                Log History:{" "}
+                <History size={16} className={theme.primaryText} /> Log History:{" "}
                 <span className={`${theme.primaryText} font-normal`}>
                   {historyModal.itemName}
                 </span>
@@ -688,12 +822,11 @@ const JcbReport = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-zinc-500 hover:text-white transition-colors"
+                className="text-zinc-400 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
             </div>
-
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
               {historyModal.data.map((log, index) => (
                 <div

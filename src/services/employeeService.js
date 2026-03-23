@@ -9,24 +9,84 @@ import {
   deleteDoc,
   query,
   orderBy,
+  limit,
+  where,
+  startAfter,
 } from "firebase/firestore";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const empCollection = collection(db, "employees");
 const salaryCollection = collection(db, "salaryPayments");
 
 const employeeService = {
-  // 1. Get all employees
-  getAllEmployees: async () => {
-    const snapshot = await getDocs(empCollection);
-    const data = snapshot.docs.map((doc) => ({
-      _id: doc.id,
-      ...doc.data(),
-    }));
-    return { data };
+  // 1. 🚀 PAGINATED & FILTERED GET EMPLOYEES (100% BACKEND FILTERING)
+  getAllEmployees: async (filters = {}, lastDoc = null) => {
+    let constraints = [];
+
+    // Status Filter (Equality)
+    if (filters.status && filters.status !== "All") {
+      constraints.push(where("status", "==", filters.status));
+    }
+
+    let hasInequality = false;
+
+    // Search Filter (Priority Inequality)
+    if (filters.search) {
+      constraints.push(where("name", ">=", filters.search));
+      constraints.push(where("name", "<=", filters.search + "\uf8ff"));
+      constraints.push(orderBy("name"));
+      hasInequality = true;
+    }
+
+    // Salary Range Filter
+    if (filters.salary && filters.salary !== "All") {
+      if (filters.salary === "No Salary Taken") {
+        constraints.push(where("salaryTaken", "==", 0));
+      } else if (!hasInequality) {
+        if (filters.salary === "Under ₹10k") {
+          constraints.push(
+            where("salaryTaken", ">", 0),
+            where("salaryTaken", "<", 10000),
+          );
+        } else if (filters.salary === "₹10k - ₹50k") {
+          constraints.push(
+            where("salaryTaken", ">=", 10000),
+            where("salaryTaken", "<=", 50000),
+          );
+        } else if (filters.salary === "Over ₹50k") {
+          constraints.push(where("salaryTaken", ">", 50000));
+        }
+        constraints.push(orderBy("salaryTaken", "desc"));
+        hasInequality = true;
+      }
+    }
+
+    if (!hasInequality) {
+      constraints.push(orderBy("createdAt", "desc"));
+    }
+
+    constraints.push(limit(50));
+
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+
+    try {
+      const q = query(empCollection, ...constraints);
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((doc) => ({
+        _id: doc.id,
+        ...doc.data(),
+      }));
+      const lastVisible = snapshot.docs[snapshot.docs.length - 1];
+
+      return { data, lastVisible };
+    } catch (error) {
+      console.error("🔥 Firebase Query Error:", error);
+      throw error;
+    }
   },
 
-  // 2. Add new employee
   addEmployee: async (employeeData, user) => {
     const payload = {
       ...employeeData,
@@ -42,7 +102,6 @@ const employeeService = {
     return { data: { _id: docRef.id, ...payload } };
   },
 
-  // 3. Get employee by ID
   getEmployeeById: async (id) => {
     const docRef = doc(db, "employees", id);
     const snapshot = await getDoc(docRef);
@@ -52,7 +111,6 @@ const employeeService = {
     throw new Error("Employee not found");
   },
 
-  // 4. Update employee (With History limit 10)
   updateEmployee: async (id, updateData, user) => {
     const docRef = doc(db, "employees", id);
     const snapshot = await getDoc(docRef);
@@ -69,10 +127,7 @@ const employeeService = {
     };
 
     currentHistory.push(currentEdit);
-
-    if (currentHistory.length > 10) {
-      currentHistory = currentHistory.slice(-10);
-    }
+    if (currentHistory.length > 10) currentHistory = currentHistory.slice(-10);
 
     const payload = {
       ...updateData,
@@ -88,27 +143,39 @@ const employeeService = {
     return { message: "Updated successfully" };
   },
 
-  // 5. Delete employee
-  deleteEmployee: async (id) => {
+  // 2. 🚀 SECURE DELETE (RBAC Check)
+  deleteEmployee: async (id, user) => {
+    const userRole = user?.data?.role || user?.role;
+    if (userRole === "manager") {
+      throw new Error("Action Denied: Managers cannot delete records.");
+    }
     const docRef = doc(db, "employees", id);
     await deleteDoc(docRef);
     return { message: "Removed successfully" };
   },
 
-  // 🚀 WIPE ALL SECURE FUNCTION
-  deleteAllEmployees: async ({ password, email }) => {
-    if (!password) {
-      throw new Error("Password is required to wipe the database.");
+  // 3. 🚀 SECURE WIPE ALL (Password Re-auth + RBAC Check)
+  deleteAllEmployees: async ({ password, email, user }) => {
+    const userRole = user?.data?.role || user?.role;
+    if (userRole === "manager") {
+      throw new Error("Action Denied: Only Admins can wipe the database.");
     }
-    if (!email) {
-      throw new Error("Authentication Error: Unable to verify admin identity.");
+
+    if (!password || !email) throw new Error("Authentication Error");
+
+    const currentUser = auth.currentUser;
+    if (!currentUser || currentUser.email !== email) {
+      throw new Error("Active session mismatch.");
     }
 
     try {
-      // Securely verifies password against current admin's email using Firebase Auth
-      await signInWithEmailAndPassword(auth, email, password);
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        password,
+      );
+      await reauthenticateWithCredential(currentUser, credential);
     } catch (error) {
-      throw new Error("Access Denied: Incorrect Admin Password.");
+      throw new Error("Incorrect Admin Password.");
     }
 
     try {
@@ -120,12 +187,10 @@ const employeeService = {
       await Promise.all(deletePromises);
       return { success: true };
     } catch (error) {
-      console.error("Wipe Database Error:", error);
-      throw new Error("Failed to clear database. Admin rights required.");
+      throw new Error("Failed to clear database.");
     }
   },
 
-  // --- SALARY SECTION ---
   addSalaryPayment: async (paymentData, user) => {
     const payload = {
       ...paymentData,
@@ -138,29 +203,27 @@ const employeeService = {
     return { data: { _id: docRef.id, ...payload } };
   },
 
-  getSalaryHistory: async () => {
-    const q = query(salaryCollection, orderBy("date", "desc"));
-    const salarySnap = await getDocs(q);
-    const employeesSnap = await getDocs(empCollection);
+  getSalaryHistory: async (lastDoc = null) => {
+    let constraints = [orderBy("date", "desc"), limit(50)];
+    if (lastDoc) constraints.push(startAfter(lastDoc));
 
-    const empMap = {};
-    employeesSnap.docs.forEach((d) => {
-      empMap[d.id] = { name: d.data().name, position: d.data().position };
-    });
+    const q = query(salaryCollection, ...constraints);
+    const salarySnap = await getDocs(q);
 
     const data = salarySnap.docs.map((doc) => {
       const payment = doc.data();
       return {
         _id: doc.id,
         ...payment,
-        employee: empMap[payment.employeeId] || {
-          name: "Unknown",
-          position: "-",
+        employee: {
+          name: payment.employeeName || "Legacy Record",
+          position: payment.employeePosition || "-",
         },
       };
     });
 
-    return { data };
+    const lastVisible = salarySnap.docs[salarySnap.docs.length - 1];
+    return { data, lastVisible };
   },
 };
 

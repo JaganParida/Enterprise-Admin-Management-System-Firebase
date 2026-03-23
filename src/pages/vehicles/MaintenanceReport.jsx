@@ -17,16 +17,27 @@ import {
   Download,
   AlertOctagon,
   ShieldAlert,
-  Eye,
-  EyeOff,
   Wrench,
   Map,
   IndianRupee,
   RefreshCcw,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
+import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { db } from "../../config/firebase";
+
+// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
+const getPreviousMonthString = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
 
 const MaintenanceReport = () => {
   const { toast } = useUI();
@@ -35,6 +46,16 @@ const MaintenanceReport = () => {
   const location = useLocation();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // 🚀 Pagination States
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // 🚀 Highlight Animation State
+  const searchParams = new URLSearchParams(location.search);
+  const urlHighlightId = searchParams.get("highlight");
+  const [activeHighlight, setActiveHighlight] = useState(null);
 
   // 🔥 THEME HOOK
   const currentPath =
@@ -72,23 +93,90 @@ const MaintenanceReport = () => {
     exactDate: "",
   });
 
+  // 🚀 SMART BACKUP STATES
+  const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
+
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  const fetchLogs = async () => {
+  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
+  useEffect(() => {
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonthString();
+
+      // Agar local storage me backup verified nahi hai
+      if (!localStorage.getItem(`backup_maintenance_${prevMonth}`)) {
+        try {
+          // Database me check karo (using prefix string match on date string)
+          const q = query(
+            collection(db, "maintenances"),
+            where("date", ">=", prevMonth),
+            where("date", "<=", prevMonth + "\uf8ff"),
+            limit(1),
+          );
+          const snap = await getDocs(q);
+
+          // Agar data hai, toh hi warning dikhao
+          if (!snap.empty) {
+            setShowBackupWarning(prevMonth);
+          }
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
+      }
+    };
+
+    checkBackupNeeded();
+  }, []);
+
+  // 🚀 Scroll & Highlight Effect
+  useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element)
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 500);
+      const timer = setTimeout(() => setActiveHighlight(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
+
+  // 🚀 Fetch Logic with Pagination
+  const fetchLogs = async (isLoadMore = false) => {
+    if (isLoadMore) setLoadingMore(true);
+    else setLoading(true);
+
     try {
-      const { data } = await maintenanceService.getLogs();
-      setLogs(data || []);
+      const response = await maintenanceService.getLogs(
+        filters,
+        isLoadMore ? lastDoc : null,
+      );
+      if (isLoadMore) setLogs((prev) => [...prev, ...(response.data || [])]);
+      else setLogs(response.data || []);
+      setLastDoc(response.lastVisible || null);
+      setHasMore(response.data && response.data.length === 50);
     } catch (error) {
-      toast.error("Failed to load report data.");
+      if (error.message && error.message.toLowerCase().includes("index")) {
+        toast.error("Firebase Index required! Check browser console.");
+      } else {
+        toast.error("Failed to load report data.");
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
+  // Trigger Fetch on Filter Change
   useEffect(() => {
-    fetchLogs();
-  }, []);
+    const delayDebounceFn = setTimeout(() => {
+      fetchLogs(false);
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [filters]);
 
   const handleDisabledClick = (action) => {
     setWarningTooltip(action);
@@ -98,11 +186,12 @@ const MaintenanceReport = () => {
   const executeDelete = async () => {
     if (!deleteModal.id) return;
     try {
-      await maintenanceService.deleteLog(deleteModal.id);
+      const currentUser = admin?.data || admin || {};
+      await maintenanceService.deleteLog(deleteModal.id, currentUser);
       toast.success("Maintenance record deleted successfully");
-      fetchLogs();
+      fetchLogs(false);
     } catch (error) {
-      toast.error("Failed to delete record");
+      toast.error(error.message || "Failed to delete record");
     } finally {
       setDeleteModal({ isOpen: false, id: null });
     }
@@ -117,56 +206,73 @@ const MaintenanceReport = () => {
     });
   };
 
-  const filteredLogs = useMemo(() => {
-    return logs.filter((log) => {
-      const logDateObj = log.date ? new Date(log.date) : new Date();
-      const searchTerm = String(filters.search || "").toLowerCase();
-
-      const matchSearch =
-        String(log.vehicleNo || "")
-          .toLowerCase()
-          .includes(searchTerm) ||
-        String(log.serviceType || "")
-          .toLowerCase()
-          .includes(searchTerm) ||
-        String(log.description || "")
-          .toLowerCase()
-          .includes(searchTerm);
-
-      let matchAmount = true;
-      const amt = Number(log.cost) || 0;
-      if (filters.amountFilter === "Under ₹10k") matchAmount = amt < 10000;
-      else if (filters.amountFilter === "₹10k - ₹50k")
-        matchAmount = amt >= 10000 && amt <= 50000;
-      else if (filters.amountFilter === "Over ₹50k") matchAmount = amt > 50000;
-
-      let matchDate = true;
-      if (filters.exactDate && log.date) {
-        matchDate = log.date.startsWith(filters.exactDate);
-      } else if (filters.dateFilter !== "All" && log.date) {
-        const today = new Date();
-        const diffTime = Math.abs(today - logDateObj);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        if (filters.dateFilter === "Today") matchDate = diffDays <= 1;
-        else if (filters.dateFilter === "Last7Days") matchDate = diffDays <= 7;
-        else if (filters.dateFilter === "ThisMonth")
-          matchDate =
-            logDateObj.getMonth() === today.getMonth() &&
-            logDateObj.getFullYear() === today.getFullYear();
-      }
-
-      return matchSearch && matchAmount && matchDate;
-    });
-  }, [logs, filters]);
-
   const activeFiltersCount =
     [filters.amountFilter, filters.dateFilter].filter(
       (f) => f !== "Any Amount" && f !== "All",
     ).length + (filters.exactDate ? 1 : 0);
 
-  const handleFullBackup = () => {
+  // 🚀 FIXED: 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
+  const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
-      if (logs.length === 0) return toast.info("Database is empty.");
+      if (!monthToFetch) return toast.error("Please select a month to backup.");
+      toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
+
+      const q = query(
+        collection(db, "maintenances"),
+        where("date", ">=", monthToFetch),
+        where("date", "<=", monthToFetch + "\uf8ff"),
+      );
+      const snapshot = await getDocs(q);
+      const allData = snapshot.docs.map((doc) => doc.data());
+
+      if (allData.length === 0)
+        return toast.info(`No records found for ${monthToFetch}.`);
+
+      const headers = [
+        "Date",
+        "Vehicle No",
+        "Meter/Km",
+        "Service Type",
+        "Cost",
+        "Description",
+      ];
+      const rows = allData.map((log) => {
+        let dateStr = log.date
+          ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
+          : "-";
+        return `${dateStr},"${log.vehicleNo || ""}","${log.meterKm || 0}","${log.serviceType || ""}","${log.cost || 0}","${log.description || ""}"`;
+      });
+
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute(
+        "download",
+        `Full_Backup_Maintenance_${monthToFetch}.csv`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success(`Backup for ${monthToFetch} downloaded securely!`);
+
+      // 🚀 Instantly removes the warning after successful backup
+      localStorage.setItem(`backup_maintenance_${monthToFetch}`, "true");
+      if (showBackupWarning === monthToFetch) {
+        setShowBackupWarning(null);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Backup failed.");
+    }
+  };
+
+  // 🚀 FIXED: View Export CSV Logic
+  const handleExport = () => {
+    try {
+      if (logs.length === 0) return toast.info("No records to export");
+
       const headers = [
         "Date",
         "Vehicle No",
@@ -179,54 +285,21 @@ const MaintenanceReport = () => {
         let dateStr = log.date
           ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
           : "-";
-        return `${dateStr},"${log.vehicleNo}",${log.meterKm || 0},"${log.serviceType}",${log.cost},"${log.description}"`;
+        return `${dateStr},"${log.vehicleNo || ""}","${log.meterKm || 0}","${log.serviceType || ""}","${log.cost || 0}","${log.description || ""}"`;
       });
-      const csvContent = [headers.join(","), ...rows].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.setAttribute(
-        "download",
-        `Full_Maintenance_Backup_${new Date().toISOString().split("T")[0]}.csv`,
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success("Secure full backup generated!");
-    } catch (e) {
-      toast.error("Backup failed.");
-    }
-  };
 
-  const handleExport = () => {
-    try {
-      if (filteredLogs.length === 0) return toast.info("No records to export");
-      const headers = [
-        "Date",
-        "Vehicle No",
-        "Meter/Km",
-        "Service Type",
-        "Cost",
-        "Description",
-      ];
-      const rows = filteredLogs.map((log) => {
-        let dateStr = log.date
-          ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
-          : "-";
-        return `${dateStr},"${log.vehicleNo}",${log.meterKm || 0},"${log.serviceType}",${log.cost},"${log.description}"`;
-      });
-      const csvContent = [headers.join(","), ...rows].join("\n");
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       link.setAttribute(
         "download",
-        `Maintenance_Report_${new Date().toISOString().split("T")[0]}.csv`,
+        `Maintenance_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Exported successfully");
+      toast.success("Visible records exported successfully");
     } catch (error) {
       toast.error("Export failed");
     }
@@ -237,16 +310,17 @@ const MaintenanceReport = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      const adminEmail = admin?.data?.email || admin?.email;
+      const currentUser = admin?.data || admin || {};
       await maintenanceService.deleteAllLogs({
         password: deletePassword,
-        email: adminEmail,
+        email: currentUser.email,
+        user: currentUser,
       });
       toast.success("Maintenance database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchLogs();
+      fetchLogs(false);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
@@ -322,6 +396,39 @@ const MaintenanceReport = () => {
         </div>
       </div>
 
+      {/* 🚀 SMART BACKUP WARNING */}
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the maintenance backup for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
+
       <div
         className={`bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl border-zinc-800/60`}
       >
@@ -349,7 +456,7 @@ const MaintenanceReport = () => {
             onClick={handleExport}
             className="h-11 gap-2 text-xs font-bold tracking-widest border border-zinc-800 px-4 rounded-xl bg-[#09090B] text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors flex items-center w-full sm:w-auto justify-center"
           >
-            <Download size={16} /> Export
+            <Download size={16} /> Export View
           </Button>
         </div>
 
@@ -464,7 +571,7 @@ const MaintenanceReport = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/60 text-sm">
-              {filteredLogs.map((log) => {
+              {logs.map((log) => {
                 const hasEdits = log.editHistory && log.editHistory.length > 0;
                 const latestLog = hasEdits
                   ? log.editHistory[log.editHistory.length - 1]
@@ -473,7 +580,12 @@ const MaintenanceReport = () => {
                 return (
                   <tr
                     key={log._id}
-                    className="hover:bg-zinc-800/30 transition-colors group"
+                    id={log._id}
+                    className={`transition-all duration-1000 ease-out group border-l-4 ${
+                      activeHighlight === log._id
+                        ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
+                        : "border-transparent hover:bg-zinc-800/30"
+                    }`}
                   >
                     <td className="p-5 px-6 align-top">
                       <p className="text-[11px] font-mono text-zinc-400 mb-1">
@@ -481,7 +593,7 @@ const MaintenanceReport = () => {
                       </p>
                       <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
                         <Truck size={14} className="text-zinc-500" />{" "}
-                        {log.vehicleNo}
+                        {log.vehicleNo || "N/A"}
                       </p>
                       {log.meterKm && (
                         <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-widest font-semibold flex items-center gap-1.5">
@@ -525,9 +637,7 @@ const MaintenanceReport = () => {
                           onClick={() =>
                             navigate(
                               `${isTransport ? "/transportation/maintenance" : "/enterprise/maintenance"}`,
-                              {
-                                state: { editLog: log },
-                              },
+                              { state: { editLog: log } },
                             )
                           }
                           className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
@@ -554,7 +664,7 @@ const MaintenanceReport = () => {
                   </tr>
                 );
               })}
-              {filteredLogs.length === 0 && (
+              {logs.length === 0 && !loading && (
                 <tr>
                   <td
                     colSpan="4"
@@ -566,6 +676,23 @@ const MaintenanceReport = () => {
               )}
             </tbody>
           </table>
+
+          {/* 🚀 LOAD MORE BUTTON */}
+          {hasMore && logs.length > 0 && (
+            <div className="flex justify-center p-6 border-t border-zinc-800/60">
+              <Button
+                onClick={() => fetchLogs(true)}
+                disabled={loadingMore}
+                variant="outline"
+                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+              >
+                {loadingMore ? (
+                  <RefreshCcw size={16} className="animate-spin mr-2" />
+                ) : null}
+                {loadingMore ? "Loading..." : "Load Next 50 Records"}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -580,41 +707,52 @@ const MaintenanceReport = () => {
       />
 
       {/* 🛑 SECURE WIPE DATA MODAL */}
-      {isDeleteAllOpen && (
+      {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
             onClick={() => !wiping && setIsDeleteAllOpen(false)}
           />
-          <div className="bg-[#09090B] border border-red-900/50 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-3xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
+          <div className="bg-[#09090B] border border-red-900/30 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
             <div className="flex items-center gap-3 text-red-500 mb-6">
-              <AlertOctagon size={28} />
+              <AlertOctagon size={24} />
               <h2 className="text-xl font-bold tracking-wide">Wipe Database</h2>
             </div>
+
+            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
                   size={20}
                   className="text-yellow-500 shrink-0 mt-0.5"
                 />
-                <div>
+                <div className="w-full">
                   <h3 className="text-yellow-500 font-bold text-sm mb-1">
                     Recommended: Safe Backup
                   </h3>
-                  <p className="text-zinc-400 text-xs mb-4 leading-relaxed">
+                  <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
                     Before wiping the database, we highly recommend downloading
-                    a complete CSV backup of all your current records.
+                    a complete CSV backup for a specific month.
                   </p>
-                  <Button
-                    variant="outline"
-                    onClick={handleFullBackup}
-                    className="h-11 w-full sm:w-auto text-yellow-500 border-yellow-600/40 hover:bg-yellow-500/10"
-                  >
-                    <Download size={14} /> Download Full Database Backup
-                  </Button>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                    <input
+                      type="month"
+                      value={backupMonth}
+                      onChange={(e) => setBackupMonth(e.target.value)}
+                      style={{ colorScheme: "dark" }}
+                      className="w-full sm:w-32 bg-zinc-900/50 border border-yellow-500/30 rounded-xl px-3 py-2.5 text-xs text-zinc-200 outline-none transition-all"
+                    />
+                    <button
+                      onClick={() => handleFullBackup(backupMonth)}
+                      className="w-full sm:flex-1 py-2.5 bg-transparent border border-yellow-600/40 text-yellow-500 hover:bg-yellow-500/10 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Download size={14} /> Download Backup
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
+
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
@@ -633,32 +771,30 @@ const MaintenanceReport = () => {
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
               >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
             <div className="flex justify-end gap-3 items-center">
-              <Button
-                variant="outline"
+              <button
                 onClick={() => {
                   setIsDeleteAllOpen(false);
                   setDeletePassword("");
                 }}
                 disabled={wiping}
-                className="h-11 border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white"
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
               >
                 Cancel
-              </Button>
-              <Button
-                variant="danger"
+              </button>
+              <button
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword}
-                className="h-11"
+                className="h-11 px-6 rounded-xl text-sm font-bold border border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-colors flex items-center justify-center gap-2"
               >
                 {wiping ? (
-                  <RefreshCcw size={16} className="animate-spin" />
+                  <RefreshCcw size={16} className="animate-spin mr-2" />
                 ) : null}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -680,8 +816,7 @@ const MaintenanceReport = () => {
               className={`flex items-center justify-between p-5 border-b ${theme.primaryBorder} ${theme.primaryBg} shrink-0`}
             >
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className={theme.primaryText} />
-                Log History:{" "}
+                <History size={16} className={theme.primaryText} /> Log History:{" "}
                 <span className={`${theme.primaryText} font-normal`}>
                   {historyModal.itemName}
                 </span>
@@ -695,7 +830,6 @@ const MaintenanceReport = () => {
                 <X size={18} />
               </button>
             </div>
-
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
               {historyModal.data.map((log, index) => (
                 <div

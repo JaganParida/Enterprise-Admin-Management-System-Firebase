@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import fuelService from "../../services/fuelService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -57,10 +57,16 @@ const FuelTracker = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [stats, setStats] = useState({
+    totalLiters: 0,
+    totalCost: 0,
+    refuelCount: 0,
+  });
 
   // 🔥 THEME HOOK
   const currentPath =
@@ -68,6 +74,7 @@ const FuelTracker = () => {
       ? window.location.pathname
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
+  const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
     primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
@@ -98,19 +105,24 @@ const FuelTracker = () => {
     (parseFloat(formData.liters) || 0) *
     (parseFloat(formData.pricePerLiter) || 0);
 
-  const fetchLogs = async () => {
+  // 🚀 FETCH OPTIMIZED FOR TOP 10 AND AGGREGATE STATS (Golden Rules #1 & #2)
+  const fetchData = async () => {
     try {
-      const { data } = await fuelService.getLogs();
-      setLogs(data || []);
+      const [statsRes, logsRes] = await Promise.all([
+        fuelService.getStats(),
+        fuelService.getLogs({}, null, 10), // Limit to top 10
+      ]);
+      setStats(statsRes);
+      setLogs(logsRes.data || []);
     } catch (err) {
-      toast.error("Failed to load logs.");
+      toast.error("Failed to load tracking data.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLogs();
+    fetchData();
   }, []);
 
   useEffect(() => {
@@ -129,21 +141,6 @@ const FuelTracker = () => {
       window.history.replaceState({}, document.title);
     }
   }, [location]);
-
-  const stats = useMemo(
-    () => ({
-      totalLiters: logs.reduce(
-        (acc, log) => acc + (Number(log.liters) || 0),
-        0,
-      ),
-      totalCost: logs.reduce(
-        (acc, log) => acc + (Number(log.totalCost) || 0),
-        0,
-      ),
-      refuelCount: logs.length,
-    }),
-    [logs],
-  );
 
   const handleVehicleNoChange = (e) => {
     let rawValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -183,8 +180,7 @@ const FuelTracker = () => {
 
     setSubmitting(true);
     try {
-      const currentUser = admin?.data ||
-        admin || { email: "Unknown", role: "admin" };
+      const currentUser = admin?.data || admin || {};
       const payload = { ...formData, totalCost: calculatedTotal };
 
       if (editId) {
@@ -195,7 +191,7 @@ const FuelTracker = () => {
         toast.success("Fuel logged successfully!");
       }
       resetForm();
-      fetchLogs();
+      fetchData();
     } catch (err) {
       toast.error("Failed to save log.");
     } finally {
@@ -203,7 +199,8 @@ const FuelTracker = () => {
     }
   };
 
-  const openHistory = (log) => {
+  const openHistory = (e, log) => {
+    e.stopPropagation(); // Prevents row click redirect
     const sortedHistory = log.editHistory ? [...log.editHistory].reverse() : [];
     setHistoryModal({
       isOpen: true,
@@ -215,6 +212,18 @@ const FuelTracker = () => {
   const resetForm = () => {
     setEditId(null);
     setFormData(initialForm);
+  };
+
+  // 🚀 REDIRECT TO REPORT HANDLER
+  const handleRowClick = (e, id) => {
+    // Prevent redirect if user clicked Edit or Delete buttons
+    if (
+      e.target.closest("button") ||
+      e.target.closest("a") ||
+      e.target.closest(".history-btn")
+    )
+      return;
+    navigate(`${basePath}/fuel/report?highlight=${id}`);
   };
 
   if (loading)
@@ -415,13 +424,7 @@ const FuelTracker = () => {
                   (Latest)
                 </span>
               </h3>
-              <Link
-                to={
-                  isTransport
-                    ? "/transportation/fuel/report"
-                    : "/enterprise/fuel/report"
-                }
-              >
+              <Link to={`${basePath}/fuel/report`}>
                 <Button
                   variant="outline"
                   className={`!px-3 !py-1.5 !text-[10px] uppercase tracking-widest !h-auto ${theme.primaryBg} ${theme.primaryText} border ${theme.primaryBorder} hover:opacity-80`}
@@ -443,7 +446,7 @@ const FuelTracker = () => {
                   </tr>
                 </thead>
                 <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
-                  {logs.slice(0, 10).map((log) => {
+                  {logs.map((log) => {
                     const hasEdits =
                       log.editHistory && log.editHistory.length > 0;
                     const latestLog = hasEdits
@@ -453,7 +456,8 @@ const FuelTracker = () => {
                     return (
                       <tr
                         key={log._id}
-                        className="hover:bg-zinc-800/30 transition-colors group"
+                        onClick={(e) => handleRowClick(e, log._id)}
+                        className="hover:bg-zinc-800/30 transition-colors group cursor-pointer"
                       >
                         <td className="p-3 align-top">
                           <p className="text-[11px] font-mono text-zinc-400 mb-1">
@@ -466,8 +470,8 @@ const FuelTracker = () => {
 
                           {hasEdits && (
                             <div
-                              onClick={() => openHistory(log)}
-                              className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={(e) => openHistory(e, log)}
+                              className="history-btn mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                             >
                               <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
                                 <History size={10} className="text-zinc-400" />
@@ -475,7 +479,7 @@ const FuelTracker = () => {
                                   {latestLog.role || "ADMIN"}
                                 </span>
                                 {log.editHistory.length > 1 && (
-                                  <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                  <span className="bg-zinc-700/50 text-zinc-400 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
                                     +{log.editHistory.length - 1} MORE
                                   </span>
                                 )}
@@ -496,8 +500,10 @@ const FuelTracker = () => {
                         </td>
 
                         <td className="p-3 align-top">
-                          <div className="text-[11px] text-zinc-300 mb-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2 py-1 rounded font-medium border border-zinc-800 uppercase tracking-wide">
-                            <Droplet size={12} className={theme.iconColor} />{" "}
+                          <div
+                            className={`text-[11px] text-zinc-300 mb-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2 py-1 rounded font-medium border border-zinc-800 uppercase tracking-wide`}
+                          >
+                            <Droplet size={12} className={theme.primaryText} />{" "}
                             {log.liters} Liters
                           </div>
                           <div className="text-[11px] text-zinc-500 font-medium mt-1 flex items-center gap-1">
@@ -540,19 +546,22 @@ const FuelTracker = () => {
       </div>
 
       {historyModal.isOpen && historyModal.data && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
             className="absolute inset-0 cursor-pointer"
             onClick={() =>
               setHistoryModal({ isOpen: false, data: null, itemName: "" })
             }
           />
-          <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-            <div className="flex items-center justify-between p-5 border-b border-zinc-800/60 bg-[#09090B] shrink-0">
+          <div
+            className={`bg-[#09090B] border ${theme.primaryBorder} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200`}
+          >
+            <div
+              className={`flex items-center justify-between p-5 border-b ${theme.primaryBorder} ${theme.primaryBg} shrink-0`}
+            >
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className={theme.primaryText} />
-                Log History:{" "}
-                <span className="text-zinc-400 font-normal">
+                <History size={16} className={theme.primaryText} /> Log History:{" "}
+                <span className={`${theme.primaryText} font-normal`}>
                   {historyModal.itemName}
                 </span>
               </div>
@@ -560,7 +569,7 @@ const FuelTracker = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-zinc-500 hover:text-white transition-colors"
+                className="text-zinc-400 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
@@ -570,7 +579,7 @@ const FuelTracker = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-zinc-900/30 border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-[#09090B] border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
                     <div
@@ -579,13 +588,13 @@ const FuelTracker = () => {
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-400"}`}
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-500"}`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
@@ -608,7 +617,7 @@ const FuelTracker = () => {
                   </div>
                   {index === 0 && (
                     <div
-                      className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
                     >
                       LATEST
                     </div>
