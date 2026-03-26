@@ -11,67 +11,54 @@ import {
   limit,
   where,
   startAfter,
-  getAggregateFromServer,
-  sum,
+  writeBatch,
+  increment,
+  setDoc,
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const COLLECTION_NAME = "sales";
+// 🔥 The single document that tracks all totals to keep dashboard reads at exactly 1
+const STATS_DOC_REF = doc(db, "systemStats", "salesSummary");
+
+// 🛠️ Helper: Atomic Background Math (Costs 0 extra reads)
+const updateGlobalStats = async (amtDiff, cashDiff, onlineDiff, dueDiff) => {
+  try {
+    await setDoc(
+      STATS_DOC_REF,
+      {
+        total: increment(amtDiff),
+        cash: increment(cashDiff),
+        online: increment(onlineDiff),
+        pendingDues: increment(dueDiff),
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    console.error("Stats Update Failed:", error);
+  }
+};
 
 const salesService = {
-  // 🚀 1. FAST SERVER-SIDE STATS
+  // 🏆 1. THE 1-READ DASHBOARD STATS (O(1) Read Complexity)
   getStats: async () => {
     try {
-      const salesCol = collection(db, COLLECTION_NAME);
-      const cashQ = query(salesCol, where("paymentMode", "==", "Cash"));
-      const onlineQ = query(salesCol, where("paymentMode", "==", "Online"));
-
-      const [totalSnap, cashSnap, onlineSnap] = await Promise.all([
-        getAggregateFromServer(salesCol, {
-          total: sum("amount"),
-          due: sum("amountDue"),
-        }),
-        getAggregateFromServer(cashQ, { totalCash: sum("amountPaid") }),
-        getAggregateFromServer(onlineQ, { totalOnline: sum("amountPaid") }),
-      ]);
-
-      const total = totalSnap.data().total || 0;
-      const cash = cashSnap.data().totalCash || 0;
-      const online = onlineSnap.data().totalOnline || 0;
-      const pendingDues = totalSnap.data().due || 0;
-
-      if (total === 0 && cash === 0 && online === 0 && pendingDues === 0)
-        throw new Error("Fallback Trigger");
-
-      return { total, cash, online, pendingDues };
+      const snap = await getDoc(STATS_DOC_REF);
+      if (snap.exists()) return snap.data();
+      return { total: 0, cash: 0, online: 0, pendingDues: 0 };
     } catch (error) {
-      try {
-        let stats = { total: 0, cash: 0, online: 0, pendingDues: 0 };
-        const snapshot = await getDocs(collection(db, COLLECTION_NAME));
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          const amt = Number(data.amount) || 0;
-          stats.total += amt;
-          stats.pendingDues += Number(data.amountDue) || 0;
-          if (data.paymentMode === "Cash")
-            stats.cash += Number(data.amountPaid || amt);
-          if (data.paymentMode === "Online")
-            stats.online += Number(data.amountPaid || amt);
-        });
-        return stats;
-      } catch (fallbackError) {
-        return { total: 0, cash: 0, online: 0, pendingDues: 0 };
-      }
+      console.error("Failed to fetch stats", error);
+      return { total: 0, cash: 0, online: 0, pendingDues: 0 };
     }
   },
 
-  // 🚀 2. PAGINATED & 100% BACKEND FILTERED SALES FETCH
+  // ⚡ 2. 100% BACKEND PAGINATED SALES FETCH (Max 50 Reads)
   getAllSales: async (filters = {}, lastDoc = null, limitCount = 50) => {
     let constraints = [];
     let hasInequality = false;
 
-    // EXACT EQUALITY FILTERS
+    // Equality Filters
     if (filters.paymentMode && filters.paymentMode !== "All Status") {
       constraints.push(where("paymentMode", "==", filters.paymentMode));
     }
@@ -82,19 +69,13 @@ const salesService = {
       constraints.push(where("date", "==", filters.exactDate));
     }
 
-    // INEQUALITY FILTERS (Priority Logic - Only ONE allowed by Firebase)
+    // Inequality Filters (Firebase rule: Only ONE allowed)
     if (filters.search) {
-      // Firebase doesn't support OR queries well for prefix search across multiple fields (buyerName, challan, vehicle).
-      // So we will prioritize searching by Buyer Name for backend efficiency.
       constraints.push(where("buyerName", ">=", filters.search));
       constraints.push(where("buyerName", "<=", filters.search + "\uf8ff"));
       constraints.push(orderBy("buyerName"));
       hasInequality = true;
-    } else if (
-      filters.amountFilter &&
-      filters.amountFilter !== "Any Amount" &&
-      !hasInequality
-    ) {
+    } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
       if (filters.amountFilter === "Under ₹50k")
         constraints.push(where("amount", "<", 50000));
       else if (filters.amountFilter === "Over ₹50k")
@@ -104,8 +85,7 @@ const salesService = {
     } else if (
       filters.dateFilter &&
       filters.dateFilter !== "All" &&
-      !filters.exactDate &&
-      !hasInequality
+      !filters.exactDate
     ) {
       const today = new Date();
       let pastDate = new Date();
@@ -121,6 +101,7 @@ const salesService = {
       hasInequality = true;
     }
 
+    // Default sorting
     if (!hasInequality && !filters.exactDate) {
       constraints.push(orderBy("date", "desc"));
     }
@@ -138,107 +119,144 @@ const salesService = {
       }));
       return { data, lastVisible: snapshot.docs[snapshot.docs.length - 1] };
     } catch (error) {
+      console.error("🔥 Firebase Query Error:", error);
       throw error;
     }
   },
 
-  // 🚀 FETCH DUES (Separate efficient query)
-  getCustomerDues: async () => {
+  // 💸 3. PAGINATED CUSTOMER DUES (Limits Reads to 50 max)
+  getCustomerDues: async (lastDoc = null, limitCount = 50) => {
     try {
-      const q = query(
-        collection(db, COLLECTION_NAME),
+      const constraints = [
         where("amountDue", ">", 0),
         orderBy("amountDue", "desc"),
-      );
+        limit(limitCount),
+      ];
+      if (lastDoc) constraints.push(startAfter(lastDoc));
+
+      const q = query(collection(db, COLLECTION_NAME), ...constraints);
       const snapshot = await getDocs(q);
-      const duesData = snapshot.docs.map((doc) => ({
+      const data = snapshot.docs.map((doc) => ({
         _id: doc.id,
         id: doc.id,
         ...doc.data(),
       }));
 
-      // Grouping logic for the frontend Dues Tab
-      const map = {};
-      duesData.forEach((sale) => {
-        const buyer = sale.buyerName || "Unknown Customer";
-        if (!map[buyer]) {
-          map[buyer] = {
-            buyerName: buyer,
-            totalDue: 0,
-            totalBillAmount: 0,
-            records: [],
-          };
-        }
-        map[buyer].totalDue += Number(sale.amountDue);
-        map[buyer].totalBillAmount += Number(sale.amount) || 0;
-        map[buyer].records.push(sale);
-      });
-      return Object.values(map).sort((a, b) => b.totalDue - a.totalDue);
+      return { data, lastVisible: snapshot.docs[snapshot.docs.length - 1] };
     } catch (error) {
       console.error(error);
-      return [];
+      return { data: [], lastVisible: null };
     }
   },
 
+  // ➕ ADD SALE (Syncs Stats Automatically)
   addSale: async (data, user) => {
+    const amt = Number(data.amount) || 0;
+    const paid = Number(data.amountPaid) || 0;
+    const due = Number(data.amountDue) || 0;
+    const isCash = data.paymentMode === "Cash";
+
     const saleData = {
       ...data,
-      amount: Number(data.amount),
-      amountPaid: Number(data.amountPaid || 0),
-      amountDue: Number(data.amountDue || 0),
+      amount: amt,
+      amountPaid: paid,
+      amountDue: due,
       quantity: Number(data.quantity),
       createdBy: user?.email || "admin@system.com",
       createdRole: user?.role || "admin",
       createdAt: new Date().toISOString(),
       editHistory: [],
     };
-    return await addDoc(collection(db, COLLECTION_NAME), saleData);
+
+    const docRef = await addDoc(collection(db, COLLECTION_NAME), saleData);
+    updateGlobalStats(amt, isCash ? paid : 0, !isCash ? paid : 0, due);
+    return docRef;
   },
 
   getSaleById: async (id) => {
-    const docRef = doc(db, COLLECTION_NAME, id);
-    const docSnap = await getDoc(docRef);
+    const docSnap = await getDoc(doc(db, COLLECTION_NAME, id));
     if (docSnap.exists())
       return { data: { _id: docSnap.id, id: docSnap.id, ...docSnap.data() } };
     throw new Error("Not found");
   },
 
+  // 🔄 UPDATE SALE (Calculates Diff & Syncs Stats)
   updateSale: async (id, data, user) => {
     const docRef = doc(db, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
     if (!docSnap.exists()) return;
-    const existingData = docSnap.data();
 
-    const now = new Date().toISOString();
-    let currentHistory = existingData.editHistory || [];
+    const old = docSnap.data();
+    const oldAmt = Number(old.amount) || 0;
+    const oldPaid = Number(old.amountPaid) || 0;
+    const oldDue = Number(old.amountDue) || 0;
+    const oldIsCash = old.paymentMode === "Cash";
+
+    const newAmt = Number(data.amount) || 0;
+    const newPaid = Number(data.amountPaid) || 0;
+    const newDue = Number(data.amountDue) || 0;
+    const newIsCash = data.paymentMode === "Cash";
+
+    let currentHistory = old.editHistory || [];
     currentHistory.push({
       role: user?.role || "admin",
-      email: user?.email || "admin@system.com",
-      at: now,
+      email: user?.email || "admin",
+      at: new Date().toISOString(),
     });
-
     if (currentHistory.length > 10) currentHistory = currentHistory.slice(-10);
 
-    return await updateDoc(docRef, {
+    await updateDoc(docRef, {
       ...data,
-      amount: Number(data.amount),
-      amountPaid: Number(data.amountPaid || 0),
-      amountDue: Number(data.amountDue || 0),
+      amount: newAmt,
+      amountPaid: newPaid,
+      amountDue: newDue,
       quantity: Number(data.quantity),
       editHistory: currentHistory,
     });
+
+    const diffAmt = newAmt - oldAmt;
+    const diffDue = newDue - oldDue;
+
+    let diffCash = 0;
+    let diffOnline = 0;
+    if (oldIsCash && newIsCash) diffCash = newPaid - oldPaid;
+    else if (!oldIsCash && !newIsCash) diffOnline = newPaid - oldPaid;
+    else if (oldIsCash && !newIsCash) {
+      diffCash = -oldPaid;
+      diffOnline = newPaid;
+    } else if (!oldIsCash && newIsCash) {
+      diffOnline = -oldPaid;
+      diffCash = newPaid;
+    }
+
+    updateGlobalStats(diffAmt, diffCash, diffOnline, diffDue);
   },
 
+  // 🗑️ DELETE SALE (Deducts from Stats)
   deleteSale: async (id, user) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Action Denied");
-    await deleteDoc(doc(db, COLLECTION_NAME, id));
+
+    const docRef = doc(db, COLLECTION_NAME, id);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) return;
+
+    const old = docSnap.data();
+    await deleteDoc(docRef);
+
+    const oldIsCash = old.paymentMode === "Cash";
+    updateGlobalStats(
+      -old.amount,
+      oldIsCash ? -old.amountPaid : 0,
+      !oldIsCash ? -old.amountPaid : 0,
+      -old.amountDue,
+    );
   },
 
+  // 🧨 BATCH WIPE (Crash-Proof 500-Chunk Loop)
   deleteAllSales: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Action Denied");
-    if (!password || !email) throw new Error("Authentication Error");
 
     const currentUser = auth.currentUser;
     if (!currentUser || currentUser.email !== email)
@@ -254,15 +272,37 @@ const salesService = {
       throw new Error("Incorrect Admin Password.");
     }
 
+    let totalDeleted = 0;
+    const BATCH_SIZE = 500;
+    const SAFE_DAILY_LIMIT = 9500; // Leaves quota breathing room
+
     try {
-      const snapshot = await getDocs(collection(db, COLLECTION_NAME));
-      const deletePromises = snapshot.docs.map((document) =>
-        deleteDoc(doc(db, COLLECTION_NAME, document.id)),
-      );
-      await Promise.all(deletePromises);
-      return { success: true };
+      while (totalDeleted < SAFE_DAILY_LIMIT) {
+        const q = query(collection(db, COLLECTION_NAME), limit(BATCH_SIZE));
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) break;
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((document) => batch.delete(document.ref));
+        await batch.commit();
+
+        totalDeleted += snapshot.size;
+      }
+
+      // Reset dashboard stats instantly
+      await setDoc(STATS_DOC_REF, {
+        total: 0,
+        cash: 0,
+        online: 0,
+        pendingDues: 0,
+      });
+      return { success: true, count: totalDeleted };
     } catch (error) {
-      throw new Error("Failed to clear database.");
+      console.error(error);
+      throw new Error(
+        `Wipe stopped early. Deleted ${totalDeleted} records before error.`,
+      );
     }
   },
 };
