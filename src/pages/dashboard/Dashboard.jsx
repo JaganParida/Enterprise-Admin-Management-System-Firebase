@@ -83,6 +83,7 @@ const Dashboard = () => {
     loadDashboard();
   }, [toast]);
 
+  // 🚀 EXPORT LOGIC WITH BOM
   const handleExport = () => {
     try {
       const headers = ["Section,Metric,Value,Date/Note"];
@@ -107,12 +108,12 @@ const Dashboard = () => {
         rows.push(`\nRECENT ACTIVITY,Type,Details,Amount/Qty,Date`);
         data.recentActivity.forEach((act) => {
           rows.push(
-            `ACTIVITY,${act.activityType},"${act.productName || act.clientName || "N/A"}",${act.amount || act.grandTotal || act.quantity || 0},${new Date(act.date).toLocaleDateString("en-GB")}`,
+            `ACTIVITY,${act.activityType},"${act.productName || act.clientName || "N/A"}",${act.amount || act.grandTotal || act.quantity || 0},${new Date(act.date || act.createdAt).toLocaleDateString("en-GB")}`,
           );
         });
       }
 
-      const csvContent = [headers, ...rows].join("\n");
+      const csvContent = "\uFEFF" + [headers, ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -397,7 +398,7 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Total Sales"
+          title="Recent Sales"
           value={`₹ ${data.cards.balance.toLocaleString()}`}
           icon={ShoppingCart}
           color="blue"
@@ -416,9 +417,8 @@ const Dashboard = () => {
           isTransport={isTransport}
           linkTo={`${basePath}/stock`}
         />
-        {/* 🔥 FIXED ROUTE TO '/invoices' instead of '/invoices/report' */}
         <StatCard
-          title="Invoice Billed"
+          title="Invoice Revenue"
           value={`₹ ${data.cards.revenue.toLocaleString()}`}
           icon={DollarSign}
           color="purple"
