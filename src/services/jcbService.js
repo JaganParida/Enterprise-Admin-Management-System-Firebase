@@ -16,7 +16,7 @@ import {
   sum,
   count,
 } from "firebase/firestore";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const jcbCollection = collection(db, "jcb_logs");
 
@@ -44,73 +44,71 @@ const jcbService = {
     }
   },
 
-  // 2 & 3. 🚀 PAGINATION & BACKEND FILTERING
+  // 🚀 2. PAGINATED & 100% BACKEND FILTERED FETCH
   getLogs: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
+    let constraints = [];
+    let hasInequality = false;
+
+    // --- 1. EQUALITY FILTERS ---
+    if (filters.vehicleFilter && filters.vehicleFilter !== "All") {
+      constraints.push(where("vehicleNo", "==", filters.vehicleFilter));
+    }
+    if (filters.exactDate) {
+      constraints.push(where("date", "==", filters.exactDate));
+    }
+
+    // --- 2. MUTUALLY EXCLUSIVE INEQUALITY FILTERS ---
+    // Note: Firebase doesn't support OR queries well for prefix search across multiple fields
+    // So we will prioritize searching by Customer Name
+    if (filters.search) {
+      constraints.push(where("customerName", ">=", filters.search));
+      constraints.push(where("customerName", "<=", filters.search + "\uf8ff"));
+      constraints.push(orderBy("customerName"));
+      hasInequality = true;
+    } else if (
+      filters.dateFilter &&
+      filters.dateFilter !== "All" &&
+      !filters.exactDate
+    ) {
+      const today = new Date();
+      let targetDate = new Date();
+
+      if (filters.dateFilter === "Today")
+        targetDate.setDate(today.getDate() - 1);
+      else if (filters.dateFilter === "Last7Days")
+        targetDate.setDate(today.getDate() - 7);
+      else if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
+
+      const pastDateStr = targetDate.toISOString().split("T")[0];
+      constraints.push(where("date", ">=", pastDateStr));
+      constraints.push(orderBy("date", "desc"));
+      hasInequality = true;
+    }
+
+    // Default sorting
+    if (!hasInequality && !filters.exactDate) {
+      constraints.push(orderBy("date", "desc"));
+    }
+
+    // --- 3. APPLY PAGINATION ---
+    constraints.push(limit(pageSize));
+    if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
+
     try {
-      let queryConstraints = [];
-
-      // Date Filtering
-      if (filters.exactDate) {
-        queryConstraints.push(where("date", ">=", filters.exactDate));
-        queryConstraints.push(
-          where("date", "<=", filters.exactDate + "\uf8ff"),
-        );
-      } else if (filters.dateFilter && filters.dateFilter !== "All") {
-        const today = new Date();
-        let targetDate = new Date();
-
-        if (filters.dateFilter === "Today")
-          targetDate.setDate(today.getDate() - 1);
-        if (filters.dateFilter === "Last7Days")
-          targetDate.setDate(today.getDate() - 7);
-        if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
-
-        queryConstraints.push(
-          where("date", ">=", targetDate.toISOString().split("T")[0]),
-        );
-      }
-
-      queryConstraints.push(orderBy("date", "desc"));
-      if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
-      queryConstraints.push(limit(pageSize));
-
-      const q = query(jcbCollection, ...queryConstraints);
+      const q = query(jcbCollection, ...constraints);
       const snapshot = await getDocs(q);
 
-      let fetchedData = snapshot.docs.map((doc) => ({
+      const data = snapshot.docs.map((doc) => ({
         _id: doc.id,
         ...doc.data(),
       }));
 
-      // Client-side fallback for Search & Vehicle (Due to Firebase multiple-inequality limits)
-      if (filters.search) {
-        const searchLower = filters.search.toLowerCase();
-        fetchedData = fetchedData.filter(
-          (log) =>
-            String(log.customerName || "")
-              .toLowerCase()
-              .includes(searchLower) ||
-            String(log.location || "")
-              .toLowerCase()
-              .includes(searchLower) ||
-            String(log.phone || "")
-              .toLowerCase()
-              .includes(searchLower),
-        );
-      }
-
-      if (filters.vehicleFilter && filters.vehicleFilter !== "All") {
-        fetchedData = fetchedData.filter(
-          (log) => log.vehicleNo === filters.vehicleFilter,
-        );
-      }
-
       return {
-        data: fetchedData,
+        data,
         lastVisible: snapshot.docs[snapshot.docs.length - 1],
       };
     } catch (error) {
-      console.error("Fetch Error:", error);
+      console.error("🔥 Firebase Query Error:", error);
       throw error;
     }
   },
@@ -158,7 +156,6 @@ const jcbService = {
     return { message: "Updated" };
   },
 
-  // 4. 🚀 BACKEND SECURITY (RBAC)
   deleteLog: async (id, user) => {
     if (user?.role === "manager" || user?.data?.role === "manager") {
       throw new Error("Action Denied: Managers cannot delete records.");
@@ -167,7 +164,6 @@ const jcbService = {
     return { message: "Deleted" };
   },
 
-  // 4. 🚀 BACKEND SECURITY WIPE FEATURE
   deleteAllLogs: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager") {
       throw new Error("Action Denied: Managers cannot wipe the database.");
@@ -176,8 +172,17 @@ const jcbService = {
       throw new Error("Authentication Error: Missing credentials.");
     }
 
+    const currentUser = auth.currentUser;
+    if (!currentUser || currentUser.email !== email) {
+      throw new Error("Active session mismatch.");
+    }
+
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        password,
+      );
+      await reauthenticateWithCredential(currentUser, credential);
     } catch (error) {
       throw new Error("Access Denied: Incorrect Admin Password.");
     }

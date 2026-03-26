@@ -23,13 +23,11 @@ const EditInvoice = () => {
   const navigate = useNavigate();
   const { toast } = useUI();
   const { admin } = useAuth();
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [auditInfo, setAuditInfo] = useState(null);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -46,11 +44,7 @@ const EditInvoice = () => {
     indicatorLine: isTransport ? "bg-cyan-500" : "bg-indigo-500",
   };
 
-  const [client, setClient] = useState({
-    name: "",
-    address: "",
-    gst: "",
-  });
+  const [client, setClient] = useState({ name: "", address: "", gst: "" });
   const [items, setItems] = useState([
     {
       id: 1,
@@ -67,7 +61,6 @@ const EditInvoice = () => {
   const [status, setStatus] = useState("Pending");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [errors, setErrors] = useState({});
-
   const [totals, setTotals] = useState({
     subTotal: 0,
     gstAmount: 0,
@@ -94,23 +87,18 @@ const EditInvoice = () => {
         const { data } = await invoiceService.getInvoiceById(id);
         const { phone, ...clientDataWithoutPhone } = data.client;
         setClient(clientDataWithoutPhone);
-
         const processedItems = data.items.map((item) => ({
           ...item,
           isCustom: !products.some((p) => p.name === item.name),
         }));
-
         setItems(processedItems);
         setGstRate(data.gstRate || 5);
         setInvoiceDate(
           data.date ? new Date(data.date).toISOString().split("T")[0] : "",
         );
         setStatus(data.status);
-
-        // Strip out "INV-" if it exists from the backend so the input only shows numbers
         const fetchedInvNo = data.invoiceNumber || "";
         setInvoiceNumber(fetchedInvNo.replace(/^INV-/, ""));
-
         if (data.lastEditedAt) {
           setAuditInfo({
             role: data.lastEditedRole || "Admin",
@@ -155,7 +143,6 @@ const EditInvoice = () => {
     const newItems = items.map((item) => {
       if (item.id === itemId) {
         let updatedItem = { ...item, [field]: value };
-
         if (field === "nameSelect") {
           if (value === "Custom") {
             updatedItem.isCustom = true;
@@ -168,7 +155,6 @@ const EditInvoice = () => {
             if (selectedProduct) updatedItem.hsn = selectedProduct.hsn;
           }
         }
-
         const qty = parseFloat(updatedItem.quantity) || 0;
         const price = parseFloat(updatedItem.price) || 0;
         updatedItem.total = qty * price;
@@ -223,16 +209,15 @@ const EditInvoice = () => {
       gstAmount: totals.gstAmount,
       grandTotal: totals.grandTotal,
       status,
-      invoiceNumber, // Just saving the exact number entered
+      invoiceNumber,
     };
-
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
       await invoiceService.updateInvoice(id, invoiceData, currentUser);
       toast.success("Invoice updated successfully!");
-      navigate(-1); // Use relative navigation for unified component
-    } catch (error) {
+      navigate(-1);
+    } catch (err) {
       toast.error("Failed to update invoice");
     } finally {
       setSaving(false);
@@ -255,7 +240,6 @@ const EditInvoice = () => {
       >
         <ArrowLeft size={18} className="mr-2" /> Back to Invoices
       </button>
-
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -263,7 +247,7 @@ const EditInvoice = () => {
               className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
             >
               <FileText size={24} />
-            </div>
+            </div>{" "}
             Edit Invoice
           </h1>
         </div>
@@ -322,7 +306,6 @@ const EditInvoice = () => {
                 </p>
               )}
             </div>
-
             <div className="space-y-1">
               <Input
                 label="Client Name"
@@ -595,7 +578,6 @@ const EditInvoice = () => {
           </Button>
         </div>
 
-        {/* Totals Section */}
         <div className="bg-[#09090B] p-8 rounded-2xl border border-zinc-800/60 shadow-lg flex justify-end print:shadow-none print:border-none print:bg-transparent print:p-0">
           <div className="w-full md:w-80 space-y-4">
             <div className="flex justify-between text-zinc-400 text-sm font-medium print:text-gray-600">
@@ -604,7 +586,6 @@ const EditInvoice = () => {
                 ₹ {totals.subTotal.toLocaleString("en-IN")}
               </span>
             </div>
-
             <div className="flex justify-between items-center text-zinc-400 text-sm print:text-gray-600">
               <span>Tax Category:</span>
               <select
@@ -626,7 +607,6 @@ const EditInvoice = () => {
                 </option>
               </select>
             </div>
-
             {gstRate > 0 && (
               <>
                 <div className="flex justify-between text-zinc-500 text-xs print:text-gray-600">
@@ -651,7 +631,6 @@ const EditInvoice = () => {
                 </div>
               </>
             )}
-
             <div
               className={`border-t border-zinc-800/60 pt-4 flex justify-between text-xl font-bold print:text-black print:border-gray-300 ${theme.primaryText}`}
             >
@@ -688,11 +667,10 @@ const EditInvoice = () => {
               <RefreshCcw size={18} className="animate-spin mr-2" />
             ) : (
               <Save size={18} className="mr-2" />
-            )}
+            )}{" "}
             {saving ? " Updating..." : " Update Invoice"}
           </Button>
         </div>
-
         {auditInfo && (
           <div
             className={`text-center text-[10px] font-mono text-zinc-500 uppercase tracking-[0.1em] pt-2 border-t border-zinc-800/60 px-4 print:hidden`}

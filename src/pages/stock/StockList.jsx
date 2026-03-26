@@ -127,7 +127,7 @@ const StockList = () => {
     checkBackupNeeded();
   }, []);
 
-  // 🚀 Fetch Logic with Pagination & Filters
+  // 🚀 Fetch Logic with 100% Backend Filtration
   const fetchStocks = async (isLoadMore = false) => {
     if (isLoadMore) setLoadingMore(true);
     else setLoading(true);
@@ -192,30 +192,14 @@ const StockList = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // Client-Side Fallback Filtering (If multiple ranges used)
-  const filteredStocks = useMemo(() => {
-    return stocks.filter((stock) => {
-      let matchesStockLevel = true;
-      if (filterStockLevel !== "All") {
-        const qty = Number(stock.quantity) || 0;
-        if (filterStockLevel === "Low") matchesStockLevel = qty < 100;
-        else if (filterStockLevel === "Medium")
-          matchesStockLevel = qty >= 100 && qty <= 1000;
-        else if (filterStockLevel === "High") matchesStockLevel = qty > 1000;
-      }
-      return matchesStockLevel;
-    });
-  }, [stocks, filterStockLevel]);
-
-  const activeFiltersCount = [filterCategory, filterStockLevel].filter(
-    (f) => f !== "All",
-  ).length;
+  const activeFiltersCount =
+    [filterCategory, filterStockLevel].filter((f) => f !== "All").length +
+    (searchTerm ? 1 : 0);
 
   // 🚀 ONLY EXPORTS VISIBLE DATA
   const handleExport = () => {
     try {
-      if (filteredStocks.length === 0)
-        return toast.info("No records to export.");
+      if (stocks.length === 0) return toast.info("No records to export.");
 
       const headers = [
         "Item Name",
@@ -225,7 +209,7 @@ const StockList = () => {
         "Unit Price",
         "Total Value",
       ];
-      const rows = filteredStocks.map((stock) => {
+      const rows = stocks.map((stock) => {
         const name = `"${stock.name || "Unknown"}"`;
         const category = `"${stock.category || "Purchasing Item"}"`;
         const quantity = stock.quantity || 0;
@@ -483,12 +467,16 @@ const StockList = () => {
               className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors duration-300 ${searchTerm ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
               size={16}
             />
+            {/* 🚀 UI LOCK: Search clears Stock Level */}
             <input
               type="text"
               placeholder="Search items..."
               className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setFilterStockLevel("All");
+              }}
             />
           </div>
         </div>
@@ -526,10 +514,14 @@ const StockList = () => {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
             />
           </div>
+          {/* 🚀 UI LOCK: Stock Level clears Search */}
           <div className="relative group">
             <select
               value={filterStockLevel}
-              onChange={(e) => setFilterStockLevel(e.target.value)}
+              onChange={(e) => {
+                setFilterStockLevel(e.target.value);
+                setSearchTerm("");
+              }}
               className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
               <option value="All" className="bg-[#09090B]">
@@ -581,7 +573,7 @@ const StockList = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/60 text-sm">
-              {filteredStocks.map((stock) => (
+              {stocks.map((stock) => (
                 <tr
                   key={stock._id}
                   id={stock._id}
@@ -688,7 +680,7 @@ const StockList = () => {
                   </td>
                 </tr>
               ))}
-              {filteredStocks.length === 0 && !loading && (
+              {stocks.length === 0 && !loading && (
                 <tr>
                   <td
                     colSpan="6"
@@ -702,7 +694,7 @@ const StockList = () => {
           </table>
 
           {/* 🚀 LOAD MORE BUTTON */}
-          {hasMore && filteredStocks.length > 0 && (
+          {hasMore && stocks.length > 0 && (
             <div className="flex justify-center p-6 border-t border-zinc-800/60">
               <Button
                 onClick={() => fetchStocks(true)}

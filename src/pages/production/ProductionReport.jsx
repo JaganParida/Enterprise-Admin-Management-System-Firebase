@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import productionService from "../../services/productionService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -28,11 +28,9 @@ import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import { Link, useLocation } from "react-router-dom";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
-// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
 const getPreviousMonthString = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
@@ -54,7 +52,6 @@ const ProductionReport = () => {
 
   const [activeTab, setActiveTab] = useState("production");
 
-  // 🚀 Highlight Animation State
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
@@ -107,19 +104,15 @@ const ProductionReport = () => {
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  // 🚀 SMART BACKUP STATES
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
-  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
 
-      // Agar local storage me backup verified nahi hai
       if (!localStorage.getItem(`backup_production_${prevMonth}`)) {
         try {
-          // Check production collection
           const qProd = query(
             collection(db, "production"),
             where("date", ">=", prevMonth),
@@ -128,7 +121,6 @@ const ProductionReport = () => {
           );
           const snapProd = await getDocs(qProd);
 
-          // Check labour collection
           const qLab = query(
             collection(db, "labour_payouts"),
             where("date", ">=", prevMonth),
@@ -137,7 +129,6 @@ const ProductionReport = () => {
           );
           const snapLab = await getDocs(qLab);
 
-          // Agar dono mein se kisi me bhi data hai, toh warning dikhao
           if (!snapProd.empty || !snapLab.empty) {
             setShowBackupWarning(prevMonth);
           }
@@ -150,7 +141,6 @@ const ProductionReport = () => {
     checkBackupNeeded();
   }, []);
 
-  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
@@ -169,7 +159,6 @@ const ProductionReport = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 FETCH DATA (100% Backend Filtered)
   const fetchLogs = async (isLoadMore = false) => {
     if (isLoadMore) setLoadingMore(true);
     else setLoading(true);
@@ -277,11 +266,11 @@ const ProductionReport = () => {
     });
   };
 
-  const filteredData = logs;
-
   const activeFiltersCount =
     [filterProduct, filterQuantity, filterDate].filter((f) => f !== "All")
-      .length + (filterExactDate ? 1 : 0);
+      .length +
+    (filterExactDate ? 1 : 0) +
+    (searchTerm ? 1 : 0);
 
   const handleDeleteClick = (entry, type) => {
     setEntryToDelete(entry);
@@ -321,7 +310,6 @@ const ProductionReport = () => {
     setTimeout(() => setWarningTooltip(null), 2500);
   };
 
-  // 🚀 FIXED: 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
@@ -342,7 +330,7 @@ const ProductionReport = () => {
           `No records found for ${monthToFetch} in ${activeTab}.`,
         );
 
-      let csvContent = "\uFEFF"; // UTF-8 BOM
+      let csvContent = "\uFEFF";
 
       if (activeTab === "production") {
         const headers = ["Date", "Item Name", "Size", "Quantity (Output)"];
@@ -385,7 +373,6 @@ const ProductionReport = () => {
       document.body.removeChild(link);
       toast.success(`Backup for ${monthToFetch} downloaded securely!`);
 
-      // 🚀 Instantly removes the warning after successful backup
       localStorage.setItem(`backup_production_${monthToFetch}`, "true");
       if (showBackupWarning === monthToFetch) {
         setShowBackupWarning(null);
@@ -396,15 +383,14 @@ const ProductionReport = () => {
     }
   };
 
-  // 🚀 ONLY EXPORTS VISIBLE DATA (Maximum 50 or what is loaded in table)
   const handleExport = () => {
     try {
-      if (filteredData.length === 0) return toast.info("No records to export");
-      let csvContent = "\uFEFF"; // UTF-8 BOM
+      if (logs.length === 0) return toast.info("No records to export");
+      let csvContent = "\uFEFF";
 
       if (activeTab === "production") {
         const headers = ["Date", "Item Name", "Size", "Quantity (Output)"];
-        const rows = filteredData.map((log) => {
+        const rows = logs.map((log) => {
           const dateStr = log.date
             ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
             : "-";
@@ -421,7 +407,7 @@ const ProductionReport = () => {
           "Paid",
           "Due",
         ];
-        const rows = filteredData.map((log) => {
+        const rows = logs.map((log) => {
           const dateStr = log.date
             ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
             : "-";
@@ -639,12 +625,17 @@ const ProductionReport = () => {
               size={16}
               className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${searchTerm ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
+            {/* 🚀 UI LOCK: SEARCH CLEARS OTHER INEQUALITIES */}
             <input
               type="text"
               placeholder={`Search ${activeTab === "production" ? "product" : "name"}...`}
               className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setFilterQuantity("All");
+                setFilterDate("All");
+              }}
             />
           </div>
           <div className="w-full sm:w-auto">
@@ -724,13 +715,13 @@ const ProductionReport = () => {
                       value="6-12 Brick (60mm)"
                       className="text-zinc-300 font-normal"
                     >
-                      6-12 Brick (60mm)
+                      6/12 Brick (60mm)
                     </option>
                     <option
                       value="6-12 Brick (80mm)"
                       className="text-zinc-300 font-normal"
                     >
-                      6-12 Brick (80mm)
+                      6/12 Brick (80mm)
                     </option>
                     <option
                       value="6/6 Brick (60mm)"
@@ -780,10 +771,15 @@ const ProductionReport = () => {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
                 />
               </div>
+              {/* 🚀 UI LOCK: QUANTITY CLEARS SEARCH & DATE RANGE */}
               <div className="relative group">
                 <select
                   value={filterQuantity}
-                  onChange={(e) => setFilterQuantity(e.target.value)}
+                  onChange={(e) => {
+                    setFilterQuantity(e.target.value);
+                    setSearchTerm("");
+                    setFilterDate("All");
+                  }}
                   className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
                 >
                   <option value="All" className="bg-[#09090B]">
@@ -806,12 +802,15 @@ const ProductionReport = () => {
               </div>
             </>
           )}
+          {/* 🚀 UI LOCK: DATE RANGE CLEARS SEARCH & QUANTITY */}
           <div className="relative group">
             <select
               value={filterDate}
               onChange={(e) => {
                 setFilterDate(e.target.value);
-                if (e.target.value !== "All") setFilterExactDate("");
+                setFilterExactDate("");
+                setSearchTerm("");
+                setFilterQuantity("All");
               }}
               className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
@@ -833,6 +832,7 @@ const ProductionReport = () => {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-zinc-400"
             />
           </div>
+          {/* 🚀 UI LOCK UPDATED: EXACT DATE EQUALITY ALLOWS SEARCH MIXING */}
           <div className="relative group flex items-center">
             <div
               className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filterExactDate ? theme.primaryText : "text-zinc-500"}`}
@@ -850,6 +850,7 @@ const ProductionReport = () => {
               className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryBorder} ${theme.primaryText} ${theme.primaryBg}` : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"}`}
             />
           </div>
+
           {activeFiltersCount > 0 && (
             <button
               onClick={() => {
@@ -879,7 +880,7 @@ const ProductionReport = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {filteredData.map((log) => {
+                {logs.map((log) => {
                   const { name, size } = parseProduct(log.productName);
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
@@ -985,7 +986,7 @@ const ProductionReport = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {filteredData.map((log) => {
+                {logs.map((log) => {
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
                   return (
@@ -996,7 +997,7 @@ const ProductionReport = () => {
                         activeHighlight === log._id
                           ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
                           : "border-transparent hover:bg-zinc-800/30"
-                      }`}
+                      } `}
                     >
                       <td className="p-4 md:pl-6 align-middle">
                         <div className="text-zinc-400 font-mono text-xs mb-2">
@@ -1095,7 +1096,7 @@ const ProductionReport = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {filteredData.map((log) => {
+                {logs.map((log) => {
                   const hasEdits =
                     log.editHistory && log.editHistory.length > 0;
                   return (
@@ -1188,7 +1189,7 @@ const ProductionReport = () => {
               </tbody>
             </table>
           )}
-          {filteredData.length === 0 && !loading && (
+          {logs.length === 0 && !loading && (
             <div className="p-16 text-center w-full flex flex-col items-center border-t border-zinc-800/60">
               <div
                 className={`w-16 h-16 rounded-full bg-zinc-800/50 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto mb-4`}
@@ -1205,7 +1206,7 @@ const ProductionReport = () => {
           )}
 
           {/* 🚀 LOAD MORE BUTTON */}
-          {hasMore && filteredData.length > 0 && (
+          {hasMore && logs.length > 0 && (
             <div className="flex justify-center p-6 border-t border-zinc-800/60">
               <Button
                 onClick={() => fetchLogs(true)}

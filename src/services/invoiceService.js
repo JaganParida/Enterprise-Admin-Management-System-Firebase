@@ -12,10 +12,17 @@ import {
   limit,
   where,
   startAfter,
+  writeBatch,
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const invCollection = collection(db, "invoices");
+
+const getLocalISTDate = () => {
+  const date = new Date();
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString();
+};
 
 const getUpdatedHistory = async (id, user) => {
   const docRef = doc(db, "invoices", id);
@@ -29,7 +36,7 @@ const getUpdatedHistory = async (id, user) => {
   const currentEdit = {
     by: user?.email || "Unknown",
     role: user?.role || "Admin",
-    at: new Date().toISOString(),
+    at: getLocalISTDate(),
   };
 
   currentHistory.push(currentEdit);
@@ -47,7 +54,7 @@ const invoiceService = {
     let constraints = [];
     let hasInequality = false;
 
-    // 1. EQUALITY FILTERS (Can mix with anything)
+    // 1. EQUALITY FILTERS
     if (filters.status && filters.status !== "All") {
       constraints.push(where("status", "==", filters.status));
     }
@@ -55,18 +62,16 @@ const invoiceService = {
       constraints.push(where("date", "==", filters.exactDate));
     }
 
-    // 2. INEQUALITY FILTERS (Firebase allows only ONE per query)
-
-    // Priority A: Search
+    // 2. MUTUALLY EXCLUSIVE INEQUALITY FILTERS
     if (filters.search) {
-      constraints.push(where("invoiceNumber", ">=", filters.search));
-      constraints.push(where("invoiceNumber", "<=", filters.search + "\uf8ff"));
-      constraints.push(orderBy("invoiceNumber"));
+      const searchLower = filters.search.toLowerCase();
+      constraints.push(where("invoiceNumberLower", ">=", searchLower));
+      constraints.push(
+        where("invoiceNumberLower", "<=", searchLower + "\uf8ff"),
+      );
+      constraints.push(orderBy("invoiceNumberLower"));
       hasInequality = true;
-    }
-
-    // Priority B: Amount Filter
-    if (filters.amount && filters.amount !== "All" && !hasInequality) {
+    } else if (filters.amount && filters.amount !== "All" && !hasInequality) {
       if (filters.amount === "Under10k") {
         constraints.push(where("grandTotal", "<", 10000));
       } else if (filters.amount === "10k-50k") {
@@ -79,10 +84,7 @@ const invoiceService = {
       }
       constraints.push(orderBy("grandTotal", "desc"));
       hasInequality = true;
-    }
-
-    // Priority C: Date Range Filter
-    if (
+    } else if (
       filters.date &&
       filters.date !== "All" &&
       !filters.exactDate &&
@@ -95,13 +97,12 @@ const invoiceService = {
         pastDate.setDate(today.getDate() - 30);
       else if (filters.date === "ThisMonth") pastDate.setDate(1);
 
-      const pastDateStr = pastDate.toISOString().split("T")[0];
+      const pastDateStr = getLocalISTDate().split("T")[0]; // Using local safe date
       constraints.push(where("date", ">=", pastDateStr));
       constraints.push(orderBy("date", "desc"));
       hasInequality = true;
     }
 
-    // Fallback order if no range filters are applied
     if (!hasInequality && !filters.exactDate) {
       constraints.push(orderBy("createdAt", "desc"));
     }
@@ -129,7 +130,8 @@ const invoiceService = {
     try {
       const payload = {
         ...invoiceData,
-        createdAt: new Date().toISOString(),
+        invoiceNumberLower: String(invoiceData.invoiceNumber).toLowerCase(), // For safe search
+        createdAt: getLocalISTDate(),
         createdBy: user?.email || "Unknown",
         createdRole: user?.role || "Admin",
       };
@@ -159,6 +161,7 @@ const invoiceService = {
     );
     const payload = {
       ...invoiceData,
+      invoiceNumberLower: String(invoiceData.invoiceNumber).toLowerCase(),
       lastEditedBy: currentEdit.by,
       lastEditedRole: currentEdit.role,
       lastEditedAt: currentEdit.at,
@@ -183,7 +186,6 @@ const invoiceService = {
     return { message: "Status updated" };
   },
 
-  // 3. 🚀 SECURE DELETE (RBAC Check)
   deleteInvoice: async (id, user) => {
     const userRole = user?.data?.role || user?.role;
     if (userRole === "manager") {
@@ -194,7 +196,7 @@ const invoiceService = {
     return { message: "Invoice deleted" };
   },
 
-  // 4. 🚀 SECURE WIPE ALL (Password Re-auth + RBAC Check)
+  // 4. 🚀 SECURE WIPE ALL (Recursive Batched Deleter with 10k Limit)
   deleteAllInvoices: async ({ password, email, user }) => {
     const userRole = user?.data?.role || user?.role;
     if (userRole === "manager") {
@@ -217,15 +219,43 @@ const invoiceService = {
       throw new Error("Incorrect Admin Password.");
     }
 
+    let totalDeleted = 0;
+    const SAFE_DAILY_LIMIT = 10000;
+
+    const deleteInBatches = async () => {
+      if (totalDeleted >= SAFE_DAILY_LIMIT) return "PARTIAL_SUCCESS";
+
+      const q = query(invCollection, limit(500));
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) return "FULL_SUCCESS";
+
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((document) => {
+        batch.delete(document.ref);
+        totalDeleted++;
+      });
+      await batch.commit();
+      return await deleteInBatches();
+    };
+
     try {
-      const snapshot = await getDocs(invCollection);
-      const deletePromises = snapshot.docs.map((document) =>
-        deleteDoc(doc(db, "invoices", document.id)),
-      );
-      await Promise.all(deletePromises);
-      return { message: "All invoices deleted successfully" };
+      const result = await deleteInBatches();
+      if (result === "FULL_SUCCESS") {
+        return {
+          success: true,
+          isPartial: false,
+          message: "All Invoices cleared successfully!",
+        };
+      } else {
+        return {
+          success: true,
+          isPartial: true,
+          message: `⚠️ System Protection: ${totalDeleted.toLocaleString()} invoices wiped. Daily limit saved. Please wipe remaining tomorrow.`,
+        };
+      }
     } catch (error) {
-      throw new Error("Failed to clear database. Admin rights required.");
+      console.error("Wipe Error:", error);
+      throw new Error("Wipe failed midway. Please try again.");
     }
   },
 };

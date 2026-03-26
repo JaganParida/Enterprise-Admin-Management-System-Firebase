@@ -159,7 +159,6 @@ const AddEmployee = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* INDIAN PHONE VALIDATION */}
             <Input
               label="Phone Number"
               name="phone"
@@ -167,7 +166,6 @@ const AddEmployee = () => {
               value={formData.phone}
               onChange={(e) => {
                 let val = e.target.value.replace(/\D/g, "");
-                // Must start with 6, 7, 8, or 9
                 if (val.length > 0 && !["6", "7", "8", "9"].includes(val[0])) {
                   val = "";
                 }
@@ -242,7 +240,6 @@ const AddEmployee = () => {
               required
               className={`${theme.primaryText} font-bold`}
             />
-            {/* SALARY TAKEN (OPTIONAL UI) */}
             <Input
               label="Salary Taken (₹) - Opt"
               name="salaryTaken"

@@ -44,18 +44,48 @@ const maintenanceService = {
     }
   },
 
-  // 2 & 3. 🚀 PAGINATION & BACKEND FILTERING
+  // 2 & 3. 🚀 PAGINATION & 100% BACKEND FILTERING
   getLogs: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
     try {
       let queryConstraints = [];
+      let hasInequality = false;
 
-      // Date Filtering
+      // --- 1. EQUALITY FILTERS ---
       if (filters.exactDate) {
-        queryConstraints.push(where("date", ">=", filters.exactDate));
+        // Using strict equality for dates mapped to YYYY-MM-DD
+        queryConstraints.push(where("date", "==", filters.exactDate));
+      }
+
+      // --- 2. MUTUALLY EXCLUSIVE INEQUALITY FILTERS ---
+      // Firebase allows only ONE inequality filter. The UI locks ensure only one is passed.
+      if (filters.search) {
+        queryConstraints.push(where("vehicleNo", ">=", filters.search));
         queryConstraints.push(
-          where("date", "<=", filters.exactDate + "\uf8ff"),
+          where("vehicleNo", "<=", filters.search + "\uf8ff"),
         );
-      } else if (filters.dateFilter && filters.dateFilter !== "All") {
+        queryConstraints.push(orderBy("vehicleNo"));
+        hasInequality = true;
+      } else if (
+        filters.amountFilter &&
+        filters.amountFilter !== "Any Amount"
+      ) {
+        if (filters.amountFilter === "Under ₹10k") {
+          queryConstraints.push(where("cost", "<", 10000));
+        } else if (filters.amountFilter === "₹10k - ₹50k") {
+          queryConstraints.push(
+            where("cost", ">=", 10000),
+            where("cost", "<=", 50000),
+          );
+        } else if (filters.amountFilter === "Over ₹50k") {
+          queryConstraints.push(where("cost", ">", 50000));
+        }
+        queryConstraints.push(orderBy("cost", "desc"));
+        hasInequality = true;
+      } else if (
+        filters.dateFilter &&
+        filters.dateFilter !== "All" &&
+        !filters.exactDate
+      ) {
         const today = new Date();
         let targetDate = new Date();
 
@@ -68,11 +98,18 @@ const maintenanceService = {
         queryConstraints.push(
           where("date", ">=", targetDate.toISOString().split("T")[0]),
         );
+        queryConstraints.push(orderBy("date", "desc"));
+        hasInequality = true;
       }
 
-      queryConstraints.push(orderBy("date", "desc"));
-      if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
+      // Default sorting if no inequalities
+      if (!hasInequality && !filters.exactDate) {
+        queryConstraints.push(orderBy("date", "desc"));
+      }
+
+      // --- 3. APPLY PAGINATION ---
       queryConstraints.push(limit(pageSize));
+      if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
 
       const q = query(maintCollection, ...queryConstraints);
       const snapshot = await getDocs(q);
@@ -81,34 +118,6 @@ const maintenanceService = {
         _id: doc.id,
         ...doc.data(),
       }));
-
-      // Client-side fallback for Search & Amount Ranges (Due to Firebase limits)
-      if (filters.search) {
-        const searchLower = filters.search.toLowerCase();
-        fetchedData = fetchedData.filter(
-          (log) =>
-            String(log.vehicleNo || "")
-              .toLowerCase()
-              .includes(searchLower) ||
-            String(log.serviceType || "")
-              .toLowerCase()
-              .includes(searchLower) ||
-            String(log.description || "")
-              .toLowerCase()
-              .includes(searchLower),
-        );
-      }
-
-      if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
-        fetchedData = fetchedData.filter((log) => {
-          const amt = Number(log.cost) || 0;
-          if (filters.amountFilter === "Under ₹10k") return amt < 10000;
-          if (filters.amountFilter === "₹10k - ₹50k")
-            return amt >= 10000 && amt <= 50000;
-          if (filters.amountFilter === "Over ₹50k") return amt > 50000;
-          return true;
-        });
-      }
 
       return {
         data: fetchedData,
@@ -171,7 +180,8 @@ const maintenanceService = {
     if (userRole === "manager") {
       throw new Error("Action Denied: Managers cannot delete records.");
     }
-    await deleteDoc(doc(db, "maintenances", id));
+    const docRef = doc(db, "maintenances", id);
+    await deleteDoc(docRef);
     return { message: "Deleted" };
   },
 

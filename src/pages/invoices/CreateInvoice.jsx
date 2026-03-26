@@ -14,7 +14,6 @@ const CreateInvoice = () => {
   const { admin } = useAuth();
   const [loading, setLoading] = useState(false);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -31,14 +30,8 @@ const CreateInvoice = () => {
     indicatorLine: isTransport ? "bg-cyan-500" : "bg-indigo-500",
   };
 
-  // Form States
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [client, setClient] = useState({
-    name: "",
-    address: "",
-    gst: "",
-  });
-
+  const [client, setClient] = useState({ name: "", address: "", gst: "" });
   const [items, setItems] = useState([
     {
       id: 1,
@@ -50,15 +43,12 @@ const CreateInvoice = () => {
       isCustom: false,
     },
   ]);
-  const [gstRate, setGstRate] = useState(5); // Default GST for Bricks is usually 5%
+  const [gstRate, setGstRate] = useState(5);
   const [invoiceDate, setInvoiceDate] = useState(
     new Date().toISOString().split("T")[0],
   );
   const [status, setStatus] = useState("Pending");
-
-  // Validation State
   const [errors, setErrors] = useState({});
-
   const [totals, setTotals] = useState({
     subTotal: 0,
     gstAmount: 0,
@@ -67,7 +57,6 @@ const CreateInvoice = () => {
     grandTotal: 0,
   });
 
-  // Pre-defined Products
   const products = [
     { name: "Fly Ash Bricks (10 inch)", hsn: "6815" },
     { name: "Fly Ash Bricks (9 inch)", hsn: "6815" },
@@ -85,7 +74,6 @@ const CreateInvoice = () => {
     setTotals({ subTotal, gstAmount, cgst, sgst, grandTotal });
   }, [items, gstRate]);
 
-  // Handle Client Input with Error Clearing
   const handleClientChange = (field, value) => {
     setClient({ ...client, [field]: value });
     if (errors[field]) {
@@ -99,8 +87,6 @@ const CreateInvoice = () => {
     const newItems = items.map((item) => {
       if (item.id === id) {
         let updatedItem = { ...item, [field]: value };
-
-        // Handle dropdown selection vs custom input
         if (field === "nameSelect") {
           if (value === "Custom") {
             updatedItem.isCustom = true;
@@ -110,12 +96,9 @@ const CreateInvoice = () => {
             updatedItem.isCustom = false;
             updatedItem.name = value;
             const selectedProduct = products.find((p) => p.name === value);
-            if (selectedProduct) {
-              updatedItem.hsn = selectedProduct.hsn;
-            }
+            if (selectedProduct) updatedItem.hsn = selectedProduct.hsn;
           }
         }
-
         const qty = parseFloat(updatedItem.quantity) || 0;
         const price = parseFloat(updatedItem.price) || 0;
         updatedItem.total = qty * price;
@@ -124,8 +107,6 @@ const CreateInvoice = () => {
       return item;
     });
     setItems(newItems);
-
-    // Clear item-level errors
     if (errors[`item_${id}_${field}`]) {
       const newErrors = { ...errors };
       delete newErrors[`item_${id}_${field}`];
@@ -146,54 +127,41 @@ const CreateInvoice = () => {
         isCustom: false,
       },
     ]);
-
   const removeItem = (id) => {
     if (items.length > 1) setItems(items.filter((item) => item.id !== id));
   };
 
-  // Core Validation Logic
   const validateForm = () => {
     let tempErrors = {};
     const gstinRegex =
       /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-
     if (!invoiceNumber.trim())
       tempErrors.invoiceNumber = "Invoice number is mandatory";
     if (!client.name.trim()) tempErrors.name = "Client name is mandatory";
-
     if (client.gst) {
-      if (client.gst.length !== 15) {
+      if (client.gst.length !== 15)
         tempErrors.gst = "GSTIN must be exactly 15 characters";
-      } else if (!gstinRegex.test(client.gst)) {
-        tempErrors.gst = "Invalid Indian GST format (e.g. 21AAAAA0000A1Z5)";
-      }
+      else if (!gstinRegex.test(client.gst))
+        tempErrors.gst = "Invalid Indian GST format";
     }
-
     items.forEach((item) => {
       if (!item.name.trim()) tempErrors[`item_${item.id}_name`] = true;
       if (item.quantity <= 0) tempErrors[`item_${item.id}_qty`] = true;
       if (item.price <= 0) tempErrors[`item_${item.id}_price`] = true;
     });
-
     setErrors(tempErrors);
     return Object.keys(tempErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (!validateForm()) {
-      toast.error("Please correct the errors in the form");
-      return;
-    }
-
+    if (!validateForm())
+      return toast.error("Please correct the errors in the form");
     setLoading(true);
 
-    // Clean items array (remove the 'isCustom' property before sending to DB)
     const cleanItems = items.map(({ isCustom, nameSelect, ...rest }) => rest);
-
     const invoiceData = {
-      invoiceNumber, // Just saving the exact number entered
+      invoiceNumber,
       client,
       items: cleanItems,
       date: invoiceDate,
@@ -209,7 +177,7 @@ const CreateInvoice = () => {
         admin || { email: "Unknown", role: "admin" };
       await invoiceService.createInvoice(invoiceData, currentUser);
       toast.success("Invoice generated successfully!");
-      navigate(-1); // Use relative navigation to support both transport and enterprise
+      navigate(-1);
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to create invoice");
     } finally {
@@ -219,7 +187,6 @@ const CreateInvoice = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4 print:w-full print:max-w-none print:m-0 print:p-0 print:bg-white">
-      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -227,7 +194,7 @@ const CreateInvoice = () => {
               className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
             >
               <FileText size={24} />
-            </div>
+            </div>{" "}
             Create Tax Invoice
           </h1>
           <p className="text-zinc-500 text-sm mt-1 ml-1">
@@ -254,7 +221,6 @@ const CreateInvoice = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
-        {/* Client Details */}
         <div className="bg-[#09090B] p-6 md:p-8 rounded-2xl border border-zinc-800/60 shadow-lg relative overflow-hidden print:shadow-none print:border-none print:bg-transparent print:p-0">
           <h3 className="text-lg font-bold text-white mb-6 border-b border-zinc-800/60 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
             <span
@@ -263,14 +229,13 @@ const CreateInvoice = () => {
             Purchaser Details
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Pure Number Input for Invoice */}
             <div className="space-y-1">
               <Input
                 label="Invoice Number"
                 placeholder="e.g. 1003"
                 value={invoiceNumber}
                 onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, ""); // Allow only numbers
+                  const val = e.target.value.replace(/\D/g, "");
                   setInvoiceNumber(val);
                   if (errors.invoiceNumber) {
                     const newErrors = { ...errors };
@@ -290,7 +255,6 @@ const CreateInvoice = () => {
                 </p>
               )}
             </div>
-
             <div className="space-y-1">
               <Input
                 label="Client Name"
@@ -307,7 +271,6 @@ const CreateInvoice = () => {
                 </p>
               )}
             </div>
-
             <Input
               label="Full Address"
               placeholder="Purchaser billing address"
@@ -315,7 +278,6 @@ const CreateInvoice = () => {
               onChange={(e) => handleClientChange("address", e.target.value)}
               className="md:col-span-2"
             />
-
             <div className="space-y-1">
               <Input
                 label="GSTIN (Optional)"
@@ -340,7 +302,6 @@ const CreateInvoice = () => {
           </div>
         </div>
 
-        {/* Items Table */}
         <div className="bg-[#09090B] p-6 md:p-8 rounded-2xl border border-zinc-800/60 shadow-lg print:shadow-none print:border-none print:bg-transparent print:p-0">
           <h3 className="text-lg font-bold text-white mb-6 border-b border-zinc-800/60 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
             <span
@@ -578,7 +539,6 @@ const CreateInvoice = () => {
           </Button>
         </div>
 
-        {/* Totals Section */}
         <div className="bg-[#09090B] p-8 rounded-2xl border border-zinc-800/60 shadow-lg flex justify-end print:shadow-none print:border-none print:bg-transparent print:p-0">
           <div className="w-full md:w-80 space-y-4">
             <div className="flex justify-between text-zinc-400 text-sm font-medium print:text-gray-600">
@@ -587,7 +547,6 @@ const CreateInvoice = () => {
                 ₹ {totals.subTotal.toLocaleString("en-IN")}
               </span>
             </div>
-
             <div className="flex justify-between items-center text-zinc-400 text-sm print:text-gray-600">
               <span>Tax Category:</span>
               <select
@@ -609,7 +568,6 @@ const CreateInvoice = () => {
                 </option>
               </select>
             </div>
-
             {gstRate > 0 && (
               <>
                 <div className="flex justify-between text-zinc-500 text-xs print:text-gray-600">
@@ -634,7 +592,6 @@ const CreateInvoice = () => {
                 </div>
               </>
             )}
-
             <div
               className={`border-t border-zinc-800/60 pt-4 flex justify-between text-xl font-bold print:text-black print:border-gray-300 ${theme.primaryText}`}
             >

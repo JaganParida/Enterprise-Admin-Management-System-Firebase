@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import fuelService from "../../services/fuelService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -26,11 +26,9 @@ import {
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import Button from "../../components/common/Button";
-// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
-// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
 const getPreviousMonthString = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
@@ -51,12 +49,10 @@ const FuelReport = () => {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // 🚀 Highlight Animation State
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -95,22 +91,18 @@ const FuelReport = () => {
     exactDate: "",
   });
 
-  // 🚀 SMART BACKUP STATES
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
 
-      // Agar local storage me backup verified nahi hai
       if (!localStorage.getItem(`backup_fuel_${prevMonth}`)) {
         try {
-          // Database me check karo (using prefix string match hack on date string)
           const q = query(
             collection(db, "fuels"),
             where("date", ">=", prevMonth),
@@ -119,7 +111,6 @@ const FuelReport = () => {
           );
           const snap = await getDocs(q);
 
-          // Agar data hai, toh hi warning dikhao
           if (!snap.empty) {
             setShowBackupWarning(prevMonth);
           }
@@ -132,7 +123,6 @@ const FuelReport = () => {
     checkBackupNeeded();
   }, []);
 
-  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
@@ -148,7 +138,7 @@ const FuelReport = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 FETCH DATA (Backend Filtered & Paginated)
+  // 🚀 100% BACKEND FETCH LOGIC
   const fetchLogs = async (isLoadMore = false) => {
     if (isLoadMore) setLoadingMore(true);
     else setLoading(true);
@@ -179,7 +169,6 @@ const FuelReport = () => {
     }
   };
 
-  // Trigger Fetch on Filter Changes
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       fetchLogs(false);
@@ -218,9 +207,10 @@ const FuelReport = () => {
   const activeFiltersCount =
     [filters.amountFilter, filters.dateFilter].filter(
       (f) => f !== "Any Amount" && f !== "All",
-    ).length + (filters.exactDate ? 1 : 0);
+    ).length +
+    (filters.exactDate ? 1 : 0) +
+    (filters.search ? 1 : 0);
 
-  // 🚀 FIXED: 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
@@ -262,7 +252,6 @@ const FuelReport = () => {
       document.body.removeChild(link);
       toast.success(`Backup for ${monthToFetch} downloaded securely!`);
 
-      // 🚀 Instantly removes the warning after successful backup
       localStorage.setItem(`backup_fuel_${monthToFetch}`, "true");
       if (showBackupWarning === monthToFetch) {
         setShowBackupWarning(null);
@@ -273,7 +262,6 @@ const FuelReport = () => {
     }
   };
 
-  // 🚀 ONLY EXPORTS VISIBLE DATA (Maximum 50 or what is loaded in table)
   const handleExport = () => {
     try {
       if (logs.length === 0) return toast.info("No records to export");
@@ -426,7 +414,6 @@ const FuelReport = () => {
       <div
         className={`bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl border-zinc-800/60`}
       >
-        {/* SEARCH & EXPORT BAR */}
         <div
           className={`p-5 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-3xl bg-zinc-900/10 border-zinc-800/60`}
         >
@@ -435,13 +422,19 @@ const FuelReport = () => {
               size={16}
               className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
+            {/* 🚀 UI LOCK: Search clears other inequalities */}
             <input
               type="text"
               placeholder="Search vehicle..."
               className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-200 outline-none transition-all shadow-inner ${theme.primaryFocus}`}
               value={filters.search}
               onChange={(e) =>
-                setFilters({ ...filters, search: e.target.value })
+                setFilters({
+                  ...filters,
+                  search: e.target.value,
+                  amountFilter: "Any Amount",
+                  dateFilter: "All",
+                })
               }
             />
           </div>
@@ -454,7 +447,6 @@ const FuelReport = () => {
           </Button>
         </div>
 
-        {/* PROFESSIONAL FILTRATION UI */}
         <div
           className={`p-4 border-b bg-[#09090B] flex flex-wrap items-center gap-4 relative z-20 border-zinc-800/60`}
         >
@@ -471,11 +463,17 @@ const FuelReport = () => {
             )}
           </div>
 
+          {/* 🚀 UI LOCK: Amount Filter clears Search and Date Range */}
           <div className="relative group">
             <select
               value={filters.amountFilter}
               onChange={(e) =>
-                setFilters({ ...filters, amountFilter: e.target.value })
+                setFilters({
+                  ...filters,
+                  amountFilter: e.target.value,
+                  search: "",
+                  dateFilter: "All",
+                })
               }
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
@@ -490,6 +488,7 @@ const FuelReport = () => {
             />
           </div>
 
+          {/* 🚀 UI LOCK: Date Range clears Search and Amount */}
           <div className="relative group">
             <select
               value={filters.dateFilter}
@@ -498,6 +497,8 @@ const FuelReport = () => {
                   ...filters,
                   dateFilter: e.target.value,
                   exactDate: "",
+                  search: "",
+                  amountFilter: "Any Amount",
                 })
               }
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
@@ -867,7 +868,7 @@ const FuelReport = () => {
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-indigo-500/10 text-indigo-400" : "bg-zinc-800 text-zinc-500"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
@@ -877,7 +878,7 @@ const FuelReport = () => {
                       >
                         {log.role || "ADMIN"}
                       </h4>
-                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
+                      <p className="text-zinc-500 text-[10px] font-mono mt-0.5">
                         {log.by || "admin@system.com"}
                       </p>
                       <p
@@ -889,15 +890,12 @@ const FuelReport = () => {
                           year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
-                          second: "2-digit",
                         })}
                       </p>
                     </div>
                   </div>
                   {index === 0 && (
-                    <div
-                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
-                    >
+                    <div className="bg-indigo-500/10 border-indigo-500/20 text-indigo-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
                       LATEST
                     </div>
                   )}

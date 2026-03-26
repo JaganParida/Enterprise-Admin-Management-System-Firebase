@@ -50,7 +50,7 @@ const EditEmployee = () => {
     phone: "",
     address: "",
     initialSalary: "",
-    salaryTaken: "", // Strictly Optional
+    salaryTaken: "",
     idType: "Aadhar",
     idNumber: "",
     status: "Active",
@@ -90,12 +90,11 @@ const EditEmployee = () => {
       }
     };
     fetchEmployee();
-  }, [id]);
+  }, [id, toast]);
 
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  // SMART ID VALIDATION
   const handleIdChange = (e) => {
     let val = e.target.value.toUpperCase();
     if (formData.idType === "Aadhar") {
@@ -150,7 +149,7 @@ const EditEmployee = () => {
         admin || { email: "Unknown", role: "admin" };
       await employeeService.updateEmployee(id, formData, currentUser);
       toast.success("Employee profile updated successfully.");
-      navigate(-1); // Go back appropriately
+      navigate(-1);
     } catch (err) {
       console.error("Update Error:", err);
       toast.error("Failed to update employee.");
@@ -160,7 +159,17 @@ const EditEmployee = () => {
     }
   };
 
-  if (loading) return <Loader />;
+  // 🚀 100% NO-LAG EARLY RETURN LOADER
+  if (loading) {
+    return (
+      <div className="w-full h-full min-h-[80vh] flex flex-col items-center justify-center animate-in fade-in duration-500">
+        <Loader />
+        <p className="text-zinc-500 mt-4 font-mono text-[10px] font-bold uppercase tracking-widest animate-pulse">
+          Loading Profile...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
@@ -217,7 +226,6 @@ const EditEmployee = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* INDIAN PHONE VALIDATION */}
             <Input
               label="Phone Number"
               name="phone"
@@ -306,7 +314,6 @@ const EditEmployee = () => {
               required
               className={`${theme.primaryText} font-bold`}
             />
-            {/* SALARY TAKEN (OPTIONAL UI) */}
             <Input
               label="Salary Taken (₹) - Opt"
               name="salaryTaken"

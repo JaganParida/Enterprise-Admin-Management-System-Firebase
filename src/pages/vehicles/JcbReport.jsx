@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import jcbService from "../../services/jcbService";
 import { useUI } from "../../context/UIProvider";
@@ -28,11 +28,9 @@ import {
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import Button from "../../components/common/Button";
-// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
-// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
 const getPreviousMonthString = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
@@ -48,17 +46,14 @@ const JcbReport = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🚀 Pagination States
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // 🚀 Highlight Animation State
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -99,22 +94,18 @@ const JcbReport = () => {
     exactDate: "",
   });
 
-  // 🚀 SMART BACKUP STATES
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
 
-      // Agar local storage me backup verified nahi hai
       if (!localStorage.getItem(`backup_jcb_${prevMonth}`)) {
         try {
-          // Database me check karo ki kya pichle mahine ka koi bhi data exist karta hai
           const q = query(
             collection(db, "jcb_logs"),
             where("date", ">=", prevMonth),
@@ -123,7 +114,6 @@ const JcbReport = () => {
           );
           const snap = await getDocs(q);
 
-          // Agar data hai, toh hi warning dikhao
           if (!snap.empty) {
             setShowBackupWarning(prevMonth);
           }
@@ -136,7 +126,6 @@ const JcbReport = () => {
     checkBackupNeeded();
   }, []);
 
-  // 🚀 Scroll & Highlight Effect
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
@@ -150,7 +139,7 @@ const JcbReport = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 Fetch Logic with Pagination
+  // 🚀 100% BACKEND FETCH LOGIC
   const fetchLogs = async (isLoadMore = false) => {
     if (isLoadMore) setLoadingMore(true);
     else setLoading(true);
@@ -162,6 +151,7 @@ const JcbReport = () => {
       );
       if (isLoadMore) setLogs((prev) => [...prev, ...(response.data || [])]);
       else setLogs(response.data || []);
+
       setLastDoc(response.lastVisible || null);
       setHasMore(response.data && response.data.length === 50);
     } catch (error) {
@@ -176,7 +166,6 @@ const JcbReport = () => {
     }
   };
 
-  // Trigger Fetch on Filter Change
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       fetchLogs(false);
@@ -214,9 +203,10 @@ const JcbReport = () => {
 
   const activeFiltersCount =
     [filters.vehicleFilter, filters.dateFilter].filter((f) => f !== "All")
-      .length + (filters.exactDate ? 1 : 0);
+      .length +
+    (filters.exactDate ? 1 : 0) +
+    (filters.search ? 1 : 0);
 
-  // 🚀 FIXED: 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
@@ -262,7 +252,6 @@ const JcbReport = () => {
 
       toast.success(`Backup for ${monthToFetch} downloaded securely!`);
 
-      // 🚀 Instantly removes the warning after successful backup
       localStorage.setItem(`backup_jcb_${monthToFetch}`, "true");
       if (showBackupWarning === monthToFetch) {
         setShowBackupWarning(null);
@@ -273,7 +262,6 @@ const JcbReport = () => {
     }
   };
 
-  // 🚀 ONLY EXPORTS VISIBLE DATA
   const handleExport = () => {
     try {
       if (logs.length === 0) return toast.info("No records to export");
@@ -296,8 +284,9 @@ const JcbReport = () => {
       });
       const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
+      link.href = url;
       link.setAttribute(
         "download",
         `JCB_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
@@ -374,7 +363,7 @@ const JcbReport = () => {
             </button>
             {warningTooltip === "wipe-all" && (
               <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
-                <div className="bg-[#09090B] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-widest font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                <div className="bg-[#09090B] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
                   🚫 Admin Access Required
                 </div>
               </div>
@@ -422,20 +411,25 @@ const JcbReport = () => {
         </div>
       )}
 
-      <div className="bg-[#09090B] rounded-3xl border border-zinc-800/60 overflow-visible shadow-2xl">
-        <div className="p-5 border-b border-zinc-800/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5">
+      <div className="bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl border-zinc-800/60">
+        <div className="p-5 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-3xl bg-zinc-900/10 border-zinc-800/60">
           <div className="relative w-full sm:w-80 xl:w-96 group">
             <Search
               size={18}
               className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500"}`}
             />
+            {/* 🚀 UI LOCK: Search clears Date Range */}
             <input
               type="text"
-              placeholder="Search customer, location or phone..."
+              placeholder="Search customer name..."
               className="w-full bg-transparent border border-zinc-800 rounded-xl pl-12 pr-4 py-3 text-sm text-zinc-100 outline-none transition-all focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 placeholder:text-zinc-600"
               value={filters.search}
               onChange={(e) =>
-                setFilters({ ...filters, search: e.target.value })
+                setFilters({
+                  ...filters,
+                  search: e.target.value,
+                  dateFilter: "All",
+                })
               }
             />
           </div>
@@ -447,7 +441,7 @@ const JcbReport = () => {
           </button>
         </div>
 
-        <div className="p-4 border-b border-zinc-800/60 flex flex-wrap items-center gap-4 relative z-20">
+        <div className="p-4 border-b bg-[#09090B] flex flex-wrap items-center gap-4 relative z-20 border-zinc-800/60">
           <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] px-3 py-1 border-r border-zinc-800 mr-2 text-zinc-500">
             <Filter size={16} /> FILTERS
             {activeFiltersCount > 0 && (
@@ -486,6 +480,7 @@ const JcbReport = () => {
             />
           </div>
 
+          {/* 🚀 UI LOCK: Date Range clears Search */}
           <div className="relative group">
             <select
               value={filters.dateFilter}
@@ -494,6 +489,7 @@ const JcbReport = () => {
                   ...filters,
                   dateFilter: e.target.value,
                   exactDate: "",
+                  search: "",
                 })
               }
               className="appearance-none bg-transparent border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
@@ -531,7 +527,8 @@ const JcbReport = () => {
           </div>
 
           {activeFiltersCount > 0 && (
-            <button
+            <Button
+              variant="ghost"
               onClick={() =>
                 setFilters({
                   search: "",
@@ -540,17 +537,17 @@ const JcbReport = () => {
                   exactDate: "",
                 })
               }
-              className="text-xs font-bold text-zinc-400 hover:text-white px-3 py-2 rounded-lg transition-all flex items-center gap-1.5 ml-auto"
+              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5"
             >
               <X size={14} /> Clear All
-            </button>
+            </Button>
           )}
         </div>
 
-        <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
-          <table className="w-full text-left min-w-[850px] animate-in fade-in duration-300">
-            <thead className="bg-transparent text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800/60">
-              <tr>
+        <div className="overflow-x-auto pb-4 custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-[800px]">
+            <thead>
+              <tr className="bg-transparent text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800/60">
                 <th className="py-4 px-6 whitespace-nowrap">Date & Vehicle</th>
                 <th className="py-4 px-6 whitespace-nowrap">Customer Info</th>
                 <th className="py-4 px-6 whitespace-nowrap">Time Log</th>
@@ -577,20 +574,24 @@ const JcbReport = () => {
                     }`}
                   >
                     <td className="p-5 px-6 align-top">
-                      <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
+                      <p
+                        className={`text-[11px] font-mono text-zinc-400 mb-1.5`}
+                      >
                         {new Date(log.date).toLocaleDateString("en-GB")}
                       </p>
-                      <p className="font-bold text-white text-md uppercase tracking-wider flex items-center gap-2">
-                        <Truck size={14} className="text-zinc-500" />{" "}
+                      <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
+                        <Truck size={14} className={`text-zinc-500`} />{" "}
                         {log.vehicleNo}
                       </p>
                       {hasEdits && (
                         <div
                           onClick={() => openHistory(log)}
-                          className="mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-md cursor-pointer w-max hover:opacity-80 transition-opacity"
+                          className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
                         >
                           <History size={10} className="text-zinc-400" />
-                          <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
+                          <span
+                            className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
+                          >
                             {latestLog.role || "ADMIN"}
                           </span>
                           {log.editHistory.length > 1 && (
@@ -691,16 +692,6 @@ const JcbReport = () => {
         </div>
       </div>
 
-      <ConfirmDialog
-        isOpen={deleteModal.isOpen}
-        onClose={() => setDeleteModal({ isOpen: false, id: null })}
-        onConfirm={executeDelete}
-        title="Delete Record?"
-        message="Are you sure you want to permanently delete this JCB record?"
-        confirmText="Delete"
-        isDestructive={true}
-      />
-
       {/* 🛑 SECURE WIPE DATA MODAL */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
@@ -716,7 +707,6 @@ const JcbReport = () => {
               </h2>
             </div>
 
-            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-2xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -761,7 +751,7 @@ const JcbReport = () => {
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter admin password..."
-                className="w-full bg-zinc-900/50 border border-zinc-800 focus:border-red-500/50 rounded-xl pl-4 pr-10 py-3 text-zinc-100 outline-none transition-all text-sm"
+                className="w-full bg-[#09090B] border border-zinc-800 focus:border-red-500/50 rounded-xl pl-4 pr-10 py-3 text-zinc-100 outline-none transition-all text-sm"
               />
               <button
                 type="button"
@@ -850,7 +840,7 @@ const JcbReport = () => {
                       >
                         {log.role || "ADMIN"}
                       </h4>
-                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
+                      <p className="text-zinc-500 text-[10px] font-mono mt-0.5">
                         {log.by || "admin@system.com"}
                       </p>
                       <p
@@ -862,15 +852,12 @@ const JcbReport = () => {
                           year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
-                          second: "2-digit",
                         })}
                       </p>
                     </div>
                   </div>
                   {index === 0 && (
-                    <div
-                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
-                    >
+                    <div className="bg-indigo-500/10 border-indigo-500/20 text-indigo-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
                       LATEST
                     </div>
                   )}

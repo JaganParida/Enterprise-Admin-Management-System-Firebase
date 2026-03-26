@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import invoiceService from "../../services/invoiceService";
 import { useUI } from "../../context/UIProvider";
@@ -20,15 +20,14 @@ import {
   RefreshCcw,
   ChevronDown,
   Calendar,
+  Loader2,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
-// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
 const getPreviousMonthString = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
@@ -41,13 +40,16 @@ const InvoiceList = () => {
   const { admin } = useAuth();
   const location = useLocation();
   const [invoices, setInvoices] = useState([]);
+
+  // 🚀 LOADER STATES FIXED
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const isFirstMount = useRef(true);
 
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
 
-  // 🚀 Highlight Animation State
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
@@ -92,31 +94,26 @@ const InvoiceList = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [wiping, setWiping] = useState(false);
 
-  // 🚀 SMART BACKUP STATES
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
-
-      // Agar local storage me backup verified nahi hai
       if (!localStorage.getItem(`backup_invoices_${prevMonth}`)) {
         try {
-          // Check karo ki kya database me pichle mahine ka koi data hai (using prefix matching hack for ISO dates)
+          const startDate = `${prevMonth}-01`;
+          const endDate = `${prevMonth}-31`;
           const q = query(
             collection(db, "invoices"),
-            where("date", ">=", prevMonth),
-            where("date", "<=", prevMonth + "\uf8ff"),
+            where("date", ">=", startDate),
+            where("date", "<=", endDate + "\uf8ff"),
             limit(1),
           );
           const snap = await getDocs(q);
-
-          // Agar data hai, toh hi warning dikhao
           if (!snap.empty) {
             setShowBackupWarning(prevMonth);
           }
@@ -125,112 +122,84 @@ const InvoiceList = () => {
         }
       }
     };
-
     checkBackupNeeded();
   }, []);
 
-  const fetchInvoices = async (isLoadMore = false) => {
-    if (isLoadMore) setLoadingMore(true);
-    else setLoading(true);
+  const fetchInvoices = useCallback(
+    async (isLoadMore = false) => {
+      if (isLoadMore) setLoadingMore(true);
+      else if (!loading) setIsRefreshing(true);
 
-    try {
-      const response = await invoiceService.getAllInvoices(
-        {
-          status: filterStatus,
-          search: searchTerm,
-          amount: filterAmount,
-          date: filterDate,
-          exactDate: filterExactDate,
-        },
-        isLoadMore ? lastDoc : null,
-      );
-
-      if (isLoadMore) {
-        setInvoices((prev) => [...prev, ...(response.data || [])]);
-      } else {
-        setInvoices(response.data || []);
-      }
-
-      setLastDoc(response.lastVisible || null);
-      setHasMore(response.data && response.data.length === 50);
-    } catch (error) {
-      if (error.message && error.message.toLowerCase().includes("index")) {
-        toast.error(
-          "Firebase Index required! Check browser console to click the create link.",
-          { duration: 6000 },
+      try {
+        const response = await invoiceService.getAllInvoices(
+          {
+            status: filterStatus,
+            search: searchTerm,
+            amount: filterAmount,
+            date: filterDate,
+            exactDate: filterExactDate,
+          },
+          isLoadMore ? lastDoc : null,
         );
-      } else {
-        toast.error("Failed to load invoices");
+
+        if (isLoadMore)
+          setInvoices((prev) => [...prev, ...(response.data || [])]);
+        else setInvoices(response.data || []);
+
+        setLastDoc(response.lastVisible || null);
+        setHasMore(response.data && response.data.length === 50);
+      } catch (error) {
+        if (error.message && error.message.toLowerCase().includes("index"))
+          toast.error("Firebase Index required! Check browser console.");
+        else toast.error("Failed to load invoices");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+        setIsRefreshing(false);
       }
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  };
+    },
+    [
+      filterStatus,
+      searchTerm,
+      filterAmount,
+      filterDate,
+      filterExactDate,
+      lastDoc,
+      loading,
+      toast,
+    ],
+  );
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
+    if (isFirstMount.current) {
       fetchInvoices(false);
-    }, 400);
-    return () => clearTimeout(delayDebounceFn);
+      isFirstMount.current = false;
+    } else {
+      const delayDebounceFn = setTimeout(() => fetchInvoices(false), 400);
+      return () => clearTimeout(delayDebounceFn);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, filterStatus, filterAmount, filterDate, filterExactDate]);
 
-  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
-
       setTimeout(() => {
         const element = document.getElementById(urlHighlightId);
-        if (element) {
+        if (element)
           element.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
       }, 500);
-
       const timer = setTimeout(() => {
         setActiveHighlight(null);
       }, 3500);
-
       return () => clearTimeout(timer);
     }
   }, [urlHighlightId, loading]);
 
-  const filteredInvoices = useMemo(() => {
-    return invoices.filter((inv) => {
-      let matchesAmount = true;
-      if (filterAmount !== "All") {
-        const amount = Number(inv.grandTotal) || 0;
-        if (filterAmount === "Under10k") matchesAmount = amount < 10000;
-        else if (filterAmount === "10k-50k")
-          matchesAmount = amount >= 10000 && amount <= 50000;
-        else if (filterAmount === "Above50k") matchesAmount = amount > 50000;
-      }
-
-      let matchesDate = true;
-      if (filterExactDate && inv.date) {
-        const invDateObj = new Date(inv.date);
-        const formattedInvDate = `${invDateObj.getFullYear()}-${String(invDateObj.getMonth() + 1).padStart(2, "0")}-${String(invDateObj.getDate()).padStart(2, "0")}`;
-        matchesDate = formattedInvDate === filterExactDate;
-      } else if (filterDate !== "All" && inv.date) {
-        const invDate = new Date(inv.date);
-        const today = new Date();
-        const diffTime = Math.abs(today - invDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (filterDate === "Last7Days") matchesDate = diffDays <= 7;
-        else if (filterDate === "Last30Days") matchesDate = diffDays <= 30;
-        else if (filterDate === "ThisMonth")
-          matchesDate =
-            invDate.getMonth() === today.getMonth() &&
-            invDate.getFullYear() === today.getFullYear();
-      }
-      return matchesAmount && matchesDate;
-    });
-  }, [invoices, filterAmount, filterDate, filterExactDate]);
-
   const activeFiltersCount =
     [filterStatus, filterAmount, filterDate].filter((f) => f !== "All").length +
-    (filterExactDate ? 1 : 0);
+    (filterExactDate ? 1 : 0) +
+    (searchTerm ? 1 : 0);
 
   const formatModalDate = (isoString) => {
     if (!isoString) return "";
@@ -256,15 +225,13 @@ const InvoiceList = () => {
     );
   };
 
-  // 🚀 ONLY EXPORTS VISIBLE DATA
   const handleExport = () => {
     try {
-      if (filteredInvoices.length === 0)
-        return toast.info("No records to export.");
+      if (invoices.length === 0) return toast.info("No records to export.");
       const headers = [
         "Date,Invoice No,Client Name,SubTotal,GST Rate,Grand Total,Status",
       ];
-      const rows = filteredInvoices.map((inv) => {
+      const rows = invoices.map((inv) => {
         const dateStr = inv.date
           ? `\t${new Date(inv.date).toLocaleDateString("en-GB")}`
           : "-";
@@ -288,16 +255,18 @@ const InvoiceList = () => {
     }
   };
 
-  // 🚀 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
       toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
 
+      const startDate = `${monthToFetch}-01`;
+      const endDate = `${monthToFetch}-31`;
+
       const q = query(
         collection(db, "invoices"),
-        where("date", ">=", monthToFetch),
-        where("date", "<=", monthToFetch + "\uf8ff"),
+        where("date", ">=", startDate),
+        where("date", "<=", endDate + "\uf8ff"),
       );
       const snapshot = await getDocs(q);
       const allData = snapshot.docs.map((doc) => doc.data());
@@ -325,12 +294,8 @@ const InvoiceList = () => {
       document.body.removeChild(link);
 
       toast.success(`Backup for ${monthToFetch} downloaded securely!`);
-
-      // 🚀 Instantly removes the warning after successful backup
       localStorage.setItem(`backup_invoices_${monthToFetch}`, "true");
-      if (showBackupWarning === monthToFetch) {
-        setShowBackupWarning(null);
-      }
+      if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
     } catch (e) {
       console.error(e);
       toast.error("Backup failed.");
@@ -343,12 +308,19 @@ const InvoiceList = () => {
     setWiping(true);
     try {
       const currentUser = admin?.data || admin || {};
-      await invoiceService.deleteAllInvoices({
+      const response = await invoiceService.deleteAllInvoices({
         password: deletePassword,
         email: currentUser.email,
         user: currentUser,
       });
-      toast.success("Invoices database cleared successfully.");
+
+      if (response.isPartial)
+        toast.success(response.message, {
+          duration: 8000,
+          style: { border: "1px solid #eab308" },
+        });
+      else toast.success(response.message);
+
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
@@ -412,6 +384,17 @@ const InvoiceList = () => {
     });
   };
 
+  if (loading) {
+    return (
+      <div className="w-full h-full min-h-[80vh] flex flex-col items-center justify-center animate-in fade-in duration-500">
+        <Loader />
+        <p className="text-zinc-500 mt-4 font-mono text-[10px] font-bold uppercase tracking-widest animate-pulse">
+          Loading Invoices...
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4 print:w-full print:max-w-none print:m-0 print:p-0 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
@@ -470,7 +453,6 @@ const InvoiceList = () => {
         </div>
       </div>
 
-      {/* 🚀 SMART BACKUP WARNING */}
       {showBackupWarning && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
           <div className="flex items-center gap-3">
@@ -504,11 +486,20 @@ const InvoiceList = () => {
       )}
 
       <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-visible relative print:shadow-none print:border-none print:bg-white">
-        {loading && !loadingMore && (
-          <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm rounded-2xl">
-            <Loader />
+        {isRefreshing && (
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-none">
+            <div className="bg-zinc-900 border border-zinc-700 shadow-2xl px-4 py-1.5 rounded-full flex items-center gap-2">
+              <Loader2
+                size={14}
+                className={`animate-spin ${theme.primaryText}`}
+              />
+              <span className="text-[10px] font-bold text-zinc-200 uppercase tracking-widest">
+                Syncing Data...
+              </span>
+            </div>
           </div>
         )}
+
         <div className="p-5 border-b border-zinc-800/60 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#09090B] rounded-t-2xl print:hidden">
           <div className="relative w-full md:w-96 group">
             <Search
@@ -520,7 +511,11 @@ const InvoiceList = () => {
               placeholder="Search by invoice number..."
               className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setFilterAmount("All");
+                setFilterDate("All");
+              }}
             />
           </div>
         </div>
@@ -563,7 +558,11 @@ const InvoiceList = () => {
           <div className="relative group">
             <select
               value={filterAmount}
-              onChange={(e) => setFilterAmount(e.target.value)}
+              onChange={(e) => {
+                setFilterAmount(e.target.value);
+                setSearchTerm("");
+                setFilterDate("All");
+              }}
               className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
               <option value="All" className="bg-[#09090B]">
@@ -590,11 +589,13 @@ const InvoiceList = () => {
               onChange={(e) => {
                 setFilterDate(e.target.value);
                 if (e.target.value !== "All") setFilterExactDate("");
+                setSearchTerm("");
+                setFilterAmount("All");
               }}
               className={`appearance-none bg-transparent border border-zinc-800 rounded-full pl-4 pr-10 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
               <option value="All" className="bg-[#09090B]">
-                Any Date
+                Timeline: All
               </option>
               <option value="Last7Days" className="bg-[#09090B]">
                 Last 7 Days
@@ -623,6 +624,8 @@ const InvoiceList = () => {
               onChange={(e) => {
                 setFilterExactDate(e.target.value);
                 if (e.target.value) setFilterDate("All");
+                setSearchTerm("");
+                setFilterAmount("All");
               }}
               style={{ colorScheme: "dark" }}
               className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryBg} ${theme.primaryBorder} text-indigo-100` : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"}`}
@@ -645,7 +648,9 @@ const InvoiceList = () => {
           )}
         </div>
 
-        <div className="overflow-x-auto pb-4 custom-scrollbar print:overflow-visible print:w-full">
+        <div
+          className={`overflow-x-auto pb-4 custom-scrollbar print:overflow-visible print:w-full transition-opacity duration-300 ${isRefreshing ? "opacity-40 pointer-events-none" : "opacity-100"}`}
+        >
           <table className="w-full text-left min-w-max print:min-w-0">
             <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold print:bg-white print:text-black border-b border-zinc-800/60">
               <tr>
@@ -661,15 +666,11 @@ const InvoiceList = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/60 text-sm print:divide-gray-200">
-              {filteredInvoices.map((inv) => (
+              {invoices.map((inv) => (
                 <tr
                   key={inv._id}
                   id={inv._id}
-                  className={`transition-all duration-1000 ease-out group print:text-black border-l-4 ${
-                    activeHighlight === inv._id
-                      ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
-                      : "border-transparent hover:bg-zinc-800/30"
-                  }`}
+                  className={`transition-all duration-1000 ease-out group print:text-black border-l-4 ${activeHighlight === inv._id ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
                 >
                   <td className="p-5 md:pl-6 align-middle">
                     <div
@@ -782,7 +783,7 @@ const InvoiceList = () => {
                   </td>
                 </tr>
               ))}
-              {filteredInvoices.length === 0 && !loading && (
+              {invoices.length === 0 && !loading && !isRefreshing && (
                 <tr>
                   <td
                     colSpan="5"
@@ -795,7 +796,7 @@ const InvoiceList = () => {
             </tbody>
           </table>
 
-          {hasMore && filteredInvoices.length > 0 && (
+          {hasMore && invoices.length > 0 && (
             <div className="flex justify-center p-6 border-t border-zinc-800/60 print:hidden">
               <Button
                 onClick={() => fetchInvoices(true)}
@@ -813,7 +814,6 @@ const InvoiceList = () => {
         </div>
       </div>
 
-      {/* History Modal */}
       {historyModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
           <div className="bg-[#09090B] border border-zinc-800/60 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative Z-50">
@@ -880,7 +880,6 @@ const InvoiceList = () => {
         </div>
       )}
 
-      {/* Wipe Data Modal */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 print:hidden">
           <div
@@ -894,8 +893,6 @@ const InvoiceList = () => {
                 Wipe Invoice Database
               </h2>
             </div>
-
-            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -929,7 +926,6 @@ const InvoiceList = () => {
                 </div>
               </div>
             </div>
-
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}

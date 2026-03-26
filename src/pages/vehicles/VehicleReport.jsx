@@ -34,11 +34,9 @@ import {
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
-// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
 const getPreviousMonthString = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
@@ -64,12 +62,10 @@ const VehicleReport = () => {
   const [hasMoreExp, setHasMoreExp] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // 🚀 Highlight Animation State
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -80,6 +76,9 @@ const VehicleReport = () => {
     primaryText: isTransport ? "text-[#38bdf8]" : "text-indigo-400",
     primaryBg: isTransport ? "bg-[#0c4a6e]/30" : "bg-indigo-500/10",
     primaryBorder: isTransport ? "border-[#0284c7]/30" : "border-indigo-500/20",
+    primaryHoverBorder: isTransport
+      ? "hover:border-[#0ea5e9]/50"
+      : "hover:border-indigo-500/30",
     primaryFocus: isTransport
       ? "focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
       : "focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50",
@@ -117,25 +116,20 @@ const VehicleReport = () => {
     exactDate: "",
   });
 
-  // 🚀 SMART BACKUP STATES
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
       const storageKey = `backup_${activeTab}_${prevMonth}`;
 
-      // Agar local storage me backup verified nahi hai for the current tab
       if (!localStorage.getItem(storageKey)) {
         try {
           const collectionName = activeTab === "trips" ? "trips" : "expenses";
-
-          // Database me check karo ki kya pichle mahine ka koi data hai (using prefix string match hack on date string)
           const q = query(
             collection(db, collectionName),
             where("date", ">=", prevMonth),
@@ -144,11 +138,10 @@ const VehicleReport = () => {
           );
           const snap = await getDocs(q);
 
-          // Agar data hai, toh hi warning dikhao
           if (!snap.empty) {
             setShowBackupWarning(prevMonth);
           } else {
-            setShowBackupWarning(null); // Clear warning if no data
+            setShowBackupWarning(null);
           }
         } catch (error) {
           console.error("Failed to check backup status:", error);
@@ -161,7 +154,6 @@ const VehicleReport = () => {
     checkBackupNeeded();
   }, [activeTab]);
 
-  // 🚀 Scroll & Highlight Effect
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
@@ -175,7 +167,7 @@ const VehicleReport = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 Fetch Logic with Pagination
+  // 🚀 100% BACKEND FETCH LOGIC
   const fetchLogs = async (isLoadMore = false) => {
     if (isLoadMore) setLoadingMore(true);
     else setLoading(true);
@@ -213,7 +205,6 @@ const VehicleReport = () => {
     }
   };
 
-  // Trigger Fetch on Filter or Tab Change
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       fetchLogs(false);
@@ -259,11 +250,14 @@ const VehicleReport = () => {
   const activeFiltersCount =
     [filters.amountFilter, filters.dateFilter].filter(
       (f) => f !== "All" && f !== "Any Amount",
-    ).length + (filters.exactDate ? 1 : 0);
+    ).length +
+    (filters.exactDate ? 1 : 0) +
+    (filters.search ? 1 : 0);
 
-  // Use state data directly since backend filtering is applied
+  // Directly map the state arrays
   const currentDataList = activeTab === "trips" ? logs : expenses;
 
+  // Stats calculate client-side ONLY from the currently visible page
   const summary = useMemo(() => {
     if (activeTab === "trips") {
       return currentDataList.reduce(
@@ -288,7 +282,6 @@ const VehicleReport = () => {
     }
   }, [currentDataList, activeTab]);
 
-  // 🚀 FIXED: 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
@@ -306,7 +299,7 @@ const VehicleReport = () => {
       if (allData.length === 0)
         return toast.info(`No records found for ${monthToFetch}.`);
 
-      let csvContent = "\uFEFF"; // UTF-8 BOM
+      let csvContent = "\uFEFF";
 
       if (activeTab === "trips") {
         const headers = [
@@ -355,7 +348,6 @@ const VehicleReport = () => {
 
       toast.success(`Backup for ${monthToFetch} downloaded securely!`);
 
-      // 🚀 Instantly removes the warning after successful backup
       const storageKey = `backup_${activeTab}_${monthToFetch}`;
       localStorage.setItem(storageKey, "true");
       if (showBackupWarning === monthToFetch) {
@@ -367,12 +359,11 @@ const VehicleReport = () => {
     }
   };
 
-  // 🚀 ONLY EXPORTS VISIBLE DATA (Maximum 50 or what is loaded in table)
   const handleExport = () => {
     try {
       if (currentDataList.length === 0)
         return toast.info("No records to export");
-      let csvContent = "\uFEFF"; // UTF-8 BOM
+      let csvContent = "\uFEFF";
 
       if (activeTab === "trips") {
         const headers = [
@@ -540,7 +531,6 @@ const VehicleReport = () => {
         </div>
       </div>
 
-      {/* 🚀 SMART BACKUP WARNING */}
       {showBackupWarning && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
           <div className="flex items-center gap-3">
@@ -657,7 +647,6 @@ const VehicleReport = () => {
         )}
       </div>
 
-      {/* MAIN DATA SECTION */}
       <div
         className={`bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/30"}`}
       >
@@ -667,7 +656,6 @@ const VehicleReport = () => {
           </div>
         )}
 
-        {/* SEARCH & EXPORT BAR */}
         <div
           className={`p-5 border-b flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5 rounded-t-3xl ${activeTab === "trips" ? "border-zinc-800/60 bg-zinc-900/10" : "border-rose-900/20 bg-rose-950/10"}`}
         >
@@ -676,17 +664,21 @@ const VehicleReport = () => {
               size={16}
               className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? (activeTab === "trips" ? theme.primaryText : "text-rose-500") : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
+            {/* 🚀 UI LOCK: Search Clears Amount & Date Filters */}
             <input
               type="text"
               placeholder={
-                activeTab === "trips"
-                  ? "Search vehicle, driver or route..."
-                  : "Search reason..."
+                activeTab === "trips" ? "Search vehicle..." : "Search reason..."
               }
               className={`w-full bg-[#09090B] border rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all shadow-inner focus:ring-2 ${activeTab === "trips" ? "border-zinc-800 focus:border-zinc-700 focus:ring-zinc-800/50" : "border-rose-900/40 focus:ring-rose-500/50"}`}
               value={filters.search}
               onChange={(e) =>
-                setFilters({ ...filters, search: e.target.value })
+                setFilters({
+                  ...filters,
+                  search: e.target.value,
+                  amountFilter: "Any Amount",
+                  dateFilter: "All",
+                })
               }
             />
           </div>
@@ -699,7 +691,6 @@ const VehicleReport = () => {
           </Button>
         </div>
 
-        {/* PROFESSIONAL UNIVERSAL FILTRATION UI */}
         <div
           className={`p-4 border-b bg-[#09090B] flex flex-wrap items-center gap-4 relative z-20 ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/20"}`}
         >
@@ -716,11 +707,17 @@ const VehicleReport = () => {
             )}
           </div>
 
+          {/* 🚀 UI LOCK: Amount Filter clears Search & Date Filter */}
           <div className="relative group">
             <select
               value={filters.amountFilter}
               onChange={(e) =>
-                setFilters({ ...filters, amountFilter: e.target.value })
+                setFilters({
+                  ...filters,
+                  amountFilter: e.target.value,
+                  search: "",
+                  dateFilter: "All",
+                })
               }
               className={`appearance-none bg-[#09090B] border rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${activeTab === "trips" ? `border-zinc-800 text-zinc-400 ${theme.primaryFocus}` : "border-rose-900/40 text-rose-200 focus:border-rose-500/50"}`}
             >
@@ -735,6 +732,7 @@ const VehicleReport = () => {
             />
           </div>
 
+          {/* 🚀 UI LOCK: Date Filter clears Search & Amount Filter */}
           <div className="relative group">
             <select
               value={filters.dateFilter}
@@ -743,6 +741,8 @@ const VehicleReport = () => {
                   ...filters,
                   dateFilter: e.target.value,
                   exactDate: "",
+                  search: "",
+                  amountFilter: "Any Amount",
                 })
               }
               className={`appearance-none bg-[#09090B] border rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${activeTab === "trips" ? `border-zinc-800 text-zinc-400 ${theme.primaryFocus}` : "border-rose-900/40 text-rose-200 focus:border-rose-500/50"}`}
@@ -775,7 +775,7 @@ const VehicleReport = () => {
                 })
               }
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2 text-xs font-medium outline-none cursor-pointer transition-all ${activeTab === "trips" ? `border-zinc-800 ${theme.primaryFocus}` : "border-rose-900/40 focus:border-rose-500/50"} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
+              className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${activeTab === "trips" ? `border-zinc-800 ${theme.primaryFocus}` : "border-rose-900/40 focus:border-rose-500/50"} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
 
@@ -797,13 +797,14 @@ const VehicleReport = () => {
           )}
         </div>
 
-        {/* 🚀 DATA TABLE */}
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
           {activeTab === "trips" ? (
             <table className="w-full text-left min-w-[900px] animate-in fade-in duration-300">
               <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800/60">
                 <tr>
-                  <th className="py-5 px-6">Shipment Date & Vehicle</th>
+                  <th className="py-5 px-6 whitespace-nowrap">
+                    Shipment Date & Vehicle
+                  </th>
                   <th className="py-5 px-6">Route Details</th>
                   <th className="py-5 px-6">Cargo & Rate</th>
                   <th className="py-5 px-6 text-right">Financials</th>
@@ -976,11 +977,8 @@ const VehicleReport = () => {
                             <Trash2 size={16} />
                           </button>
                           {warningTooltip === log._id && (
-                            <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 shadow-2xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
-                              <span className="bg-red-500/20 p-1 rounded text-[8px] leading-none">
-                                🚫
-                              </span>{" "}
-                              Access Denied
+                            <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
+                              🚫 Access Denied
                             </div>
                           )}
                         </div>
@@ -1153,12 +1151,12 @@ const VehicleReport = () => {
 
       {/* 🛑 SECURE WIPE DATA MODAL REDESIGNED */}
       {isDeleteAllOpen && !isManager && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
           <div
             className="absolute inset-0"
             onClick={() => !wiping && setIsDeleteAllOpen(false)}
           />
-          <div className="bg-[#09090B] border border-red-900/30 shadow-[0_0_40px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
+          <div className="bg-[#09090B] border border-red-900/50 rounded-2xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-6 sm:p-8">
             <div className="flex items-center gap-3 text-red-500 mb-6">
               <AlertOctagon size={24} />
               <h2 className="text-xl font-bold tracking-wide">
@@ -1252,22 +1250,14 @@ const VehicleReport = () => {
             }
           />
           <div
-            className={`bg-[#09090B] border ${activeTab === "trips" ? theme.primaryBorder : "border-rose-900/30"} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200`}
+            className={`bg-[#09090B] border ${theme.primaryBorder} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200`}
           >
             <div
-              className={`flex items-center justify-between p-5 border-b ${activeTab === "trips" ? `${theme.primaryBorder} ${theme.primaryBg}` : "border-rose-900/20 bg-rose-900/10"} shrink-0`}
+              className={`flex items-center justify-between p-5 border-b ${theme.primaryBorder} ${theme.primaryBg} shrink-0`}
             >
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History
-                  size={16}
-                  className={
-                    activeTab === "trips" ? theme.primaryText : "text-rose-400"
-                  }
-                />{" "}
-                Log History:{" "}
-                <span
-                  className={`${activeTab === "trips" ? theme.primaryText : "text-rose-400"} font-normal`}
-                >
+                <History size={16} className={theme.primaryText} /> Log History:{" "}
+                <span className={`${theme.primaryText} font-normal`}>
                   {historyModal.itemName}
                 </span>
               </div>
@@ -1284,16 +1274,16 @@ const VehicleReport = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-[#09090B] border ${index === 0 ? (activeTab === "trips" ? theme.primaryBorder : "border-rose-500/30") : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-[#09090B] border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
                     <div
-                      className={`absolute left-0 top-0 w-1 h-full ${activeTab === "trips" ? theme.primaryBg : "bg-rose-500"}`}
+                      className={`absolute left-0 top-0 w-1 h-full ${theme.primaryBg}`}
                     ></div>
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? (activeTab === "trips" ? `${theme.primaryBg} ${theme.primaryText}` : "bg-rose-500/10 text-rose-400") : "bg-zinc-800 text-zinc-500"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
@@ -1307,7 +1297,7 @@ const VehicleReport = () => {
                         {log.by || "admin@system.com"}
                       </p>
                       <p
-                        className={`text-[10px] font-mono mt-1 ${index === 0 ? (activeTab === "trips" ? theme.primaryText : "text-rose-400") : "text-zinc-600"}`}
+                        className={`text-[10px] font-mono mt-1 ${index === 0 ? theme.primaryText : "text-zinc-600"}`}
                       >
                         {new Date(log.at).toLocaleString("en-GB", {
                           day: "2-digit",
@@ -1315,14 +1305,13 @@ const VehicleReport = () => {
                           year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
-                          second: "2-digit",
                         })}
                       </p>
                     </div>
                   </div>
                   {index === 0 && (
                     <div
-                      className={`${activeTab === "trips" ? `${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText}` : "bg-rose-500/10 border-rose-500/20 text-rose-400"} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                      className={`${theme.primaryBg} border ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
                     >
                       LATEST
                     </div>

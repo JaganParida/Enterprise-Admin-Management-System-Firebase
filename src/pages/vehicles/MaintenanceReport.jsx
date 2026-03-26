@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import maintenanceService from "../../services/maintenanceService";
 import { useUI } from "../../context/UIProvider";
@@ -27,11 +27,9 @@ import {
 import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
-// 🚀 HELPER: Get Previous Month for Backup Warning (YYYY-MM format)
 const getPreviousMonthString = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
@@ -93,22 +91,18 @@ const MaintenanceReport = () => {
     exactDate: "",
   });
 
-  // 🚀 SMART BACKUP STATES
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
 
-      // Agar local storage me backup verified nahi hai
       if (!localStorage.getItem(`backup_maintenance_${prevMonth}`)) {
         try {
-          // Database me check karo (using prefix string match on date string)
           const q = query(
             collection(db, "maintenances"),
             where("date", ">=", prevMonth),
@@ -117,7 +111,6 @@ const MaintenanceReport = () => {
           );
           const snap = await getDocs(q);
 
-          // Agar data hai, toh hi warning dikhao
           if (!snap.empty) {
             setShowBackupWarning(prevMonth);
           }
@@ -130,7 +123,6 @@ const MaintenanceReport = () => {
     checkBackupNeeded();
   }, []);
 
-  // 🚀 Scroll & Highlight Effect
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
@@ -144,7 +136,7 @@ const MaintenanceReport = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 Fetch Logic with Pagination
+  // 🚀 100% BACKEND FETCH LOGIC
   const fetchLogs = async (isLoadMore = false) => {
     if (isLoadMore) setLoadingMore(true);
     else setLoading(true);
@@ -156,6 +148,7 @@ const MaintenanceReport = () => {
       );
       if (isLoadMore) setLogs((prev) => [...prev, ...(response.data || [])]);
       else setLogs(response.data || []);
+
       setLastDoc(response.lastVisible || null);
       setHasMore(response.data && response.data.length === 50);
     } catch (error) {
@@ -170,7 +163,6 @@ const MaintenanceReport = () => {
     }
   };
 
-  // Trigger Fetch on Filter Change
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       fetchLogs(false);
@@ -209,9 +201,10 @@ const MaintenanceReport = () => {
   const activeFiltersCount =
     [filters.amountFilter, filters.dateFilter].filter(
       (f) => f !== "Any Amount" && f !== "All",
-    ).length + (filters.exactDate ? 1 : 0);
+    ).length +
+    (filters.exactDate ? 1 : 0) +
+    (filters.search ? 1 : 0);
 
-  // 🚀 FIXED: 100% FULL DATABASE EXPORT FOR SPECIFIC MONTH
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
@@ -257,7 +250,6 @@ const MaintenanceReport = () => {
 
       toast.success(`Backup for ${monthToFetch} downloaded securely!`);
 
-      // 🚀 Instantly removes the warning after successful backup
       localStorage.setItem(`backup_maintenance_${monthToFetch}`, "true");
       if (showBackupWarning === monthToFetch) {
         setShowBackupWarning(null);
@@ -268,7 +260,6 @@ const MaintenanceReport = () => {
     }
   };
 
-  // 🚀 FIXED: View Export CSV Logic
   const handleExport = () => {
     try {
       if (logs.length === 0) return toast.info("No records to export");
@@ -290,8 +281,9 @@ const MaintenanceReport = () => {
 
       const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
+      link.href = url;
       link.setAttribute(
         "download",
         `Maintenance_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
@@ -396,7 +388,6 @@ const MaintenanceReport = () => {
         </div>
       </div>
 
-      {/* 🚀 SMART BACKUP WARNING */}
       {showBackupWarning && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
           <div className="flex items-center gap-3">
@@ -432,7 +423,6 @@ const MaintenanceReport = () => {
       <div
         className={`bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl border-zinc-800/60`}
       >
-        {/* SEARCH & EXPORT BAR */}
         <div
           className={`p-5 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-3xl bg-zinc-900/10 border-zinc-800/60`}
         >
@@ -441,13 +431,19 @@ const MaintenanceReport = () => {
               size={16}
               className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
+            {/* 🚀 UI LOCK: Search clears Amount and Date Filter */}
             <input
               type="text"
-              placeholder="Search vehicle or service..."
+              placeholder="Search vehicle no..."
               className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-200 outline-none transition-all shadow-inner ${theme.primaryFocus}`}
               value={filters.search}
               onChange={(e) =>
-                setFilters({ ...filters, search: e.target.value })
+                setFilters({
+                  ...filters,
+                  search: e.target.value,
+                  amountFilter: "Any Amount",
+                  dateFilter: "All",
+                })
               }
             />
           </div>
@@ -460,7 +456,6 @@ const MaintenanceReport = () => {
           </Button>
         </div>
 
-        {/* PROFESSIONAL FILTRATION UI */}
         <div
           className={`p-4 border-b bg-[#09090B] border-zinc-800/60 flex flex-wrap items-center gap-4 relative z-20`}
         >
@@ -477,11 +472,17 @@ const MaintenanceReport = () => {
             )}
           </div>
 
+          {/* 🚀 UI LOCK: Amount Filter clears Search and Date Filter */}
           <div className="relative group">
             <select
               value={filters.amountFilter}
               onChange={(e) =>
-                setFilters({ ...filters, amountFilter: e.target.value })
+                setFilters({
+                  ...filters,
+                  amountFilter: e.target.value,
+                  search: "",
+                  dateFilter: "All",
+                })
               }
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
@@ -496,6 +497,7 @@ const MaintenanceReport = () => {
             />
           </div>
 
+          {/* 🚀 UI LOCK: Date Filter clears Search and Amount Filter */}
           <div className="relative group">
             <select
               value={filters.dateFilter}
@@ -504,6 +506,8 @@ const MaintenanceReport = () => {
                   ...filters,
                   dateFilter: e.target.value,
                   exactDate: "",
+                  search: "",
+                  amountFilter: "Any Amount",
                 })
               }
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
@@ -533,10 +537,12 @@ const MaintenanceReport = () => {
                   ...filters,
                   exactDate: e.target.value,
                   dateFilter: "All",
+                  search: "",
+                  amountFilter: "Any Amount",
                 })
               }
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
+              className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
 
@@ -560,9 +566,11 @@ const MaintenanceReport = () => {
 
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
           <table className="w-full text-left min-w-[750px] animate-in fade-in duration-300">
-            <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800">
+            <thead
+              className={`bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800`}
+            >
               <tr>
-                <th className="py-5 px-6 whitespace-nowrap">Date & Vehicle</th>
+                <th className="py-5 px-6 whitespace-nowrap">Vehicle Details</th>
                 <th className="py-5 px-6 whitespace-nowrap">Service Info</th>
                 <th className="py-5 px-6 text-right whitespace-nowrap">Cost</th>
                 <th className="py-5 px-6 text-right whitespace-nowrap">
@@ -570,7 +578,7 @@ const MaintenanceReport = () => {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/60 text-sm">
+            <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
               {logs.map((log) => {
                 const hasEdits = log.editHistory && log.editHistory.length > 0;
                 const latestLog = hasEdits
@@ -588,11 +596,11 @@ const MaintenanceReport = () => {
                     }`}
                   >
                     <td className="p-5 px-6 align-top">
-                      <p className="text-[11px] font-mono text-zinc-400 mb-1">
+                      <p className={`text-[11px] font-mono text-zinc-400 mb-1`}>
                         {new Date(log.date).toLocaleDateString("en-GB")}
                       </p>
                       <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
-                        <Truck size={14} className="text-zinc-500" />{" "}
+                        <Truck size={14} className={`text-zinc-500`} />{" "}
                         {log.vehicleNo || "N/A"}
                       </p>
                       {log.meterKm && (
@@ -604,10 +612,12 @@ const MaintenanceReport = () => {
                       {hasEdits && (
                         <div
                           onClick={() => openHistory(log)}
-                          className="mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-colors"
+                          className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
                         >
                           <History size={10} className="text-zinc-400" />
-                          <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
+                          <span
+                            className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
+                          >
                             {latestLog.role || "ADMIN"}
                           </span>
                         </div>
@@ -731,8 +741,8 @@ const MaintenanceReport = () => {
                     Recommended: Safe Backup
                   </h3>
                   <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
-                    Before wiping the database, we highly recommend downloading
-                    a complete CSV backup for a specific month.
+                    Before wiping, please download the backup for a specific
+                    month to prevent browser crash.
                   </p>
                   <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
                     <input
@@ -791,8 +801,8 @@ const MaintenanceReport = () => {
                 className="h-11 px-6 rounded-xl text-sm font-bold border border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-colors flex items-center justify-center gap-2"
               >
                 {wiping ? (
-                  <RefreshCcw size={16} className="animate-spin mr-2" />
-                ) : null}
+                  <RefreshCcw size={16} className="animate-spin" />
+                ) : null}{" "}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
@@ -853,7 +863,7 @@ const MaintenanceReport = () => {
                       >
                         {log.role || "ADMIN"}
                       </h4>
-                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
+                      <p className="text-zinc-500 text-[10px] font-mono mt-0.5">
                         {log.by || "admin@system.com"}
                       </p>
                       <p
@@ -865,15 +875,12 @@ const MaintenanceReport = () => {
                           year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
-                          second: "2-digit",
                         })}
                       </p>
                     </div>
                   </div>
                   {index === 0 && (
-                    <div
-                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
-                    >
+                    <div className="bg-indigo-500/10 border-indigo-500/20 text-indigo-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
                       LATEST
                     </div>
                   )}

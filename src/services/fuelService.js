@@ -21,7 +21,7 @@ import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 const fuelCollection = collection(db, "fuels");
 
 const fuelService = {
-  // 1. 🚀 SERVER-SIDE STATS CALCULATION (Golden Rule #1)
+  // 1. 🚀 SERVER-SIDE STATS CALCULATION
   getStats: async () => {
     try {
       const q = query(fuelCollection);
@@ -38,7 +38,6 @@ const fuelService = {
       };
     } catch (error) {
       console.warn("Aggregation failed, falling back to client calc:", error);
-      // Fallback for older Firebase SDKs or missing index
       const snap = await getDocs(query(fuelCollection));
       let totalLiters = 0;
       let totalCost = 0;
@@ -50,67 +49,74 @@ const fuelService = {
     }
   },
 
-  // 2 & 3. 🚀 PAGINATION & BACKEND FILTERING (Golden Rules #2 & #3)
-  getLogs: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
-    let queryConstraints = [];
+  // 🚀 2. PAGINATED & 100% BACKEND FILTERED FETCH
+  getLogs: async (filters = {}, lastVisibleDoc = null, limitCount = 50) => {
+    let constraints = [];
+    let hasInequality = false;
 
-    // Date Filtering (Using >= allows us to order by date desc safely)
+    // --- 1. EQUALITY FILTERS ---
     if (filters.exactDate) {
-      // For exact date, we match the prefix
-      queryConstraints.push(where("date", ">=", filters.exactDate));
-      queryConstraints.push(where("date", "<=", filters.exactDate + "\uf8ff"));
-    } else if (filters.dateFilter && filters.dateFilter !== "All") {
-      const today = new Date();
-      let targetDate = new Date();
-
-      if (filters.dateFilter === "Today")
-        targetDate.setDate(today.getDate() - 1);
-      if (filters.dateFilter === "Last7Days")
-        targetDate.setDate(today.getDate() - 7);
-      if (filters.dateFilter === "ThisMonth") targetDate.setDate(1); // 1st of month
-
-      queryConstraints.push(
-        where("date", ">=", targetDate.toISOString().split("T")[0]),
-      );
+      constraints.push(where("date", "==", filters.exactDate));
     }
 
-    queryConstraints.push(orderBy("date", "desc"));
-    if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
-    queryConstraints.push(limit(pageSize));
-
-    const q = query(fuelCollection, ...queryConstraints);
-    const snapshot = await getDocs(q);
-
-    let fetchedData = snapshot.docs.map((doc) => ({
-      _id: doc.id,
-      ...doc.data(),
-    }));
-
-    // Apply strict secondary filters on the fetched chunk (to bypass Firebase limitations)
+    // --- 2. MUTUALLY EXCLUSIVE INEQUALITY FILTERS ---
     if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      fetchedData = fetchedData.filter((log) =>
-        String(log.vehicleNo || "")
-          .toLowerCase()
-          .includes(searchLower),
-      );
+      constraints.push(where("vehicleNo", ">=", filters.search));
+      constraints.push(where("vehicleNo", "<=", filters.search + "\uf8ff"));
+      constraints.push(orderBy("vehicleNo"));
+      hasInequality = true;
+    } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
+      if (filters.amountFilter === "Under ₹5k") {
+        constraints.push(where("totalCost", "<", 5000));
+      } else if (filters.amountFilter === "₹5k - ₹20k") {
+        constraints.push(
+          where("totalCost", ">=", 5000),
+          where("totalCost", "<=", 20000),
+        );
+      } else if (filters.amountFilter === "Over ₹20k") {
+        constraints.push(where("totalCost", ">", 20000));
+      }
+      constraints.push(orderBy("totalCost", "desc"));
+      hasInequality = true;
+    } else if (
+      filters.dateFilter &&
+      filters.dateFilter !== "All" &&
+      !filters.exactDate
+    ) {
+      const today = new Date();
+      let pastDate = new Date();
+      if (filters.dateFilter === "Today") pastDate.setDate(today.getDate() - 1);
+      else if (filters.dateFilter === "Last7Days")
+        pastDate.setDate(today.getDate() - 7);
+      else if (filters.dateFilter === "ThisMonth") pastDate.setDate(1);
+
+      const pastDateStr = pastDate.toISOString().split("T")[0];
+      constraints.push(where("date", ">=", pastDateStr));
+      constraints.push(orderBy("date", "desc"));
+      hasInequality = true;
     }
 
-    if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
-      fetchedData = fetchedData.filter((log) => {
-        const amt = Number(log.totalCost) || 0;
-        if (filters.amountFilter === "Under ₹5k") return amt < 5000;
-        if (filters.amountFilter === "₹5k - ₹20k")
-          return amt >= 5000 && amt <= 20000;
-        if (filters.amountFilter === "Over ₹20k") return amt > 20000;
-        return true;
-      });
+    // Default sorting
+    if (!hasInequality && !filters.exactDate) {
+      constraints.push(orderBy("date", "desc"));
     }
 
-    return {
-      data: fetchedData,
-      lastVisible: snapshot.docs[snapshot.docs.length - 1],
-    };
+    // --- 3. APPLY PAGINATION ---
+    constraints.push(limit(limitCount));
+    if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
+
+    try {
+      const q = query(fuelCollection, ...constraints);
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((doc) => ({
+        _id: doc.id,
+        ...doc.data(),
+      }));
+      return { data, lastVisible: snapshot.docs[snapshot.docs.length - 1] };
+    } catch (error) {
+      console.error("🔥 Firebase Query Error:", error);
+      throw error;
+    }
   },
 
   addLog: async (payload, user) => {
@@ -160,7 +166,6 @@ const fuelService = {
     return { message: "Updated" };
   },
 
-  // 4. 🚀 BACKEND SECURITY: Blocks Managers
   deleteLog: async (id, user) => {
     if (user?.role === "manager" || user?.data?.role === "manager") {
       throw new Error(
@@ -171,7 +176,6 @@ const fuelService = {
     return { message: "Deleted" };
   },
 
-  // 4. 🚀 BACKEND SECURITY: Admin Password Re-auth + Role Check
   deleteAllLogs: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager") {
       throw new Error("Action Denied: Managers cannot wipe the database.");
