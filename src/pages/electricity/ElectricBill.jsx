@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useMemo, lazy, Suspense } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  lazy,
+  Suspense,
+  useCallback,
+} from "react";
 import { Link, useLocation } from "react-router-dom";
 import electricService from "../../services/electricService";
 import { useUI } from "../../context/UIProvider";
@@ -29,7 +36,6 @@ import {
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-// 🚀 ADDED IMPORTS FOR MONTHLY BACKUP & DB CHECK
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
@@ -45,7 +51,6 @@ const getCurrentMonth = () => {
   return `${d.getFullYear()}-${m}`;
 };
 
-// 🚀 HELPER: Get Previous Month for Backup Warning
 const getPreviousMonth = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
@@ -57,17 +62,18 @@ const ElectricBill = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
-  const [bills, setBills] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [stats, setStats] = useState({ paid: 0, pending: 0, overdue: 0 });
 
-  // 🚀 NEW: Pagination States
+  // 🚀 LOADER STATES FIXED
+  const [bills, setBills] = useState([]);
+  const [loading, setLoading] = useState(true); // For Initial Full Load
+  const [isRefreshing, setIsRefreshing] = useState(false); // For Search & Filters overlay
+  const [loadingMore, setLoadingMore] = useState(false); // For Load More button
+  const [saving, setSaving] = useState(false);
+
+  const [stats, setStats] = useState({ paid: 0, pending: 0, overdue: 0 });
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
 
-  // 🚀 Highlight Animation State
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
@@ -132,27 +138,20 @@ const ElectricBill = () => {
     (parseFloat(formData.billAmount) || 0) +
     (parseFloat(formData.fineAmount) || 0);
 
-  // 🚀 SMART BACKUP STATES
   const [backupMonth, setBackupMonth] = useState(getPreviousMonth());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
-  // 🚀 UPDATED: Check Backend Database + Local Storage for Backup Warning
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonth();
-
-      // 1. Agar local storage me backup verified nahi hai
       if (!localStorage.getItem(`backup_electric_${prevMonth}`)) {
         try {
-          // 2. Database me check karo ki kya pichle mahine ka koi bhi data exist karta hai
           const q = query(
             collection(db, "electricBills"),
             where("month", "==", prevMonth),
-            limit(1), // Limit 1 for super fast backend check (takes only 1 read)
+            limit(1),
           );
           const snap = await getDocs(q);
-
-          // 3. Agar data hai, toh hi warning dikhao
           if (!snap.empty) {
             setShowBackupWarning(prevMonth);
           }
@@ -161,112 +160,91 @@ const ElectricBill = () => {
         }
       }
     };
-
     checkBackupNeeded();
   }, []);
 
-  // 🚀 UPDATED: Fetching Logic with Pagination Support
-  const fetchBills = async (isLoadMore = false) => {
-    if (isLoadMore) setLoadingMore(true);
-    else setLoading(true);
-
-    try {
-      if (!isLoadMore) {
-        const statsData = await electricService.getStats();
-        setStats(statsData);
-      }
-
-      const response = await electricService.getBills(
-        {
-          status: activeTab,
-          search: filters.search,
-          exactMonth: filters.exactMonth,
-        },
-        isLoadMore ? lastDoc : null,
-      );
-
+  const fetchBills = useCallback(
+    async (isLoadMore = false) => {
+      // Determine which loader to show
       if (isLoadMore) {
-        setBills((prev) => [...prev, ...(response.data || [])]);
+        setLoadingMore(true);
       } else {
-        setBills(response.data || []);
+        setIsRefreshing(true); // Always trigger refreshing overlay for filter/tab changes
       }
 
-      setLastDoc(response.lastVisible || null);
-      setHasMore(response.data && response.data.length === 50);
-    } catch (error) {
-      console.error(error);
-      if (error.message && error.message.toLowerCase().includes("index")) {
-        toast.error(
-          "Firebase Index required! Check browser console (F12) to click the create link.",
-          { duration: 6000 },
+      try {
+        if (!isLoadMore) {
+          const statsData = await electricService.getStats();
+          setStats(statsData);
+        }
+
+        const response = await electricService.getBills(
+          {
+            status: activeTab,
+            search: filters.search,
+            exactMonth: filters.exactMonth,
+            amountFilter: filters.amountFilter,
+            dateFilter: filters.dateFilter,
+          },
+          isLoadMore ? lastDoc : null,
         );
-      } else {
-        toast.error("Failed to load data");
+
+        if (isLoadMore) {
+          setBills((prev) => [...prev, ...(response.data || [])]);
+        } else {
+          setBills(response.data || []);
+        }
+
+        setLastDoc(response.lastVisible || null);
+        setHasMore(response.data && response.data.length === 50);
+      } catch (error) {
+        console.error(error);
+        if (error.message && error.message.toLowerCase().includes("index")) {
+          toast.error(
+            "Firebase Index required! Check browser console (F12) to click the create link.",
+            { duration: 6000 },
+          );
+        } else {
+          toast.error("Failed to load data");
+        }
+      } finally {
+        // Turn off all loaders
+        setLoading(false); // Only useful for the very first load
+        setIsRefreshing(false);
+        setLoadingMore(false);
       }
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  };
+    },
+    [activeTab, filters, lastDoc, toast],
+  );
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       fetchBills(false);
     }, 400);
     return () => clearTimeout(delayDebounceFn);
-  }, [activeTab, filters.search, filters.exactMonth]);
+  }, [
+    activeTab,
+    filters.search,
+    filters.exactMonth,
+    filters.amountFilter,
+    filters.dateFilter,
+  ]);
 
-  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
-
       setTimeout(() => {
         const element = document.getElementById(urlHighlightId);
         if (element) {
           element.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }, 500);
-
       const timer = setTimeout(() => {
         setActiveHighlight(null);
       }, 3500);
-
       return () => clearTimeout(timer);
     }
   }, [urlHighlightId, loading]);
-
-  const filteredBills = useMemo(() => {
-    return bills.filter((bill) => {
-      if (activeTab !== "All" && bill.status !== activeTab) return false;
-
-      let matchAmount = true;
-      const amt = Number(bill.totalAmount) || 0;
-      if (filters.amountFilter === "Under ₹10k") matchAmount = amt < 10000;
-      else if (filters.amountFilter === "₹10k - ₹50k")
-        matchAmount = amt >= 10000 && amt <= 50000;
-      else if (filters.amountFilter === "Over ₹50k") matchAmount = amt > 50000;
-      if (!matchAmount) return false;
-
-      let matchDate = true;
-      if (filters.dateFilter !== "All" && bill.billDate) {
-        const billDateObj = new Date(bill.billDate);
-        const today = new Date();
-        const diffTime = Math.abs(today - billDateObj);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (filters.dateFilter === "Today") matchDate = diffDays <= 1;
-        else if (filters.dateFilter === "Last7Days") matchDate = diffDays <= 7;
-        else if (filters.dateFilter === "ThisMonth")
-          matchDate =
-            billDateObj.getMonth() === today.getMonth() &&
-            billDateObj.getFullYear() === today.getFullYear();
-      }
-      if (!matchDate) return false;
-
-      return true;
-    });
-  }, [bills, activeTab, filters.amountFilter, filters.dateFilter]);
 
   const activeFiltersCount =
     [filters.amountFilter, filters.dateFilter].filter(
@@ -430,12 +408,9 @@ const ElectricBill = () => {
     };
   }, [isTransport]);
 
-  // 🚀 ONLY EXPORTS VISIBLE DATA (Maximum 50 or what is loaded in table)
   const handleExport = () => {
     try {
-      if (filteredBills.length === 0)
-        return toast.info("No bill records to export");
-
+      if (bills.length === 0) return toast.info("No bill records to export");
       const headers = [
         "CA Number",
         "Month",
@@ -445,11 +420,10 @@ const ElectricBill = () => {
         "Total Amount",
         "Status",
       ];
-      const rows = filteredBills.map(
+      const rows = bills.map(
         (bill) =>
           `"${bill.caNumber || "-"}","${bill.month || "-"}",${bill.billDate ? `\t${new Date(bill.billDate).toLocaleDateString("en-GB")}` : "-"},${bill.billAmount || 0},${bill.fineAmount || 0},${bill.totalAmount || 0},"${bill.status || "-"}"`,
       );
-
       const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const link = document.createElement("a");
       link.href = URL.createObjectURL(
@@ -468,23 +442,18 @@ const ElectricBill = () => {
     }
   };
 
-  // 🚀 SMART MONTHLY BACKUP EXPORT (Bypasses Limit completely without crashing)
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
       toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
-
-      // Direct Query from server to only get data for that month
       const q = query(
         collection(db, "electricBills"),
         where("month", "==", monthToFetch),
       );
       const snapshot = await getDocs(q);
       const allData = snapshot.docs.map((doc) => doc.data());
-
       if (allData.length === 0)
         return toast.info(`No records found for ${monthToFetch}.`);
-
       const headers = [
         "CA Number",
         "Month",
@@ -494,12 +463,10 @@ const ElectricBill = () => {
         "Total Amount",
         "Status",
       ];
-
       const rows = allData.map(
         (bill) =>
           `"${bill.caNumber || "-"}","${bill.month || "-"}",${bill.billDate ? `\t${new Date(bill.billDate).toLocaleDateString("en-GB")}` : "-"},${bill.billAmount || 0},${bill.fineAmount || 0},${bill.totalAmount || 0},"${bill.status || "-"}"`,
       );
-
       const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const link = document.createElement("a");
       link.href = URL.createObjectURL(
@@ -509,10 +476,7 @@ const ElectricBill = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
       toast.success(`Backup for ${monthToFetch} downloaded securely!`);
-
-      // 🚀 FIXED: Instantly removes the warning after successful backup
       localStorage.setItem(`backup_electric_${monthToFetch}`, "true");
       if (showBackupWarning === monthToFetch) {
         setShowBackupWarning(null);
@@ -529,12 +493,19 @@ const ElectricBill = () => {
     setWiping(true);
     try {
       const currentUser = admin?.data || admin || {};
-      await electricService.deleteAllBills({
+      const response = await electricService.deleteAllBills({
         password: deletePassword,
         email: currentUser.email,
         user: currentUser,
       });
-      toast.success("Electric Bills database cleared successfully.");
+      if (response.isPartial) {
+        toast.success(response.message, {
+          duration: 8000,
+          style: { border: "1px solid #eab308" },
+        });
+      } else {
+        toast.success(response.message);
+      }
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
@@ -623,11 +594,6 @@ const ElectricBill = () => {
     if (val.length <= 12) setFormData({ ...formData, caNumber: val });
   };
 
-  const handleDisabledClick = (id) => {
-    setWarningTooltip(id);
-    setTimeout(() => setWarningTooltip(null), 2500);
-  };
-
   return (
     <div className="w-full h-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-20 w-full">
@@ -679,7 +645,6 @@ const ElectricBill = () => {
         </div>
       </div>
 
-      {/* 🚀 SMART BACKUP WARNING */}
       {showBackupWarning && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
           <div className="flex items-center gap-3">
@@ -996,11 +961,13 @@ const ElectricBill = () => {
 
       <div className="w-full">
         <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden flex flex-col w-full relative">
+          {/* 🚀 FULL SCREEN LOADER (ONLY FOR FIRST LOAD) */}
           {loading && (
-            <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm">
+            <div className="absolute inset-0 bg-[#09090B]/80 z-50 flex items-center justify-center backdrop-blur-[2px]">
               <Loader />
             </div>
           )}
+
           <div className="p-6 md:p-8 border-b border-zinc-800/60 bg-[#09090B] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
             <div className="flex gap-2 p-1.5 bg-zinc-900/50 rounded-xl border border-zinc-800 w-full sm:w-auto overflow-x-auto">
               <button
@@ -1040,7 +1007,12 @@ const ElectricBill = () => {
                   className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
                   value={filters.search}
                   onChange={(e) =>
-                    setFilters({ ...filters, search: e.target.value })
+                    setFilters({
+                      ...filters,
+                      search: e.target.value,
+                      amountFilter: "Any Amount",
+                      dateFilter: "All",
+                    })
                   }
                 />
               </div>
@@ -1095,157 +1067,177 @@ const ElectricBill = () => {
             )}
           </div>
 
-          <div className="overflow-x-auto w-full custom-scrollbar pb-4">
-            <table className="w-full text-left min-w-[900px]">
-              <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-widest sticky top-0 z-10 border-b border-zinc-800/60">
-                <tr>
-                  <th className="py-4 px-6">CA No. & Month</th>
-                  <th className="py-4 px-5">Bill Date</th>
-                  <th className="py-4 px-5 text-right">Bill Amt</th>
-                  <th className="py-4 px-5 text-right">Fine</th>
-                  <th className="py-4 px-5 text-right">Total Amount</th>
-                  <th className="py-4 px-5 text-center">Status</th>
-                  <th className="py-4 px-6 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {filteredBills.map((bill) => {
-                  const hasEdits =
-                    bill.editHistory && bill.editHistory.length > 0;
-                  return (
-                    <tr
-                      key={bill._id}
-                      id={bill._id}
-                      className={`transition-all duration-1000 ease-out group border-l-4 ${
-                        activeHighlight === bill._id
-                          ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
-                          : "border-transparent hover:bg-zinc-800/30"
-                      }`}
-                    >
-                      <td className="p-5 pl-6 align-middle">
-                        <div
-                          className={`${theme.primaryText} font-mono font-bold whitespace-nowrap mb-1 tracking-wider`}
-                        >
-                          {bill.caNumber || "N/A"}
-                        </div>
-                        <div className="text-zinc-300 font-bold whitespace-nowrap">
-                          {bill.month}
-                        </div>
-                        {hasEdits && (
+          {/* 🚀 TABLE AREA WITH SMOOTH OVERLAY SPINNER */}
+          <div className="relative w-full min-h-[300px]">
+            {isRefreshing && !loading && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#09090B]/30 backdrop-blur-[1px] rounded-b-2xl">
+                <div className="bg-zinc-900/90 border border-zinc-800 shadow-2xl px-5 py-3 rounded-2xl flex items-center gap-3 animate-in zoom-in duration-200">
+                  <RefreshCcw
+                    size={18}
+                    className={`animate-spin ${theme.primaryText}`}
+                  />
+                  <span className="text-zinc-200 text-xs font-bold uppercase tracking-widest">
+                    Updating...
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div
+              className={`overflow-x-auto w-full custom-scrollbar pb-4 transition-all duration-300 ${isRefreshing && !loading ? "opacity-30 pointer-events-none" : "opacity-100"}`}
+            >
+              <table className="w-full text-left min-w-[900px]">
+                <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-widest sticky top-0 z-10 border-b border-zinc-800/60">
+                  <tr>
+                    <th className="py-4 px-6">CA No. & Month</th>
+                    <th className="py-4 px-5">Bill Date</th>
+                    <th className="py-4 px-5 text-right">Bill Amt</th>
+                    <th className="py-4 px-5 text-right">Fine</th>
+                    <th className="py-4 px-5 text-right">Total Amount</th>
+                    <th className="py-4 px-5 text-center">Status</th>
+                    <th className="py-4 px-6 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60 text-sm">
+                  {bills.map((bill) => {
+                    const hasEdits =
+                      bill.editHistory && bill.editHistory.length > 0;
+                    return (
+                      <tr
+                        key={bill._id}
+                        id={bill._id}
+                        className={`transition-all duration-1000 ease-out group border-l-4 ${activeHighlight === bill._id ? `${isTransport ? "bg-cyan-500/[0.08] shadow-[inset_0_0_20px_rgba(6,182,212,0.05)] border-cyan-500" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
+                      >
+                        <td className="p-5 pl-6 align-middle">
                           <div
-                            onClick={() => openHistory(bill)}
-                            className="mt-2.5 flex flex-col gap-0.5 cursor-pointer bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 p-1.5 rounded-lg transition-all w-max whitespace-nowrap group/btn"
+                            className={`${theme.primaryText} font-mono font-bold whitespace-nowrap mb-1 tracking-wider`}
                           >
-                            <div className="text-[10px] font-mono text-zinc-300 flex items-center gap-1 uppercase tracking-widest font-bold leading-none">
-                              <History
-                                size={10}
-                                className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
-                              />
-                              {bill.editHistory[bill.editHistory.length - 1]
-                                .role || "ADMIN"}
-                            </div>
+                            {bill.caNumber || "N/A"}
                           </div>
-                        )}
-                      </td>
-                      <td className="p-5 align-middle text-zinc-400 font-mono text-xs">
-                        {bill.billDate
-                          ? new Date(bill.billDate).toLocaleDateString("en-GB")
-                          : "-"}
-                      </td>
-                      <td className="p-5 align-middle text-right font-mono text-zinc-300">
-                        ₹{Number(bill.billAmount || 0).toLocaleString("en-IN")}
-                      </td>
-                      <td className="p-5 align-middle text-right font-mono text-rose-400/80">
-                        ₹{Number(bill.fineAmount || 0).toLocaleString("en-IN")}
-                      </td>
-                      <td className="p-5 text-right font-bold text-white align-middle whitespace-nowrap font-mono text-lg tracking-tight">
-                        ₹{Number(bill.totalAmount || 0).toLocaleString("en-IN")}
-                      </td>
-                      <td className="p-5 text-center align-middle">
-                        <span
-                          className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border inline-flex items-center gap-1.5 ${bill.status === "Paid" ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}` : bill.status === "Overdue" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"}`}
-                        >
-                          {bill.status === "Paid" ? (
-                            <CheckCircle size={12} />
-                          ) : (
-                            <AlertCircle size={12} />
-                          )}{" "}
-                          {bill.status}
-                        </span>
-                      </td>
-                      <td className="p-5 pr-6 align-middle">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => handleEdit(bill)}
-                            className={`p-2 text-zinc-500 transition-all rounded-xl ${theme.primaryHoverBorder} hover:${theme.primaryText} hover:bg-zinc-800/50`}
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            onClick={() =>
-                              isManager
-                                ? (setWarningTooltip(bill._id),
-                                  setTimeout(
-                                    () => setWarningTooltip(null),
-                                    2500,
-                                  ))
-                                : setDeleteModal({
-                                    isOpen: true,
-                                    id: bill._id,
-                                  })
-                            }
-                            className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                          {warningTooltip === bill._id && (
-                            <div className="absolute top-full right-0 mb-2 z-[9999] bg-[#09090B] border border-red-500/30 shadow-2xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
-                              <span className="bg-red-500/20 p-1 rounded text-[8px] leading-none">
-                                🚫
-                              </span>{" "}
-                              Access Denied
+                          <div className="text-zinc-300 font-bold whitespace-nowrap">
+                            {bill.month}
+                          </div>
+                          {hasEdits && (
+                            <div
+                              onClick={() => openHistory(bill)}
+                              className="mt-2.5 flex flex-col gap-0.5 cursor-pointer bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 p-1.5 rounded-lg transition-all w-max whitespace-nowrap group/btn"
+                            >
+                              <div className="text-[10px] font-mono text-zinc-300 flex items-center gap-1 uppercase tracking-widest font-bold leading-none">
+                                <History
+                                  size={10}
+                                  className="text-zinc-400 group-hover/btn:-rotate-12 transition-transform"
+                                />
+                                {bill.editHistory[bill.editHistory.length - 1]
+                                  .role || "ADMIN"}
+                              </div>
                             </div>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td className="p-5 align-middle text-zinc-400 font-mono text-xs">
+                          {bill.billDate
+                            ? new Date(bill.billDate).toLocaleDateString(
+                                "en-GB",
+                              )
+                            : "-"}
+                        </td>
+                        <td className="p-5 align-middle text-right font-mono text-zinc-300">
+                          ₹
+                          {Number(bill.billAmount || 0).toLocaleString("en-IN")}
+                        </td>
+                        <td className="p-5 align-middle text-right font-mono text-rose-400/80">
+                          ₹
+                          {Number(bill.fineAmount || 0).toLocaleString("en-IN")}
+                        </td>
+                        <td className="p-5 text-right font-bold text-white align-middle whitespace-nowrap font-mono text-lg tracking-tight">
+                          ₹
+                          {Number(bill.totalAmount || 0).toLocaleString(
+                            "en-IN",
+                          )}
+                        </td>
+                        <td className="p-5 text-center align-middle">
+                          <span
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border inline-flex items-center gap-1.5 ${bill.status === "Paid" ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}` : bill.status === "Overdue" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"}`}
+                          >
+                            {bill.status === "Paid" ? (
+                              <CheckCircle size={12} />
+                            ) : (
+                              <AlertCircle size={12} />
+                            )}{" "}
+                            {bill.status}
+                          </span>
+                        </td>
+                        <td className="p-5 pr-6 align-middle">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => handleEdit(bill)}
+                              className={`p-2 text-zinc-500 transition-all rounded-xl ${theme.primaryHoverBorder} hover:${theme.primaryText} hover:bg-zinc-800/50`}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() =>
+                                isManager
+                                  ? (setWarningTooltip(bill._id),
+                                    setTimeout(
+                                      () => setWarningTooltip(null),
+                                      2500,
+                                    ))
+                                  : setDeleteModal({
+                                      isOpen: true,
+                                      id: bill._id,
+                                    })
+                              }
+                              className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                            {warningTooltip === bill._id && (
+                              <div className="absolute top-full right-0 mb-2 z-[9999] bg-[#09090B] border border-red-500/30 shadow-2xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                                <span className="bg-red-500/20 p-1 rounded text-[8px] leading-none">
+                                  🚫
+                                </span>{" "}
+                                Access Denied
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
 
-            {/* 🚀 NEW: LOAD MORE BUTTON */}
-            {hasMore && filteredBills.length > 0 && (
-              <div className="flex justify-center p-6 border-t border-zinc-800/60">
-                <Button
-                  onClick={() => fetchBills(true)}
-                  disabled={loadingMore}
-                  variant="outline"
-                  className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
-                >
-                  {loadingMore ? (
-                    <RefreshCcw size={16} className="animate-spin mr-2" />
-                  ) : null}
-                  {loadingMore ? "Loading..." : "Load Next 50 Bills"}
-                </Button>
-              </div>
-            )}
-
-            {filteredBills.length === 0 && !loading && (
-              <div className="p-12 text-center w-full flex flex-col items-center border-t border-zinc-800/60">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-zinc-800/50 text-zinc-500 mb-4">
-                  <FileText size={32} />
+              {hasMore && bills.length > 0 && (
+                <div className="flex justify-center p-6 border-t border-zinc-800/60">
+                  <Button
+                    onClick={() => fetchBills(true)}
+                    disabled={loadingMore}
+                    variant="outline"
+                    className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+                  >
+                    {loadingMore ? (
+                      <RefreshCcw size={16} className="animate-spin mr-2" />
+                    ) : null}
+                    {loadingMore ? "Loading..." : "Load Next 50 Bills"}
+                  </Button>
                 </div>
-                <p className="text-zinc-500 text-sm">
-                  No bill records match your filters.
-                </p>
-              </div>
-            )}
+              )}
+
+              {bills.length === 0 && !loading && !isRefreshing && (
+                <div className="p-12 text-center w-full flex flex-col items-center border-t border-zinc-800/60">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-zinc-800/50 text-zinc-500 mb-4">
+                    <FileText size={32} />
+                  </div>
+                  <p className="text-zinc-500 text-sm">
+                    No bill records match your filters.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* History Modal */}
       {historyModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#09090B] border border-zinc-800/60 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative Z-50">
@@ -1333,8 +1325,6 @@ const ElectricBill = () => {
                 Wipe Invoice Database
               </h2>
             </div>
-
-            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -1368,7 +1358,6 @@ const ElectricBill = () => {
                 </div>
               </div>
             </div>
-
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
