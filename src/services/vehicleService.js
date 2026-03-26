@@ -16,7 +16,7 @@ import {
   sum,
   count,
 } from "firebase/firestore";
-import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 const tripCollection = collection(db, "trips");
 const expenseCollection = collection(db, "expenses");
@@ -72,14 +72,41 @@ const vehicleService = {
     }
   },
 
-  // 2 & 3. 🚀 PAGINATION & BACKEND FILTERING (TRIPS)
+  // 🚀 2. PAGINATED & 100% BACKEND FILTERED (TRIPS)
   getLogs: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
-    let queryConstraints = [];
+    let constraints = [];
+    let hasInequality = false;
 
+    // --- 1. EQUALITY FILTERS ---
     if (filters.exactDate) {
-      queryConstraints.push(where("date", ">=", filters.exactDate));
-      queryConstraints.push(where("date", "<=", filters.exactDate + "\uf8ff"));
-    } else if (filters.dateFilter && filters.dateFilter !== "All") {
+      constraints.push(where("date", "==", filters.exactDate));
+    }
+
+    // --- 2. MUTUALLY EXCLUSIVE INEQUALITY FILTERS ---
+    if (filters.search) {
+      // Prioritizing Vehicle Number search for Trips
+      constraints.push(where("vehicleNo", ">=", filters.search));
+      constraints.push(where("vehicleNo", "<=", filters.search + "\uf8ff"));
+      constraints.push(orderBy("vehicleNo"));
+      hasInequality = true;
+    } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
+      if (filters.amountFilter === "Under ₹10k") {
+        constraints.push(where("totalAmount", "<", 10000));
+      } else if (filters.amountFilter === "₹10k - ₹50k") {
+        constraints.push(
+          where("totalAmount", ">=", 10000),
+          where("totalAmount", "<=", 50000),
+        );
+      } else if (filters.amountFilter === "Over ₹50k") {
+        constraints.push(where("totalAmount", ">", 50000));
+      }
+      constraints.push(orderBy("totalAmount", "desc"));
+      hasInequality = true;
+    } else if (
+      filters.dateFilter &&
+      filters.dateFilter !== "All" &&
+      !filters.exactDate
+    ) {
       const today = new Date();
       let targetDate = new Date();
       if (filters.dateFilter === "Today")
@@ -87,68 +114,72 @@ const vehicleService = {
       if (filters.dateFilter === "Last7Days")
         targetDate.setDate(today.getDate() - 7);
       if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
-      queryConstraints.push(
+
+      constraints.push(
         where("date", ">=", targetDate.toISOString().split("T")[0]),
       );
+      constraints.push(orderBy("date", "desc"));
+      hasInequality = true;
     }
 
-    queryConstraints.push(orderBy("date", "desc"));
-    if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
-    queryConstraints.push(limit(pageSize));
-
-    const q = query(tripCollection, ...queryConstraints);
-    const snapshot = await getDocs(q);
-
-    let fetchedData = snapshot.docs.map((doc) => ({
-      _id: doc.id,
-      ...doc.data(),
-    }));
-
-    // Client-side fallback for Search & Amounts
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      fetchedData = fetchedData.filter(
-        (item) =>
-          String(item.vehicleNo || "")
-            .toLowerCase()
-            .includes(searchLower) ||
-          String(item.driverName || "")
-            .toLowerCase()
-            .includes(searchLower) ||
-          String(item.loadingPoint || "")
-            .toLowerCase()
-            .includes(searchLower) ||
-          String(item.unloadingSite || "")
-            .toLowerCase()
-            .includes(searchLower),
-      );
+    if (!hasInequality && !filters.exactDate) {
+      constraints.push(orderBy("date", "desc"));
     }
 
-    if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
-      fetchedData = fetchedData.filter((item) => {
-        const amt = Number(item.totalAmount) || 0;
-        if (filters.amountFilter === "Under ₹10k") return amt < 10000;
-        if (filters.amountFilter === "₹10k - ₹50k")
-          return amt >= 10000 && amt <= 50000;
-        if (filters.amountFilter === "Over ₹50k") return amt > 50000;
-        return true;
-      });
-    }
+    // --- 3. APPLY PAGINATION ---
+    constraints.push(limit(pageSize));
+    if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
-    return {
-      data: fetchedData,
-      lastVisible: snapshot.docs[snapshot.docs.length - 1],
-    };
+    try {
+      const q = query(tripCollection, ...constraints);
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
+
+      return {
+        data,
+        lastVisible: snapshot.docs[snapshot.docs.length - 1],
+      };
+    } catch (error) {
+      console.error("🔥 Firebase Query Error:", error);
+      throw error;
+    }
   },
 
-  // 2 & 3. 🚀 PAGINATION & BACKEND FILTERING (EXPENSES)
+  // 🚀 3. PAGINATED & 100% BACKEND FILTERED (EXPENSES)
   getExpenses: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
-    let queryConstraints = [];
+    let constraints = [];
+    let hasInequality = false;
 
+    // --- 1. EQUALITY FILTERS ---
     if (filters.exactDate) {
-      queryConstraints.push(where("date", ">=", filters.exactDate));
-      queryConstraints.push(where("date", "<=", filters.exactDate + "\uf8ff"));
-    } else if (filters.dateFilter && filters.dateFilter !== "All") {
+      constraints.push(where("date", "==", filters.exactDate));
+    }
+
+    // --- 2. MUTUALLY EXCLUSIVE INEQUALITY FILTERS ---
+    if (filters.search) {
+      // Prioritize Reason Search for Expenses
+      constraints.push(where("reason", ">=", filters.search));
+      constraints.push(where("reason", "<=", filters.search + "\uf8ff"));
+      constraints.push(orderBy("reason"));
+      hasInequality = true;
+    } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
+      if (filters.amountFilter === "Under ₹10k") {
+        constraints.push(where("amount", "<", 10000));
+      } else if (filters.amountFilter === "₹10k - ₹50k") {
+        constraints.push(
+          where("amount", ">=", 10000),
+          where("amount", "<=", 50000),
+        );
+      } else if (filters.amountFilter === "Over ₹50k") {
+        constraints.push(where("amount", ">", 50000));
+      }
+      constraints.push(orderBy("amount", "desc"));
+      hasInequality = true;
+    } else if (
+      filters.dateFilter &&
+      filters.dateFilter !== "All" &&
+      !filters.exactDate
+    ) {
       const today = new Date();
       let targetDate = new Date();
       if (filters.dateFilter === "Today")
@@ -156,47 +187,35 @@ const vehicleService = {
       if (filters.dateFilter === "Last7Days")
         targetDate.setDate(today.getDate() - 7);
       if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
-      queryConstraints.push(
+
+      constraints.push(
         where("date", ">=", targetDate.toISOString().split("T")[0]),
       );
+      constraints.push(orderBy("date", "desc"));
+      hasInequality = true;
     }
 
-    queryConstraints.push(orderBy("date", "desc"));
-    if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
-    queryConstraints.push(limit(pageSize));
-
-    const q = query(expenseCollection, ...queryConstraints);
-    const snapshot = await getDocs(q);
-
-    let fetchedData = snapshot.docs.map((doc) => ({
-      _id: doc.id,
-      ...doc.data(),
-    }));
-
-    // Client-side fallback for Search & Amounts
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      fetchedData = fetchedData.filter((item) =>
-        String(item.reason || "")
-          .toLowerCase()
-          .includes(searchLower),
-      );
-    }
-    if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
-      fetchedData = fetchedData.filter((item) => {
-        const amt = Number(item.amount) || 0;
-        if (filters.amountFilter === "Under ₹10k") return amt < 10000;
-        if (filters.amountFilter === "₹10k - ₹50k")
-          return amt >= 10000 && amt <= 50000;
-        if (filters.amountFilter === "Over ₹50k") return amt > 50000;
-        return true;
-      });
+    if (!hasInequality && !filters.exactDate) {
+      constraints.push(orderBy("date", "desc"));
     }
 
-    return {
-      data: fetchedData,
-      lastVisible: snapshot.docs[snapshot.docs.length - 1],
-    };
+    // --- 3. APPLY PAGINATION ---
+    constraints.push(limit(pageSize));
+    if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
+
+    try {
+      const q = query(expenseCollection, ...constraints);
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
+
+      return {
+        data,
+        lastVisible: snapshot.docs[snapshot.docs.length - 1],
+      };
+    } catch (error) {
+      console.error("🔥 Firebase Query Error:", error);
+      throw error;
+    }
   },
 
   addLog: async (payload, user) => {
