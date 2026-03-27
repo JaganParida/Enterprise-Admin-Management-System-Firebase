@@ -29,7 +29,6 @@ const EditSale = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [auditInfo, setAuditInfo] = useState(null);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -71,8 +70,6 @@ const EditSale = () => {
     const fetchLog = async () => {
       try {
         const { data } = await salesService.getSaleById(id);
-
-        // 🚀 SAFE DATE FIX
         let safeDate = "";
         if (data.date) {
           safeDate = data.date.includes("T")
@@ -114,16 +111,13 @@ const EditSale = () => {
         setLoading(false);
       }
     };
-
     fetchLog();
-    // 🚀 BUG FIX: Removed 'toast' from dependency array to stop the infinite loop crash!
   }, [id]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => {
       let newData = { ...prev, [name]: value };
-
       if (name === "quantity" || name === "pricePerQuantity") {
         const qty = Number(newData.quantity) || 0;
         const rate = Number(newData.pricePerQuantity) || 0;
@@ -131,9 +125,7 @@ const EditSale = () => {
           newData.amount = (qty * rate).toString();
         }
       }
-
       const totalAmount = Number(newData.amount) || 0;
-
       if (
         ["amount", "quantity", "pricePerQuantity", "amountPaid"].includes(name)
       ) {
@@ -157,6 +149,11 @@ const EditSale = () => {
         admin || { email: "Unknown", role: "admin" };
       await salesService.updateSale(id, formData, currentUser);
       toast.success("Sales record updated successfully.");
+
+      // 🚀 CROSS-PAGE INVALIDATION: Force both pages to fetch fresh updated data!
+      sessionStorage.setItem("report_needs_refresh", "true");
+      sessionStorage.setItem("entry_needs_refresh", "true");
+
       navigate(-1);
     } catch (err) {
       toast.error("Failed to update record.");
@@ -185,12 +182,10 @@ const EditSale = () => {
         />{" "}
         Return to Report
       </button>
-
       <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-8 relative overflow-hidden">
         <div
           className={`absolute top-0 right-0 w-64 h-64 blur-3xl rounded-full pointer-events-none ${theme.glowOrb}`}
         ></div>
-
         <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6 relative z-10">
           <div
             className={`p-3 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
@@ -537,7 +532,6 @@ const EditSale = () => {
               Update
             </Button>
           </div>
-
           {auditInfo && (
             <div className="text-center text-[10px] font-mono text-zinc-500 uppercase tracking-[0.1em] pt-2">
               LAST UPDATED BY{" "}
@@ -549,7 +543,6 @@ const EditSale = () => {
           )}
         </form>
       </div>
-
       <ConfirmDialog
         isOpen={isDialogOpen}
         onClose={() => setIsDialogOpen(false)}
