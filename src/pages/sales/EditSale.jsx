@@ -71,11 +71,17 @@ const EditSale = () => {
     const fetchLog = async () => {
       try {
         const { data } = await salesService.getSaleById(id);
-        const formattedDate = data.date
-          ? new Date(data.date).toISOString().split("T")[0]
-          : "";
+
+        // 🚀 SAFE DATE FIX
+        let safeDate = "";
+        if (data.date) {
+          safeDate = data.date.includes("T")
+            ? data.date.split("T")[0]
+            : data.date;
+        }
+
         setFormData({
-          date: formattedDate,
+          date: safeDate,
           challanNo: data.challanNo || "",
           buyerName: data.buyerName || "",
           address: data.address || "",
@@ -108,8 +114,10 @@ const EditSale = () => {
         setLoading(false);
       }
     };
+
     fetchLog();
-  }, [id, toast]);
+    // 🚀 BUG FIX: Removed 'toast' from dependency array to stop the infinite loop crash!
+  }, [id]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -289,121 +297,116 @@ const EditSale = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="relative">
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Product
               </label>
-              <div className="relative">
-                <select
-                  name="productName"
-                  value={formData.productName}
-                  onChange={handleChange}
-                  required
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all appearance-none cursor-pointer ${theme.primaryFocus}`}
+              <select
+                name="productName"
+                value={formData.productName}
+                onChange={handleChange}
+                required
+                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none appearance-none ${theme.primaryFocus}`}
+              >
+                <option value="" className="bg-[#09090B]">
+                  Select...
+                </option>
+                <optgroup
+                  label="Bricks"
+                  className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                 >
-                  <option value="" className="bg-[#09090B] text-zinc-500">
-                    Select...
+                  <option
+                    value="Bricks (10 inch)"
+                    className="text-zinc-100 font-normal"
+                  >
+                    Bricks (10 inch)
                   </option>
-                  <optgroup
-                    label="Bricks"
-                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
+                  <option
+                    value="Bricks (9 inch)"
+                    className="text-zinc-100 font-normal"
                   >
-                    <option
-                      value="Bricks (10 inch)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      Bricks (10 inch)
-                    </option>
-                    <option
-                      value="Bricks (9 inch)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      Bricks (9 inch)
-                    </option>
-                    <option
-                      value="Bricks (8 inch)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      Bricks (8 inch)
-                    </option>
-                  </optgroup>
-                  <optgroup
-                    label="Paver Blocks"
-                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
+                    Bricks (9 inch)
+                  </option>
+                  <option
+                    value="Bricks (8 inch)"
+                    className="text-zinc-100 font-normal"
                   >
-                    <option
-                      value="Zig Zag (60mm)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      Zig Zag (60mm)
-                    </option>
-                    <option
-                      value="Zig Zag (80mm)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      Zig Zag (80mm)
-                    </option>
-                    <option
-                      value="6/12 Brick (60mm)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      6/12 Brick (60mm)
-                    </option>
-                    <option
-                      value="6/12 Brick (80mm)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      6/12 Brick (80mm)
-                    </option>
-                    <option
-                      value="6/6 Brick (60mm)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      6/6 Brick 60mm
-                    </option>
-                    <option
-                      value="6/6 Brick (80mm)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      6/6 Brick (80mm)
-                    </option>
-                  </optgroup>
-                  <optgroup
-                    label="Chequered Tiles"
-                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
+                    Bricks (8 inch)
+                  </option>
+                </optgroup>
+                <optgroup
+                  label="Paver Blocks"
+                  className={`bg-[#09090B] font-bold ${theme.primaryText}`}
+                >
+                  <option
+                    value="Zig Zag (60mm)"
+                    className="text-zinc-100 font-normal"
                   >
-                    <option
-                      value="Hexagon"
-                      className="text-zinc-100 font-normal"
-                    >
-                      Hexagon
-                    </option>
-                    <option
-                      value="Brick Design (9inch)"
-                      className="text-zinc-100 font-normal"
-                    >
-                      Brick Design (9inch)
-                    </option>
-                    <option
-                      value="Curve Stone"
-                      className="text-zinc-100 font-normal"
-                    >
-                      Curve Stone
-                    </option>
-                    <option
-                      value="Cover Block"
-                      className="text-zinc-100 font-normal"
-                    >
-                      Cover Block
-                    </option>
-                  </optgroup>
-                </select>
-                <ChevronDown
-                  size={16}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500"
-                />
-              </div>
+                    Zig Zag (60mm)
+                  </option>
+                  <option
+                    value="Zig Zag (80mm)"
+                    className="text-zinc-100 font-normal"
+                  >
+                    Zig Zag (80mm)
+                  </option>
+                  <option
+                    value="6-12 Brick (60mm)"
+                    className="text-zinc-100 font-normal"
+                  >
+                    6/12 Brick (60mm)
+                  </option>
+                  <option
+                    value="6-12 Brick (80mm)"
+                    className="text-zinc-100 font-normal"
+                  >
+                    6/12 Brick (80mm)
+                  </option>
+                  <option
+                    value="6/6 Brick (60mm)"
+                    className="text-zinc-100 font-normal"
+                  >
+                    6/6 Brick 60mm
+                  </option>
+                  <option
+                    value="6/6 Brick (80mm)"
+                    className="text-zinc-100 font-normal"
+                  >
+                    6/6 Brick (80mm)
+                  </option>
+                </optgroup>
+                <optgroup
+                  label="Chequered Tiles"
+                  className={`bg-[#09090B] font-bold ${theme.primaryText}`}
+                >
+                  <option value="Hexagon" className="text-zinc-100 font-normal">
+                    Hexagon
+                  </option>
+                  <option
+                    value="Brick Design (9inch)"
+                    className="text-zinc-100 font-normal"
+                  >
+                    Brick Design (9inch)
+                  </option>
+                  <option
+                    value="Curve Stone"
+                    className="text-zinc-100 font-normal"
+                  >
+                    Curve Stone
+                  </option>
+                  <option
+                    value="Cover Block"
+                    className="text-zinc-100 font-normal"
+                  >
+                    Cover Block
+                  </option>
+                </optgroup>
+              </select>
+              <ChevronDown
+                size={16}
+                className="absolute right-4 bottom-3 pointer-events-none text-zinc-500"
+              />
             </div>
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -414,7 +417,6 @@ const EditSale = () => {
                 name="quantity"
                 value={formData.quantity}
                 onChange={handleChange}
-                onWheel={(e) => e.target.blur()}
                 required
                 placeholder="0"
                 className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
@@ -464,11 +466,7 @@ const EditSale = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Cash" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${
-                    formData.paymentMode === "Cash"
-                      ? theme.paymentCash
-                      : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`
-                  }`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Cash" ? theme.paymentCash : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`}`}
                 >
                   <Banknote size={16} /> Cash
                 </button>
@@ -477,11 +475,7 @@ const EditSale = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Online" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${
-                    formData.paymentMode === "Online"
-                      ? theme.paymentOnline
-                      : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`
-                  }`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Online" ? theme.paymentOnline : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`}`}
                 >
                   <CreditCard size={16} /> Online
                 </button>
