@@ -82,7 +82,6 @@ const salesService = {
     }
   },
 
-  // 🚀 FIXED: Added robust error handling so you can see if Firebase needs an index
   getAllSales: async (filters = {}, lastDoc = null, limitCount = 50) => {
     let constraints = [];
     let hasInequality = false;
@@ -141,7 +140,6 @@ const salesService = {
       }));
       return { data, lastVisible: snapshot.docs[snapshot.docs.length - 1] };
     } catch (error) {
-      // 🔥 Yahan error log hoga agar Index missing hoga
       console.error("🔥 Firebase Query Error:", error.message);
       throw error;
     }
@@ -170,13 +168,11 @@ const salesService = {
     }
   },
 
-  // 🚀 FIXED: Function was missing! Required for Edit Screen to work.
   getSaleById: async (id) => {
     try {
       const docSnap = await getDoc(doc(db, COLLECTION_NAME, id));
-      if (docSnap.exists()) {
+      if (docSnap.exists())
         return { data: { _id: docSnap.id, id: docSnap.id, ...docSnap.data() } };
-      }
       throw new Error("Not found");
     } catch (error) {
       console.error("Error fetching sale by ID:", error);
@@ -323,6 +319,29 @@ const salesService = {
       pendingDues: 0,
     });
     return { success: true, count: totalDeleted };
+  },
+
+  // 🚀 NEW: SERVER-SIDE BACKUP LOCKS (No Limits Wasted)
+  getBackupState: async (month) => {
+    try {
+      const snap = await getDoc(doc(db, "systemStats", "backupLocks"));
+      if (snap.exists()) {
+        const data = snap.data();
+        return data[month] || null;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  setBackupState: async (month, stateData) => {
+    try {
+      const lockRef = doc(db, "systemStats", "backupLocks");
+      await setDoc(lockRef, { [month]: stateData }, { merge: true });
+    } catch (e) {
+      console.error("Failed to set lock", e);
+    }
   },
 };
 
