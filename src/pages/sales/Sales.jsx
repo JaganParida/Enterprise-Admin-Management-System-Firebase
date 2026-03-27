@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion"; // 🚀 ADDED ANIMATION LIBRARY
 import salesService from "../../services/salesService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -19,7 +20,6 @@ import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 
-// 🚀 SAFE DATE FORMATTER
 const formatDate = (dateStr) => {
   if (!dateStr) return "-";
   try {
@@ -32,19 +32,30 @@ const formatDate = (dateStr) => {
   }
 };
 
+// 🚀 GLOBAL MEMORY CACHE
+let globalEntryCache = {
+  sales: [],
+  stats: { total: 0, cash: 0, online: 0, pendingDues: 0 },
+  fetched: false,
+  isStatsSynced: true,
+};
+
 const Sales = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useUI();
   const { admin } = useAuth();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!globalEntryCache.fetched);
   const [submitting, setSubmitting] = useState(false);
-  const [sales, setSales] = useState([]);
+  const [sales, setSales] = useState(globalEntryCache.sales);
+  const [stats, setStats] = useState(globalEntryCache.stats);
   const [confirmDialog, setConfirmDialog] = useState(false);
 
   const [syncingStats, setSyncingStats] = useState(false);
-  const [isStatsSynced, setIsStatsSynced] = useState(true);
+  const [isStatsSynced, setIsStatsSynced] = useState(
+    globalEntryCache.isStatsSynced,
+  );
 
   const isTransport =
     typeof window !== "undefined"
@@ -90,26 +101,38 @@ const Sales = () => {
   });
 
   useEffect(() => {
-    const fetchSales = async () => {
+    const needsRefresh =
+      sessionStorage.getItem("entry_needs_refresh") === "true";
+    const fetchSalesData = async () => {
+      if (needsRefresh) setLoading(true);
       try {
         const s = await salesService.getStats();
         const { data } = await salesService.getAllSales({}, null, 10);
-
         let isSynced = true;
         if (data.length > 0 && s.total === 0) isSynced = false;
         else if (data.length === 0 && s.total > 0) isSynced = false;
         else if (s.total < 0 || s.cash < 0 || s.online < 0 || s.pendingDues < 0)
           isSynced = false;
-
         setIsStatsSynced(isSynced);
+        globalEntryCache.isStatsSynced = isSynced;
+        setStats(s);
+        globalEntryCache.stats = s;
         setSales(data || []);
+        globalEntryCache.sales = data || [];
+        globalEntryCache.fetched = true;
       } catch (error) {
         toast.error("Failed to load sales data.");
       } finally {
         setLoading(false);
       }
     };
-    fetchSales();
+
+    if (!globalEntryCache.fetched || needsRefresh) {
+      sessionStorage.removeItem("entry_needs_refresh");
+      fetchSalesData();
+    } else {
+      setLoading(false);
+    }
   }, [toast]);
 
   const handleSyncStats = async () => {
@@ -117,8 +140,11 @@ const Sales = () => {
     setSyncingStats(true);
     toast.info("Repairing stats...");
     try {
-      await salesService.recalculateStats();
+      const newStats = await salesService.recalculateStats();
+      setStats(newStats);
+      globalEntryCache.stats = newStats;
       setIsStatsSynced(true);
+      globalEntryCache.isStatsSynced = true;
       toast.success("Dashboard stats repaired!");
     } catch (e) {
       toast.error("Sync failed.");
@@ -165,21 +191,40 @@ const Sales = () => {
       const docRef = await salesService.addSale(formData, currentUser);
       toast.success("Sale recorded successfully!");
 
+      const amt = Number(formData.amount) || 0;
+      const paid = Number(formData.amountPaid) || 0;
+      const due = Number(formData.amountDue) || 0;
+      const isCash = formData.paymentMode === "Cash";
+
       setSales((prevSales) => {
         const newSale = {
           _id: docRef.id,
           id: docRef.id,
           ...formData,
-          amount: Number(formData.amount),
-          amountPaid: Number(formData.amountPaid),
-          amountDue: Number(formData.amountDue),
+          amount: amt,
+          amountPaid: paid,
+          amountDue: due,
           createdAt: new Date().toISOString(),
         };
-        return [newSale, ...prevSales].slice(0, 10);
+        const updatedList = [newSale, ...prevSales].slice(0, 10);
+        globalEntryCache.sales = updatedList;
+        return updatedList;
       });
 
+      setStats((prev) => {
+        const newStats = {
+          total: prev.total + amt,
+          cash: prev.cash + (isCash ? paid : 0),
+          online: prev.online + (!isCash ? paid : 0),
+          pendingDues: prev.pendingDues + due,
+        };
+        globalEntryCache.stats = newStats;
+        return newStats;
+      });
+
+      sessionStorage.setItem("report_needs_refresh", "true");
       setFormData({
-        ...formData,
+        date: new Date().toISOString().split("T")[0],
         challanNo: "",
         buyerName: "",
         address: "",
@@ -189,6 +234,7 @@ const Sales = () => {
         amount: "",
         amountPaid: "",
         amountDue: "",
+        paymentMode: "Cash",
       });
     } catch (error) {
       toast.error("Failed to record sale.");
@@ -206,13 +252,18 @@ const Sales = () => {
     );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in pb-10">
-      <div className="lg:col-span-1">
-        <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10 overflow-hidden">
+      {/* 🚀 SMOOTH SLIDE-IN FOR FORM */}
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="lg:col-span-1"
+      >
+        <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden shadow-2xl">
           <div
             className={`absolute top-0 right-0 w-40 h-40 blur-3xl rounded-full pointer-events-none ${theme.glowOrb}`}
           ></div>
-
           <div className="flex items-center justify-between mb-8 relative z-10">
             <div className="flex items-center gap-3">
               <div
@@ -264,7 +315,6 @@ const Sales = () => {
                 />
               </div>
             </div>
-
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Buyer Name
@@ -279,7 +329,6 @@ const Sales = () => {
                 className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
-
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Address
@@ -294,7 +343,6 @@ const Sales = () => {
                 className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
-
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Vehicle No.
@@ -316,7 +364,6 @@ const Sales = () => {
                 />
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div className="relative">
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -369,7 +416,6 @@ const Sales = () => {
                 />
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -400,7 +446,6 @@ const Sales = () => {
                 />
               </div>
             </div>
-
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 ml-1">
                 Payment Mode
@@ -411,7 +456,7 @@ const Sales = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Cash" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold border ${formData.paymentMode === "Cash" ? theme.paymentCash : "bg-zinc-900/50 border-zinc-800 text-zinc-400"}`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold border transition-colors ${formData.paymentMode === "Cash" ? theme.paymentCash : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:bg-zinc-800"}`}
                 >
                   <Banknote size={16} /> Cash
                 </button>
@@ -420,13 +465,12 @@ const Sales = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Online" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold border ${formData.paymentMode === "Online" ? theme.paymentOnline : "bg-zinc-900/50 border-zinc-800 text-zinc-400"}`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold border transition-colors ${formData.paymentMode === "Online" ? theme.paymentOnline : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:bg-zinc-800"}`}
                 >
                   <CreditCard size={16} /> Online
                 </button>
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-4 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800">
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -455,11 +499,10 @@ const Sales = () => {
                 />
               </div>
             </div>
-
             <Button
               type="submit"
               variant="primary"
-              className="w-full mt-4 rounded-xl"
+              className="w-full mt-4 rounded-xl shadow-lg"
               disabled={submitting}
             >
               {submitting ? (
@@ -472,10 +515,16 @@ const Sales = () => {
             </Button>
           </form>
         </div>
-      </div>
+      </motion.div>
 
-      <div className="lg:col-span-2 space-y-6">
-        <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-hidden relative">
+      {/* 🚀 SMOOTH SLIDE-IN FOR RECENT SALES TABLE */}
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+        className="lg:col-span-2 space-y-6"
+      >
+        <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-hidden relative shadow-2xl">
           <div className="p-5 border-b border-zinc-800/60 flex justify-between items-center bg-[#09090B]">
             <div className="flex items-center gap-2 text-white font-bold">
               <History size={18} className={theme.primaryText} /> Recent Sales{" "}
@@ -484,9 +533,9 @@ const Sales = () => {
               </span>
             </div>
             <div className="flex gap-3">
-              {/* 🚀 FIXED BUTTON: Visible, Low Opacity, Unclickable, Tooltip added */}
               {!isManager && (
                 <Button
+                  type="button"
                   variant="outline"
                   onClick={handleSyncStats}
                   disabled={syncingStats || isStatsSynced}
@@ -495,11 +544,7 @@ const Sales = () => {
                       ? "System Already Updated"
                       : "Click to Sync Stats"
                   }
-                  className={`h-9 px-3 transition-all duration-500 ${
-                    isStatsSynced
-                      ? "opacity-40 pointer-events-none cursor-not-allowed bg-emerald-500/5 text-emerald-500 border-emerald-500/20"
-                      : "opacity-100 cursor-pointer border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
-                  }`}
+                  className={`h-9 px-3 transition-all duration-500 ${isStatsSynced ? "opacity-40 pointer-events-none cursor-not-allowed bg-emerald-500/5 text-emerald-500 border-emerald-500/20" : "opacity-100 cursor-pointer border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"}`}
                 >
                   {isStatsSynced ? (
                     <CheckCircle size={14} />
@@ -522,7 +567,7 @@ const Sales = () => {
               )}
               <Link
                 to={`${basePath}/sales/report`}
-                className={`flex items-center gap-2 text-xs font-bold ${theme.primaryText} ${theme.primaryBg} hover:${theme.primaryHoverBg} border ${theme.primaryBorder} px-4 py-2 rounded-lg`}
+                className={`flex items-center gap-2 text-xs font-bold ${theme.primaryText} ${theme.primaryBg} hover:${theme.primaryHoverBg} border ${theme.primaryBorder} px-4 py-2 rounded-lg transition-colors`}
               >
                 <span className="hidden md:inline">Full Report</span>{" "}
                 <ArrowRight size={14} />
@@ -550,7 +595,7 @@ const Sales = () => {
                           `${basePath}/sales/report?highlight=${sale._id}`,
                         );
                     }}
-                    className="hover:bg-zinc-800/30 cursor-pointer"
+                    className="hover:bg-zinc-800/30 cursor-pointer transition-colors duration-200"
                   >
                     <td className="p-5 pl-6">
                       <div className="font-mono text-zinc-400 text-xs">
@@ -612,8 +657,7 @@ const Sales = () => {
             </table>
           </div>
         </div>
-      </div>
-
+      </motion.div>
       <ConfirmDialog
         isOpen={confirmDialog}
         onClose={() => setConfirmDialog(false)}
