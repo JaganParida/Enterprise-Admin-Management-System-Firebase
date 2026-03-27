@@ -12,10 +12,25 @@ import {
   Banknote,
   CreditCard,
   ChevronDown,
+  CheckCircle,
+  Database,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 SAFE DATE FORMATTER
+const formatDate = (dateStr) => {
+  if (!dateStr) return "-";
+  try {
+    const dateOnly = dateStr.includes("T") ? dateStr.split("T")[0] : dateStr;
+    const [y, m, d] = dateOnly.split("-");
+    if (y && m && d) return `${d}/${m}/${y}`;
+    return dateStr;
+  } catch (e) {
+    return dateStr;
+  }
+};
 
 const Sales = () => {
   const location = useLocation();
@@ -28,12 +43,13 @@ const Sales = () => {
   const [sales, setSales] = useState([]);
   const [confirmDialog, setConfirmDialog] = useState(false);
 
-  // 🔥 THEME HOOK
-  const currentPath =
-    typeof window !== "undefined" && location.pathname === "/"
-      ? window.location.pathname
-      : location.pathname;
-  const isTransport = currentPath.includes("/transportation");
+  const [syncingStats, setSyncingStats] = useState(false);
+  const [isStatsSynced, setIsStatsSynced] = useState(true);
+
+  const isTransport =
+    typeof window !== "undefined"
+      ? location.pathname.includes("/transportation")
+      : false;
   const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
@@ -45,15 +61,18 @@ const Sales = () => {
       : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
     glowOrb: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
     paymentOnline: isTransport
-      ? "bg-cyan-500 text-white border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.3)]"
-      : "bg-blue-500 text-white border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]",
+      ? "bg-cyan-500 text-white border-cyan-500"
+      : "bg-blue-500 text-white border-blue-500",
     paymentCash: isTransport
-      ? "bg-blue-500 text-white border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]"
-      : "bg-indigo-500 text-white border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.3)]",
+      ? "bg-blue-500 text-white border-blue-500"
+      : "bg-indigo-500 text-white border-indigo-500",
     primaryHoverBg: isTransport
       ? "hover:bg-cyan-500/20"
       : "hover:bg-indigo-500/20",
   };
+
+  const isManager =
+    admin?.data?.role === "manager" || admin?.role === "manager";
 
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -70,37 +89,54 @@ const Sales = () => {
     paymentMode: "Cash",
   });
 
-  const fetchSales = async () => {
+  useEffect(() => {
+    const fetchSales = async () => {
+      try {
+        const s = await salesService.getStats();
+        const { data } = await salesService.getAllSales({}, null, 10);
+
+        let isSynced = true;
+        if (data.length > 0 && s.total === 0) isSynced = false;
+        else if (data.length === 0 && s.total > 0) isSynced = false;
+        else if (s.total < 0 || s.cash < 0 || s.online < 0 || s.pendingDues < 0)
+          isSynced = false;
+
+        setIsStatsSynced(isSynced);
+        setSales(data || []);
+      } catch (error) {
+        toast.error("Failed to load sales data.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSales();
+  }, [toast]);
+
+  const handleSyncStats = async () => {
+    if (isStatsSynced) return;
+    setSyncingStats(true);
+    toast.info("Repairing stats...");
     try {
-      const { data } = await salesService.getAllSales();
-      setSales(data || []);
-    } catch (error) {
-      toast.error("Failed to load sales data.");
+      await salesService.recalculateStats();
+      setIsStatsSynced(true);
+      toast.success("Dashboard stats repaired!");
+    } catch (e) {
+      toast.error("Sync failed.");
     } finally {
-      setLoading(false);
+      setSyncingStats(false);
     }
   };
-
-  useEffect(() => {
-    fetchSales();
-  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => {
       let newData = { ...prev, [name]: value };
-
-      // Auto-calculate Total Amount
       if (name === "quantity" || name === "pricePerQuantity") {
         const qty = Number(newData.quantity) || 0;
         const rate = Number(newData.pricePerQuantity) || 0;
-        if (qty > 0 && rate > 0) {
-          newData.amount = (qty * rate).toString();
-        }
+        if (qty > 0 && rate > 0) newData.amount = (qty * rate).toString();
       }
-
       const totalAmount = Number(newData.amount) || 0;
-
       if (
         ["amount", "quantity", "pricePerQuantity", "amountPaid"].includes(name)
       ) {
@@ -109,9 +145,8 @@ const Sales = () => {
           totalAmount > 0 ? Math.max(0, totalAmount - paid).toString() : "";
       } else if (name === "amountDue") {
         const due = Number(value) || 0;
-        if (totalAmount > 0) {
+        if (totalAmount > 0)
           newData.amountPaid = Math.max(0, totalAmount - due).toString();
-        }
       }
       return newData;
     });
@@ -127,44 +162,40 @@ const Sales = () => {
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
-      await salesService.addSale(formData, currentUser);
+      const docRef = await salesService.addSale(formData, currentUser);
       toast.success("Sale recorded successfully!");
-      fetchSales();
+
+      setSales((prevSales) => {
+        const newSale = {
+          _id: docRef.id,
+          id: docRef.id,
+          ...formData,
+          amount: Number(formData.amount),
+          amountPaid: Number(formData.amountPaid),
+          amountDue: Number(formData.amountDue),
+          createdAt: new Date().toISOString(),
+        };
+        return [newSale, ...prevSales].slice(0, 10);
+      });
+
       setFormData({
         ...formData,
         challanNo: "",
         buyerName: "",
         address: "",
         vehicleNo: "",
-        productName: "",
         quantity: "",
         pricePerQuantity: "",
         amount: "",
         amountPaid: "",
         amountDue: "",
-        paymentMode: "Cash",
       });
     } catch (error) {
       toast.error("Failed to record sale.");
     } finally {
       setSubmitting(false);
+      setConfirmDialog(false);
     }
-  };
-
-  const parseProduct = (fullName) => {
-    if (!fullName) return { name: "-", size: "No unit" };
-    if (fullName.includes("(")) {
-      const parts = fullName.split("(");
-      return { name: parts[0].trim(), size: parts[1].replace(")", "").trim() };
-    }
-    return { name: fullName, size: "No unit" };
-  };
-
-  // 🚀 REDIRECT TO REPORT HANDLER
-  const handleRowClick = (e, id) => {
-    // Prevent redirect if user clicked Edit or Delete buttons
-    if (e.target.closest("button") || e.target.closest("a")) return;
-    navigate(`${basePath}/sales/report?highlight=${id}`);
   };
 
   if (loading)
@@ -175,26 +206,28 @@ const Sales = () => {
     );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in pb-10">
       <div className="lg:col-span-1">
         <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden">
           <div
             className={`absolute top-0 right-0 w-40 h-40 blur-3xl rounded-full pointer-events-none ${theme.glowOrb}`}
           ></div>
 
-          <div className="flex items-center gap-3 mb-8 relative z-10">
-            <div
-              className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
-            >
-              <ShoppingCart size={20} />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">
-                Record Sale
-              </h2>
-              <p className="text-zinc-500 text-[10px] uppercase tracking-widest mt-0.5">
-                New Dispatch Entry
-              </p>
+          <div className="flex items-center justify-between mb-8 relative z-10">
+            <div className="flex items-center gap-3">
+              <div
+                className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
+              >
+                <ShoppingCart size={20} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight">
+                  Record Sale
+                </h2>
+                <p className="text-zinc-500 text-[10px] uppercase tracking-widest mt-0.5">
+                  New Dispatch Entry
+                </p>
+              </div>
             </div>
           </div>
 
@@ -219,7 +252,7 @@ const Sales = () => {
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                  Challan No. (Opt)
+                  Challan No.
                 </label>
                 <input
                   type="text"
@@ -234,7 +267,7 @@ const Sales = () => {
 
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                Name of the Buyer
+                Buyer Name
               </label>
               <input
                 type="text"
@@ -249,7 +282,7 @@ const Sales = () => {
 
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                Delivery Address
+                Address
               </label>
               <input
                 type="text"
@@ -257,18 +290,18 @@ const Sales = () => {
                 value={formData.address}
                 onChange={handleChange}
                 required
-                placeholder="Full site address"
+                placeholder="Site address"
                 className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
 
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                Vehicle Number
+                Vehicle No.
               </label>
-              <div className="relative group">
+              <div className="relative">
                 <div
-                  className={`absolute top-1/2 -translate-y-1/2 left-4 text-zinc-500 transition-colors ${theme.primaryText}`}
+                  className={`absolute top-1/2 -translate-y-1/2 left-4 text-zinc-500 ${theme.primaryText}`}
                 >
                   <Truck size={16} />
                 </div>
@@ -285,120 +318,41 @@ const Sales = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div className="relative">
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                   Product
                 </label>
-                <div className="relative">
-                  <select
-                    name="productName"
-                    value={formData.productName}
-                    onChange={handleChange}
-                    required
-                    className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all appearance-none cursor-pointer ${theme.primaryFocus}`}
-                  >
-                    <option value="" className="bg-[#09090B] text-zinc-500">
-                      Select...
+                <select
+                  name="productName"
+                  value={formData.productName}
+                  onChange={handleChange}
+                  required
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none appearance-none ${theme.primaryFocus}`}
+                >
+                  <option value="" className="bg-[#09090B]">
+                    Select...
+                  </option>
+                  <optgroup label="Bricks" className="bg-[#09090B] font-bold">
+                    <option value="Bricks (10 inch)" className="font-normal">
+                      Bricks (10 inch)
                     </option>
-                    <optgroup
-                      label="Bricks"
-                      className={`bg-[#09090B] font-bold ${theme.primaryText}`}
-                    >
-                      <option
-                        value="Bricks (10 inch)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        Bricks (10 inch)
-                      </option>
-                      <option
-                        value="Bricks (9 inch)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        Bricks (9 inch)
-                      </option>
-                      <option
-                        value="Bricks (8 inch)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        Bricks (8 inch)
-                      </option>
-                    </optgroup>
-                    <optgroup
-                      label="Paver Blocks"
-                      className={`bg-[#09090B] font-bold ${theme.primaryText}`}
-                    >
-                      <option
-                        value="Zig Zag (60mm)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        Zig Zag (60mm)
-                      </option>
-                      <option
-                        value="Zig Zag (80mm)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        Zig Zag (80mm)
-                      </option>
-                      <option
-                        value="6-12 Brick (60mm)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        6/12 Brick (60mm)
-                      </option>
-                      <option
-                        value="6-12 Brick (80mm)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        6/12 Brick (80mm)
-                      </option>
-                      <option
-                        value="6/6 Brick (60mm)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        6/6 Brick 60mm
-                      </option>
-                      <option
-                        value="6/6 Brick (80mm)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        6/6 Brick (80mm)
-                      </option>
-                    </optgroup>
-                    <optgroup
-                      label="Chequered Tiles"
-                      className={`bg-[#09090B] font-bold ${theme.primaryText}`}
-                    >
-                      <option
-                        value="Hexagon"
-                        className="text-zinc-100 font-normal"
-                      >
-                        Hexagon
-                      </option>
-                      <option
-                        value="Brick Design (9inch)"
-                        className="text-zinc-100 font-normal"
-                      >
-                        Brick Design (9inch)
-                      </option>
-                      <option
-                        value="Curve Stone"
-                        className="text-zinc-100 font-normal"
-                      >
-                        Curve Stone
-                      </option>
-                      <option
-                        value="Cover Block"
-                        className="text-zinc-100 font-normal"
-                      >
-                        Cover Block
-                      </option>
-                    </optgroup>
-                  </select>
-                  <ChevronDown
-                    size={16}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500"
-                  />
-                </div>
+                    <option value="Bricks (9 inch)" className="font-normal">
+                      Bricks (9 inch)
+                    </option>
+                  </optgroup>
+                  <optgroup label="Pavers" className="bg-[#09090B] font-bold">
+                    <option value="Zig Zag (60mm)" className="font-normal">
+                      Zig Zag (60mm)
+                    </option>
+                    <option value="6-12 Brick (60mm)" className="font-normal">
+                      6/12 Brick (60mm)
+                    </option>
+                  </optgroup>
+                </select>
+                <ChevronDown
+                  size={16}
+                  className="absolute right-4 bottom-3 pointer-events-none text-zinc-500"
+                />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -409,10 +363,9 @@ const Sales = () => {
                   name="quantity"
                   value={formData.quantity}
                   onChange={handleChange}
-                  onWheel={(e) => e.target.blur()}
                   required
                   placeholder="0"
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none ${theme.primaryFocus}`}
                 />
               </div>
             </div>
@@ -420,32 +373,30 @@ const Sales = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                  Price per Qty (₹)
+                  Price/Qty
                 </label>
                 <input
                   type="number"
                   name="pricePerQuantity"
                   value={formData.pricePerQuantity}
                   onChange={handleChange}
-                  onWheel={(e) => e.target.blur()}
                   required
                   placeholder="0.00"
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none ${theme.primaryFocus}`}
                 />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                  Total Bill (₹)
+                  Total Bill
                 </label>
                 <input
                   type="number"
                   name="amount"
                   value={formData.amount}
                   onChange={handleChange}
-                  onWheel={(e) => e.target.blur()}
                   required
                   placeholder="0.00"
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl ${theme.primaryText} font-bold text-lg outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl ${theme.primaryText} font-bold text-lg outline-none ${theme.primaryFocus}`}
                 />
               </div>
             </div>
@@ -460,11 +411,7 @@ const Sales = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Cash" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${
-                    formData.paymentMode === "Cash"
-                      ? theme.paymentCash
-                      : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`
-                  }`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold border ${formData.paymentMode === "Cash" ? theme.paymentCash : "bg-zinc-900/50 border-zinc-800 text-zinc-400"}`}
                 >
                   <Banknote size={16} /> Cash
                 </button>
@@ -473,11 +420,7 @@ const Sales = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Online" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${
-                    formData.paymentMode === "Online"
-                      ? theme.paymentOnline
-                      : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`
-                  }`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold border ${formData.paymentMode === "Online" ? theme.paymentOnline : "bg-zinc-900/50 border-zinc-800 text-zinc-400"}`}
                 >
                   <CreditCard size={16} /> Online
                 </button>
@@ -487,30 +430,28 @@ const Sales = () => {
             <div className="grid grid-cols-2 gap-4 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800">
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                  Amount Paid (₹)
+                  Paid (₹)
                 </label>
                 <input
                   type="number"
                   name="amountPaid"
                   value={formData.amountPaid}
                   onChange={handleChange}
-                  onWheel={(e) => e.target.blur()}
                   placeholder="0.00"
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border ${theme.primaryBorder} rounded-xl ${theme.primaryText} font-bold outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border ${theme.primaryBorder} rounded-xl ${theme.primaryText} font-bold outline-none ${theme.primaryFocus}`}
                 />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                  Amount Due (₹)
+                  Due (₹)
                 </label>
                 <input
                   type="number"
                   name="amountDue"
                   value={formData.amountDue}
                   onChange={handleChange}
-                  onWheel={(e) => e.target.blur()}
                   placeholder="0.00"
-                  className="w-full px-4 py-3 bg-zinc-900/50 border border-rose-500/30 rounded-xl text-rose-400 font-bold outline-none transition-all focus:ring-1 focus:ring-rose-500/50 focus:border-rose-500/50 placeholder:text-zinc-600"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-rose-500/30 rounded-xl text-rose-400 font-bold outline-none focus:border-rose-500/50"
                 />
               </div>
             </div>
@@ -535,116 +476,132 @@ const Sales = () => {
 
       <div className="lg:col-span-2 space-y-6">
         <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-hidden relative">
-          <div className="p-5 border-b border-zinc-800/60 flex flex-col md:flex-row justify-between gap-4 items-center bg-[#09090B]">
+          <div className="p-5 border-b border-zinc-800/60 flex justify-between items-center bg-[#09090B]">
             <div className="flex items-center gap-2 text-white font-bold">
               <History size={18} className={theme.primaryText} /> Recent Sales{" "}
               <span className="text-zinc-500 text-xs font-normal">
                 (Last 10)
               </span>
             </div>
-            <Link
-              to={`${basePath}/sales/report`}
-              className={`flex items-center gap-2 text-xs font-bold ${theme.primaryText} ${theme.primaryBg} hover:${theme.primaryHoverBg} border ${theme.primaryBorder} px-4 py-2 rounded-lg transition-all`}
-            >
-              View Full Report <ArrowRight size={14} />
-            </Link>
+            <div className="flex gap-3">
+              {/* 🚀 FIXED BUTTON: Visible, Low Opacity, Unclickable, Tooltip added */}
+              {!isManager && (
+                <Button
+                  variant="outline"
+                  onClick={handleSyncStats}
+                  disabled={syncingStats || isStatsSynced}
+                  title={
+                    isStatsSynced
+                      ? "System Already Updated"
+                      : "Click to Sync Stats"
+                  }
+                  className={`h-9 px-3 transition-all duration-500 ${
+                    isStatsSynced
+                      ? "opacity-40 pointer-events-none cursor-not-allowed bg-emerald-500/5 text-emerald-500 border-emerald-500/20"
+                      : "opacity-100 cursor-pointer border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                  }`}
+                >
+                  {isStatsSynced ? (
+                    <CheckCircle size={14} />
+                  ) : (
+                    <Database
+                      size={14}
+                      className={
+                        syncingStats ? "animate-pulse text-indigo-400" : ""
+                      }
+                    />
+                  )}
+                  <span className="ml-2 hidden lg:block text-xs">
+                    {syncingStats
+                      ? "Syncing..."
+                      : isStatsSynced
+                        ? "Up to Date"
+                        : "Sync Stats"}
+                  </span>
+                </Button>
+              )}
+              <Link
+                to={`${basePath}/sales/report`}
+                className={`flex items-center gap-2 text-xs font-bold ${theme.primaryText} ${theme.primaryBg} hover:${theme.primaryHoverBg} border ${theme.primaryBorder} px-4 py-2 rounded-lg`}
+              >
+                <span className="hidden md:inline">Full Report</span>{" "}
+                <ArrowRight size={14} />
+              </Link>
+            </div>
           </div>
 
-          <div className="overflow-x-auto custom-scrollbar min-h-[400px]">
+          <div className="overflow-x-auto min-h-[400px]">
             <table className="w-full text-left min-w-[800px]">
-              <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
+              <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold border-b border-zinc-800/60">
                 <tr>
-                  <th className="p-5 pl-6">Date & Challan</th>
+                  <th className="p-5 pl-6">Date/Challan</th>
                   <th className="p-5">Buyer</th>
-                  <th className="p-5">Item</th>
-                  <th className="p-5">Size & Rate</th>
-                  <th className="p-5 pr-6 text-right">Amount & Mode</th>
+                  <th className="p-5">Item/Qty</th>
+                  <th className="p-5 text-right">Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {sales.slice(0, 10).map((sale) => {
-                  const { name, size } = parseProduct(sale.productName);
-
-                  return (
-                    <tr
-                      key={sale._id}
-                      onClick={(e) => handleRowClick(e, sale._id)}
-                      className="hover:bg-zinc-800/30 transition-colors group cursor-pointer"
-                    >
-                      <td className="p-5 pl-6 align-middle">
-                        <div className="font-mono text-zinc-400 text-xs">
-                          {new Date(sale.date).toLocaleDateString("en-GB")}
-                        </div>
-                        <div
-                          className={`text-[10px] ${theme.primaryText} font-bold tracking-wider mt-1 mb-2`}
-                        >
-                          {sale.challanNo || "NO CHALLAN"}
-                        </div>
-                      </td>
-                      <td className="p-5 align-middle">
-                        <div className="font-bold text-white tracking-wide mb-1">
-                          {sale.buyerName}
-                        </div>
-                        <div className="text-[10px] font-mono text-zinc-500 mt-1 flex items-center gap-1.5">
-                          <Truck size={10} className="text-zinc-600" />{" "}
-                          {sale.vehicleNo}
-                        </div>
-                      </td>
-                      <td className="p-5 align-middle">
-                        <div className="text-zinc-300 font-medium text-xs">
-                          {name}
-                        </div>
-                        <div
-                          className={`text-[10px] font-bold ${theme.primaryText} ${theme.primaryBg} border ${theme.primaryBorder} px-2 py-0.5 rounded mt-1 inline-block`}
-                        >
-                          Qty: {sale.quantity}
-                        </div>
-                      </td>
-                      <td className="p-5 align-middle text-zinc-400 text-xs">
-                        {size}
-                        {sale.pricePerQuantity && (
-                          <div className="text-[10px] text-zinc-500 mt-1">
-                            ₹{sale.pricePerQuantity} / qty
-                          </div>
+                {sales.map((sale) => (
+                  <tr
+                    key={sale._id}
+                    onClick={(e) => {
+                      if (!e.target.closest("a"))
+                        navigate(
+                          `${basePath}/sales/report?highlight=${sale._id}`,
+                        );
+                    }}
+                    className="hover:bg-zinc-800/30 cursor-pointer"
+                  >
+                    <td className="p-5 pl-6">
+                      <div className="font-mono text-zinc-400 text-xs">
+                        {formatDate(sale.date)}
+                      </div>
+                      <div
+                        className={`text-[10px] ${theme.primaryText} font-bold mt-1`}
+                      >
+                        {sale.challanNo || "-"}
+                      </div>
+                    </td>
+                    <td className="p-5">
+                      <div className="font-bold text-white mb-1">
+                        {sale.buyerName}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 font-mono flex items-center gap-1">
+                        <Truck size={10} /> {sale.vehicleNo}
+                      </div>
+                    </td>
+                    <td className="p-5">
+                      <div className="text-zinc-300 text-xs mb-1">
+                        {sale.productName}
+                      </div>
+                      <div
+                        className={`text-[10px] font-bold ${theme.primaryText} bg-zinc-800 px-2 py-0.5 rounded inline-block`}
+                      >
+                        Qty: {sale.quantity}
+                      </div>
+                    </td>
+                    <td className="p-5 pr-6 text-right">
+                      <div className="font-bold text-white font-mono text-lg">
+                        ₹ {Number(sale.amount).toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs font-mono text-zinc-400 mt-1">
+                        Paid: ₹
+                        {Number(sale.amountPaid || sale.amount).toLocaleString(
+                          "en-IN",
                         )}
-                      </td>
-                      <td className="p-5 pr-6 align-middle text-right">
-                        <div className="font-bold text-white font-mono text-lg mb-1.5">
-                          ₹ {Number(sale.amount).toLocaleString("en-IN")}
-                        </div>
-                        <div className="flex flex-col items-end gap-1 mt-1">
-                          <div className="flex items-center gap-2 mb-1 text-xs font-mono">
-                            <span className={`${theme.primaryText} font-bold`}>
-                              Paid: ₹
-                              {Number(
-                                sale.amountPaid || sale.amount,
-                              ).toLocaleString("en-IN")}
-                            </span>
-                            <span
-                              className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border inline-block ${
-                                sale.paymentMode === "Online"
-                                  ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                                  : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
-                              }`}
-                            >
-                              {sale.paymentMode}
-                            </span>
-                          </div>
-                          {Number(sale.amountDue) > 0 && (
-                            <span className="text-[9px] font-mono font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 mt-1">
-                              DUE: ₹
-                              {Number(sale.amountDue).toLocaleString("en-IN")}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                      </div>
+                      {Number(sale.amountDue) > 0 && (
+                        <span className="text-[9px] font-mono text-rose-400 mt-1 block">
+                          DUE: ₹{Number(sale.amountDue).toLocaleString("en-IN")}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
                 {sales.length === 0 && (
                   <tr>
                     <td
-                      colSpan="5"
+                      colSpan="4"
                       className="p-12 text-center text-zinc-500 text-sm italic"
                     >
                       No recent sales found.
@@ -661,13 +618,12 @@ const Sales = () => {
         isOpen={confirmDialog}
         onClose={() => setConfirmDialog(false)}
         onConfirm={executeSubmit}
-        title="Save Sale Record"
-        message="Are you sure you want to log this sale to the database?"
-        confirmText="Save Record"
+        title="Save Record"
+        message="Confirm this sale?"
+        confirmText="Save"
         isDestructive={false}
       />
     </div>
   );
 };
-
 export default Sales;
