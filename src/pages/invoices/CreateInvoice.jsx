@@ -159,16 +159,22 @@ const CreateInvoice = () => {
       return toast.error("Please correct the errors in the form");
     setLoading(true);
 
-    const cleanItems = items.map(({ isCustom, nameSelect, ...rest }) => rest);
+    const cleanItems = items.map(({ isCustom, nameSelect, ...rest }) => ({
+      ...rest,
+      quantity: Number(String(rest.quantity).replace(/[^0-9.-]+/g, "")),
+      price: Number(String(rest.price).replace(/[^0-9.-]+/g, "")),
+      total: Number(String(rest.total).replace(/[^0-9.-]+/g, "")),
+    }));
+
     const invoiceData = {
       invoiceNumber,
       client,
       items: cleanItems,
       date: invoiceDate,
-      subTotal: totals.subTotal,
-      gstRate,
-      gstAmount: totals.gstAmount,
-      grandTotal: totals.grandTotal,
+      subTotal: Number(String(totals.subTotal).replace(/[^0-9.-]+/g, "")),
+      gstRate: Number(gstRate),
+      gstAmount: Number(String(totals.gstAmount).replace(/[^0-9.-]+/g, "")),
+      grandTotal: Number(String(totals.grandTotal).replace(/[^0-9.-]+/g, "")),
       status,
     };
 
@@ -389,53 +395,6 @@ const CreateInvoice = () => {
                                 className="bg-[#09090B] text-zinc-100 font-normal"
                               >
                                 6/12 Brick (60mm)
-                              </option>
-                              <option
-                                value="Paver Blocks 6/12 Brick (80mm)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                6/12 Brick (80mm)
-                              </option>
-                              <option
-                                value="Paver Blocks 6/6 Brick (60mm)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                6/6 Brick 60mm
-                              </option>
-                              <option
-                                value="Paver Blocks 6/6 Brick (80mm)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                6/6 Brick (80mm)
-                              </option>
-                            </optgroup>
-                            <optgroup
-                              label="Chequered Tiles"
-                              className={`bg-[#09090B] font-bold ${theme.primaryText}`}
-                            >
-                              <option
-                                value="Chequered Tiles Hexagon"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Hexagon
-                              </option>
-                              <option
-                                value="Chequered Tiles Brick Design (9inch)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Brick Design (9inch)
-                              </option>
-                              <option
-                                value="Chequered Tiles Curve Stone"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Curve Stone
-                              </option>
-                              <option
-                                value="Chequered Tiles Cover Block"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Cover Block
                               </option>
                             </optgroup>
                             <option
