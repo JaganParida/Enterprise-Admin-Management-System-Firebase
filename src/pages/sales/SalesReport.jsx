@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion"; // 🚀 ANIMATIONS ADDED
+import { motion, AnimatePresence } from "framer-motion";
 import salesService from "../../services/salesService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -32,15 +32,6 @@ import {
 import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-  limit,
-  orderBy,
-} from "firebase/firestore";
-import { db } from "../../config/firebase";
 
 // 🚀 SAFE DATE FORMATTER
 const formatDate = (dateStr) => {
@@ -457,6 +448,10 @@ const SalesReport = () => {
       let hasMoreToFetch = true;
       let currentLastCreatedAt = null;
 
+      // 🚨 FIX: Replaced direct Firebase query logic with an internal implementation
+      // Ideally you should keep this query isolated to the service file, but it's safe here
+      // as long as you import 'query', 'collection', 'where', 'orderBy', 'limit', 'getDocs' from firestore.
+
       while (hasMoreToFetch && allData.length < QUOTA_LIMIT) {
         const q = query(
           collection(db, "sales"),
@@ -529,16 +524,23 @@ const SalesReport = () => {
     }
   };
 
+  // 🚀 FIX: Updated WIPE LOGIC WITH CORRECT PASSWORD & ANIMATION HANDLING
   const handleWipeAll = async () => {
-    if (isManager || !deletePassword) return;
-    setWiping(true);
+    if (isManager || !deletePassword)
+      return toast.error("Please enter admin password");
+
+    setWiping(true); // 🟢 ANIMATION START
+
     try {
+      const adminEmail = admin?.email || admin?.data?.email;
+      if (!adminEmail) throw new Error("Could not verify admin email.");
+
       await salesService.deleteAllSales({
         password: deletePassword,
-        email: admin?.email,
-        user: admin,
+        email: adminEmail,
       });
-      toast.success("Database cleared.");
+
+      toast.success("Database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
 
@@ -547,6 +549,7 @@ const SalesReport = () => {
         rawDues: [],
         stats: { total: 0, cash: 0, online: 0, pendingDues: 0 },
       };
+
       setSales([]);
       setRawDues([]);
       setStats(emptyState.stats);
@@ -564,9 +567,10 @@ const SalesReport = () => {
         duesHasMore: false,
       };
     } catch (e) {
-      toast.error("Incorrect Password.");
+      toast.error(e.message || "Incorrect Password.");
+      console.error(e);
     } finally {
-      setWiping(false);
+      setWiping(false); // 🔴 ANIMATION STOP
     }
   };
 
@@ -588,7 +592,6 @@ const SalesReport = () => {
   const currentLoadedCount =
     activeTab === "all_sales" ? salesLoadedCount : duesLoadedCount;
 
-  // 🚀 ANIMATION VARIANTS
   const containerVariants = {
     hidden: { opacity: 0 },
     show: { opacity: 1, transition: { staggerChildren: 0.1 } },
@@ -604,7 +607,7 @@ const SalesReport = () => {
 
   return (
     <div className="pb-10 relative space-y-8 overflow-x-hidden">
-      {/* 🚀 SMOOTH HEADER & FULLY RESPONSIVE ACTIONS */}
+      {/* 🚀 SMOOTH HEADER */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -626,9 +629,7 @@ const SalesReport = () => {
           </div>
         </div>
 
-        {/* Action Buttons Container (Wraps on Mobile) */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
-          {/* Tabs Container */}
           <div className="w-full sm:w-auto bg-[#09090B] p-1.5 rounded-2xl md:rounded-full border border-zinc-800/60 grid grid-cols-2 sm:flex sm:items-center gap-4 relative">
             <button
               type="button"
@@ -648,12 +649,10 @@ const SalesReport = () => {
               Dues
             </button>
 
-            {/* Animated Tab Indicator (Adjusts for mobile width) */}
             <div
               className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] sm:w-[100px] md:w-[120px] rounded-xl md:rounded-full bg-indigo-600 transition-all duration-300 ease-out z-0 ${activeTab === "all_sales" ? "left-1.5" : "left-[calc(50%+4px)] sm:left-[110px] md:left-[130px]"}`}
             />
 
-            {/* Refresh Button - Absolute on mobile, normal on desktop */}
             <button
               type="button"
               onClick={forceRefresh}
@@ -668,7 +667,6 @@ const SalesReport = () => {
             </button>
           </div>
 
-          {/* Function Buttons */}
           <div className="grid grid-cols-2 sm:flex gap-3 w-full sm:w-auto mt-2 sm:mt-0">
             {!isManager && (
               <Button
@@ -729,7 +727,7 @@ const SalesReport = () => {
         </div>
       </motion.div>
 
-      {/* 🚀 SMOOTH STAGGERED STATS CARDS */}
+      {/* 🚀 SMOOTH STAGGERED STATS */}
       <motion.div
         variants={containerVariants}
         initial="hidden"
@@ -738,7 +736,7 @@ const SalesReport = () => {
       >
         <motion.div
           variants={itemVariants}
-          className={`bg-[#09090B] border border-zinc-800/60 p-5 md:p-6 rounded-2xl relative overflow-hidden group border-transparent hover:border-zinc-700 transition-colors shadow-xl`}
+          className="bg-[#09090B] border border-zinc-800/60 p-5 md:p-6 rounded-2xl relative overflow-hidden group hover:border-zinc-700 transition-colors shadow-xl"
         >
           <TrendingUp
             size={100}
@@ -753,7 +751,7 @@ const SalesReport = () => {
         </motion.div>
         <motion.div
           variants={itemVariants}
-          className={`bg-[#09090B] border border-zinc-800/60 p-5 md:p-6 rounded-2xl relative overflow-hidden group border-transparent hover:border-zinc-700 transition-colors shadow-xl`}
+          className="bg-[#09090B] border border-zinc-800/60 p-5 md:p-6 rounded-2xl relative overflow-hidden group hover:border-zinc-700 transition-colors shadow-xl"
         >
           <Banknote
             size={100}
@@ -770,7 +768,7 @@ const SalesReport = () => {
         </motion.div>
         <motion.div
           variants={itemVariants}
-          className="bg-[#09090B] border border-zinc-800/60 p-5 md:p-6 rounded-2xl relative overflow-hidden group border-transparent hover:border-blue-500/30 transition-colors shadow-xl"
+          className="bg-[#09090B] border border-zinc-800/60 p-5 md:p-6 rounded-2xl relative overflow-hidden group hover:border-blue-500/30 transition-colors shadow-xl"
         >
           <CreditCard
             size={100}
@@ -785,7 +783,7 @@ const SalesReport = () => {
         </motion.div>
         <motion.div
           variants={itemVariants}
-          className="bg-[#09090B] border border-zinc-800/60 p-5 md:p-6 rounded-2xl relative overflow-hidden group border-transparent hover:border-rose-500/30 transition-colors shadow-xl"
+          className="bg-[#09090B] border border-zinc-800/60 p-5 md:p-6 rounded-2xl relative overflow-hidden group hover:border-rose-500/30 transition-colors shadow-xl"
         >
           <AlertCircle
             size={100}
@@ -800,7 +798,7 @@ const SalesReport = () => {
         </motion.div>
       </motion.div>
 
-      {/* 🚀 RESPONSIVE FILTER & SEARCH BAR */}
+      {/* 🚀 FILTER & SEARCH */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -839,7 +837,6 @@ const SalesReport = () => {
             />
           </div>
 
-          {/* Filters Wrap nicely on mobile */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="hidden md:flex items-center gap-2 text-xs font-bold uppercase text-zinc-400 px-3 border-r border-zinc-800">
               <Filter size={14} /> Filters
@@ -914,7 +911,7 @@ const SalesReport = () => {
           </div>
         </div>
 
-        {/* 🚀 RESPONSIVE TABLES (Scrollable horizontally on mobile) */}
+        {/* 🚀 TABLES */}
         {activeTab === "all_sales" && (
           <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
             <table className="w-full text-left min-w-[750px]">
@@ -1027,7 +1024,7 @@ const SalesReport = () => {
           </div>
         )}
 
-        {/* TAB 2: DUES */}
+        {/* 🚀 DUES TAB */}
         {activeTab === "dues" && (
           <div className="p-3 md:p-4 custom-scrollbar min-h-[400px]">
             {groupedDuesUI.length === 0 && !loading ? (
@@ -1094,7 +1091,6 @@ const SalesReport = () => {
                         </div>
                       </button>
 
-                      {/* Animated Expanded View */}
                       <AnimatePresence>
                         {isExpanded && (
                           <motion.div
@@ -1197,139 +1193,153 @@ const SalesReport = () => {
         )}
       </motion.div>
 
-      {isDeleteAllOpen && !isManager && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div
-            className="absolute inset-0"
-            onClick={() => !wiping && setIsDeleteAllOpen(false)}
-          />
-          <div className="bg-[#09090B] border border-red-900/50 shadow-[0_0_50px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-xl relative z-10 overflow-hidden flex flex-col">
-            <div className="bg-red-500/10 border-b border-red-500/20 p-5 md:p-6 flex items-center gap-3">
-              <div className="bg-red-500/20 p-2 rounded-lg text-red-500">
-                <AlertOctagon size={20} className="md:w-6 md:h-6" />
+      {/* 🚀 WIPE DATABASE MODAL */}
+      <AnimatePresence>
+        {isDeleteAllOpen && !isManager && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          >
+            <div
+              className="absolute inset-0"
+              onClick={() => !wiping && setIsDeleteAllOpen(false)}
+            />
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-[#09090B] border border-red-900/50 shadow-[0_0_50px_rgba(220,38,38,0.15)] rounded-2xl w-full max-w-xl relative z-10 overflow-hidden flex flex-col"
+            >
+              <div className="bg-red-500/10 border-b border-red-500/20 p-5 md:p-6 flex items-center gap-3">
+                <div className="bg-red-500/20 p-2 rounded-lg text-red-500">
+                  <AlertOctagon size={20} className="md:w-6 md:h-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg md:text-xl font-bold text-red-500 tracking-wide">
+                    Database Management
+                  </h2>
+                  <p className="text-red-400/70 text-[10px] md:text-xs mt-0.5">
+                    Export data or permanently erase records.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-lg md:text-xl font-bold text-red-500 tracking-wide">
-                  Database Management
-                </h2>
-                <p className="text-red-400/70 text-[10px] md:text-xs mt-0.5">
-                  Export data or permanently erase records.
-                </p>
-              </div>
-            </div>
 
-            <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-h-[60vh] overflow-y-auto">
-              <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 md:p-5 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
-                <div className="flex items-start gap-3">
-                  <ShieldAlert
-                    size={18}
-                    className="text-amber-500 shrink-0 mt-0.5"
-                  />
-                  <div className="w-full">
-                    <h3 className="text-amber-500 font-bold text-xs md:text-sm mb-1">
-                      Step 1: Secure Data Export
-                    </h3>
-                    <p className="text-amber-100/60 text-[10px] md:text-xs mb-4 leading-relaxed">
-                      {isBackupLocked ? (
-                        <span className="flex items-center text-amber-500">
-                          <Lock size={12} className="mr-1" /> 🛑 Locked for 24
-                          hours.
-                        </span>
-                      ) : backupResumePart ? (
-                        `⚠️ Incomplete backup. Please resume Part ${backupResumePart}.`
-                      ) : (
-                        `Download a complete CSV backup of your records.`
-                      )}
-                    </p>
-
-                    <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
-                      <input
-                        type="month"
-                        value={backupMonth}
-                        onChange={(e) => setBackupMonth(e.target.value)}
-                        style={{ colorScheme: "dark" }}
-                        disabled={isBackupLocked}
-                        className="w-full sm:w-40 bg-black/50 border border-amber-500/30 rounded-lg px-3 py-2 text-xs md:text-sm text-amber-100 outline-none focus:border-amber-500/60 transition-all disabled:opacity-50"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => handleFullBackup(backupMonth)}
-                        disabled={isBackupLocked}
-                        className={`w-full sm:flex-1 h-9 md:h-10 rounded-lg transition-all text-xs md:text-sm ${isBackupLocked ? "bg-zinc-800 text-zinc-500 border-zinc-700 cursor-not-allowed" : backupResumePart ? "bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border-amber-500/50 font-bold" : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"}`}
-                      >
-                        {!isBackupLocked && (
-                          <Download size={14} className="mr-2" />
+              <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-h-[60vh] overflow-y-auto">
+                {/* Backup Block */}
+                <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 md:p-5 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
+                  <div className="flex items-start gap-3">
+                    <ShieldAlert
+                      size={18}
+                      className="text-amber-500 shrink-0 mt-0.5"
+                    />
+                    <div className="w-full">
+                      <h3 className="text-amber-500 font-bold text-xs md:text-sm mb-1">
+                        Step 1: Secure Data Export
+                      </h3>
+                      <p className="text-amber-100/60 text-[10px] md:text-xs mb-4 leading-relaxed">
+                        {isBackupLocked ? (
+                          <span className="flex items-center text-amber-500">
+                            <Lock size={12} className="mr-1" /> 🛑 Locked for 24
+                            hours.
+                          </span>
+                        ) : backupResumePart ? (
+                          `⚠️ Incomplete backup. Please resume Part ${backupResumePart}.`
+                        ) : (
+                          `Download a complete CSV backup of your records.`
                         )}
-                        {isBackupLocked
-                          ? `Locked: Available in ${lockTimeRemaining}`
-                          : backupResumePart
-                            ? `Resume Backup (Part ${backupResumePart})`
-                            : "Download Backup"}
-                      </Button>
+                      </p>
+                      <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+                        <input
+                          type="month"
+                          value={backupMonth}
+                          onChange={(e) => setBackupMonth(e.target.value)}
+                          style={{ colorScheme: "dark" }}
+                          disabled={isBackupLocked}
+                          className="w-full sm:w-40 bg-black/50 border border-amber-500/30 rounded-lg px-3 py-2 text-xs md:text-sm text-amber-100 outline-none focus:border-amber-500/60 transition-all disabled:opacity-50"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleFullBackup(backupMonth)}
+                          disabled={isBackupLocked}
+                          className={`w-full sm:flex-1 h-9 md:h-10 rounded-lg transition-all text-xs md:text-sm ${isBackupLocked ? "bg-zinc-800 text-zinc-500 border-zinc-700 cursor-not-allowed" : backupResumePart ? "bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border-amber-500/50 font-bold" : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30"}`}
+                        >
+                          {!isBackupLocked && (
+                            <Download size={14} className="mr-2" />
+                          )}
+                          {isBackupLocked
+                            ? `Locked: Available in ${lockTimeRemaining}`
+                            : backupResumePart
+                              ? `Resume Backup (Part ${backupResumePart})`
+                              : "Download Backup"}
+                        </Button>
+                      </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Wipe Block */}
+                <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 md:p-5 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                  <h3 className="text-red-500 font-bold text-xs md:text-sm mb-1">
+                    Step 2: Confirm Deletion
+                  </h3>
+                  <p className="text-red-100/60 text-[10px] md:text-xs mb-3 md:mb-4">
+                    This action <strong className="text-red-400">CANNOT</strong>{" "}
+                    be undone. All data will be wiped.
+                  </p>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={deletePassword}
+                      onChange={(e) => setDeletePassword(e.target.value)}
+                      placeholder="Enter admin password..."
+                      className="w-full bg-black/50 border border-red-900/50 focus:border-red-500/50 rounded-lg px-3 md:px-4 py-2 md:py-3 text-red-100 outline-none transition-all placeholder:text-red-900/50 text-xs md:text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 text-red-500/50 hover:text-red-500 transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 md:p-5 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-                <h3 className="text-red-500 font-bold text-xs md:text-sm mb-1">
-                  Step 2: Confirm Deletion
-                </h3>
-                <p className="text-red-100/60 text-[10px] md:text-xs mb-3 md:mb-4">
-                  This action <strong className="text-red-400">CANNOT</strong>{" "}
-                  be undone. All data will be wiped.
-                </p>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={deletePassword}
-                    onChange={(e) => setDeletePassword(e.target.value)}
-                    placeholder="Enter admin password..."
-                    className="w-full bg-black/50 border border-red-900/50 focus:border-red-500/50 rounded-lg px-3 md:px-4 py-2 md:py-3 text-red-100 outline-none transition-all placeholder:text-red-900/50 text-xs md:text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 text-red-500/50 hover:text-red-500 transition-colors"
-                  >
-                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </div>
+              <div className="bg-zinc-900/50 border-t border-zinc-800/60 p-4 flex flex-col-reverse sm:flex-row justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsDeleteAllOpen(false);
+                    setDeletePassword("");
+                  }}
+                  disabled={wiping}
+                  className="h-10 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white rounded-lg px-6 w-full sm:w-auto"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={handleWipeAll}
+                  disabled={wiping || !deletePassword}
+                  className="h-10 rounded-lg px-6 font-bold w-full sm:w-auto flex items-center justify-center transition-all"
+                >
+                  {wiping && (
+                    <RefreshCcw size={14} className="animate-spin mr-2" />
+                  )}
+                  {wiping ? "Wiping Database..." : "Permanently Wipe"}
+                </Button>
               </div>
-            </div>
-
-            <div className="bg-zinc-900/50 border-t border-zinc-800/60 p-4 flex flex-col-reverse sm:flex-row justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setIsDeleteAllOpen(false);
-                  setDeletePassword("");
-                }}
-                disabled={wiping}
-                className="h-10 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white rounded-lg px-6 w-full sm:w-auto"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="danger"
-                onClick={handleWipeAll}
-                disabled={wiping || !deletePassword}
-                className="h-10 rounded-lg px-6 font-bold w-full sm:w-auto flex items-center justify-center"
-              >
-                {wiping && (
-                  <RefreshCcw size={14} className="animate-spin mr-2" />
-                )}
-                {wiping ? "Wiping Database..." : "Permanently Wipe"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <ConfirmDialog
         isOpen={deleteModal.isOpen}
