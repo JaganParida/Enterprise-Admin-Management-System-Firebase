@@ -141,40 +141,8 @@
       "collectionGroup": "sales",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "paymentMode", "order": "ASCENDING" },
-        { "fieldPath": "buyerName", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "sales",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "productName", "order": "ASCENDING" },
-        { "fieldPath": "buyerName", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "sales",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "paymentMode", "order": "ASCENDING" },
-        { "fieldPath": "amount", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "sales",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "paymentMode", "order": "ASCENDING" },
-        { "fieldPath": "amountPaid", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "sales",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "paymentMode", "order": "ASCENDING" },
-        { "fieldPath": "amountDue", "order": "ASCENDING" }
+        { "fieldPath": "amountDue", "order": "DESCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
       ]
     },
     {
@@ -239,23 +207,6 @@
       "fields": [
         { "fieldPath": "category", "order": "ASCENDING" },
         { "fieldPath": "name", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "stocks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "quantity", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "stocks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "category", "order": "ASCENDING" },
-        { "fieldPath": "quantity", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
