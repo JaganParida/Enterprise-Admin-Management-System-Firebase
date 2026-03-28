@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import productionService from "../../services/productionService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -12,10 +13,23 @@ import {
   AlertCircle,
   ChevronDown,
   FileText,
+  Database,
+  CheckCircle,
+  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 GLOBAL MEMORY CACHE (No Page Reload Waste)
+let globalProdCache = {
+  entries: [],
+  labourEntries: [],
+  duesEntries: [],
+  stats: { output: 0, paid: 0, due: 0 },
+  fetched: false,
+  isStatsSynced: true,
+};
 
 const DailyProduction = () => {
   const location = useLocation();
@@ -39,15 +53,26 @@ const DailyProduction = () => {
       ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
       : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
     glowOrb: isTransport ? "bg-cyan-500/5" : "bg-indigo-500/5",
+    primaryHoverBg: isTransport
+      ? "hover:bg-cyan-500/20"
+      : "hover:bg-indigo-500/20",
   };
 
   const [activeModule, setActiveModule] = useState("production");
-  const [entries, setEntries] = useState([]);
-  const [labourEntries, setLabourEntries] = useState([]);
-  const [duesEntries, setDuesEntries] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [entries, setEntries] = useState(globalProdCache.entries);
+  const [labourEntries, setLabourEntries] = useState(
+    globalProdCache.labourEntries,
+  );
+  const [duesEntries, setDuesEntries] = useState(globalProdCache.duesEntries);
+  const [stats, setStats] = useState(globalProdCache.stats);
+  const [loading, setLoading] = useState(!globalProdCache.fetched);
   const [submitting, setSubmitting] = useState(false);
   const [submittingLabour, setSubmittingLabour] = useState(false);
+
+  const [syncingStats, setSyncingStats] = useState(false);
+  const [isStatsSynced, setIsStatsSynced] = useState(
+    globalProdCache.isStatsSynced,
+  );
 
   const [confirmDialog, setConfirmDialog] = useState({
     isOpen: false,
@@ -59,6 +84,7 @@ const DailyProduction = () => {
     productName: "",
     quantity: "",
   });
+
   const [labourData, setLabourData] = useState({
     date: new Date().toISOString().split("T")[0],
     labourName: "",
@@ -70,29 +96,72 @@ const DailyProduction = () => {
   });
 
   const categories = ["Labour", "Contractor", "Consumer", "Other"];
-
-  // 🚀 OPTIMIZED: Fetch only Top 10 for dashboard!
-  const fetchTopData = async () => {
-    setLoading(true);
-    try {
-      const [prodRes, labRes, duesRes] = await Promise.all([
-        productionService.getAllProduction({}, null, 10),
-        productionService.getAllLabourPayouts({}, null, 10, false),
-        productionService.getAllLabourPayouts({}, null, 10, true),
-      ]);
-      setEntries(prodRes.data || []);
-      setLabourEntries(labRes.data || []);
-      setDuesEntries(duesRes.data || []);
-    } catch (error) {
-      toast.error("Failed to load history.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const isManager =
+    admin?.data?.role === "manager" || admin?.role === "manager";
 
   useEffect(() => {
-    fetchTopData();
-  }, []);
+    const needsRefresh =
+      sessionStorage.getItem("prod_entry_needs_refresh") === "true";
+
+    const fetchTopData = async () => {
+      if (needsRefresh) setLoading(true);
+      try {
+        const s = await productionService.getStats();
+        const [prodRes, labRes, duesRes] = await Promise.all([
+          productionService.getAllProduction({}, null, 10),
+          productionService.getAllLabourPayouts({}, null, 10, false),
+          productionService.getAllLabourPayouts({}, null, 10, true),
+        ]);
+
+        let isSynced = true;
+        if (prodRes.data.length > 0 && s.output === 0) isSynced = false;
+        else if (prodRes.data.length === 0 && s.output > 0) isSynced = false;
+
+        setIsStatsSynced(isSynced);
+        globalProdCache.isStatsSynced = isSynced;
+        setStats(s);
+        globalProdCache.stats = s;
+        setEntries(prodRes.data || []);
+        globalProdCache.entries = prodRes.data || [];
+        setLabourEntries(labRes.data || []);
+        globalProdCache.labourEntries = labRes.data || [];
+        setDuesEntries(duesRes.data || []);
+        globalProdCache.duesEntries = duesRes.data || [];
+        globalProdCache.fetched = true;
+      } catch (error) {
+        toast.error("Failed to load history.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (!globalProdCache.fetched || needsRefresh) {
+      sessionStorage.removeItem("prod_entry_needs_refresh");
+      fetchTopData();
+    } else {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  // 🚀 UPDATED MASTER SYNC FUNCTION
+  const handleSyncStats = async () => {
+    if (isStatsSynced) return;
+    setSyncingStats(true);
+    toast.info("Recalculating all records...");
+    try {
+      const newStats = await productionService.syncAllStats();
+
+      setStats(newStats);
+      globalProdCache.stats = newStats;
+      setIsStatsSynced(true);
+      globalProdCache.isStatsSynced = true;
+      toast.success("Database synchronized successfully!");
+    } catch (e) {
+      toast.error("Sync failed.");
+    } finally {
+      setSyncingStats(false);
+    }
+  };
 
   const parseProduct = (fullName) => {
     if (!fullName) return { name: "-", size: "-" };
@@ -105,6 +174,7 @@ const DailyProduction = () => {
 
   const handleProdChange = (e) =>
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+
   const handleProdSubmit = (e) => {
     e.preventDefault();
     setConfirmDialog({ isOpen: true, type: "production" });
@@ -113,9 +183,31 @@ const DailyProduction = () => {
   const executeProdSubmit = async () => {
     setSubmitting(true);
     try {
-      await productionService.addProduction(formData, admin);
+      const docRef = await productionService.addProduction(formData, admin);
       toast.success("Production log saved!");
-      fetchTopData();
+
+      const qty = Number(formData.quantity) || 0;
+
+      setEntries((prev) => {
+        const newEntry = {
+          _id: docRef.id,
+          id: docRef.id,
+          ...formData,
+          quantity: qty,
+          createdAt: new Date().toISOString(),
+        };
+        const updated = [newEntry, ...prev].slice(0, 10);
+        globalProdCache.entries = updated;
+        return updated;
+      });
+
+      setStats((prev) => {
+        const newStats = { ...prev, output: prev.output + qty };
+        globalProdCache.stats = newStats;
+        return newStats;
+      });
+
+      sessionStorage.setItem("prod_report_needs_refresh", "true");
       setFormData({
         date: new Date().toISOString().split("T")[0],
         productName: "",
@@ -125,6 +217,7 @@ const DailyProduction = () => {
       toast.error("Failed to save entry.");
     } finally {
       setSubmitting(false);
+      setConfirmDialog({ isOpen: false, type: "" });
     }
   };
 
@@ -155,9 +248,47 @@ const DailyProduction = () => {
   const executeLabourSubmit = async () => {
     setSubmittingLabour(true);
     try {
-      await productionService.addLabourPayout(labourData, admin);
+      const docRef = await productionService.addLabourPayout(labourData, admin);
       toast.success(`Record for ${labourData.labourName} saved!`);
-      fetchTopData();
+
+      const paid = Number(labourData.amountPaid) || 0;
+      const due = Number(labourData.amountDue) || 0;
+
+      const newEntry = {
+        _id: docRef.id,
+        id: docRef.id,
+        ...labourData,
+        cost: Number(labourData.cost),
+        amountPaid: paid,
+        amountDue: due,
+        createdAt: new Date().toISOString(),
+      };
+
+      setLabourEntries((prev) => {
+        const updated = [newEntry, ...prev].slice(0, 10);
+        globalProdCache.labourEntries = updated;
+        return updated;
+      });
+
+      if (due > 0) {
+        setDuesEntries((prev) => {
+          const updated = [newEntry, ...prev].slice(0, 10);
+          globalProdCache.duesEntries = updated;
+          return updated;
+        });
+      }
+
+      setStats((prev) => {
+        const newStats = {
+          ...prev,
+          paid: prev.paid + paid,
+          due: prev.due + due,
+        };
+        globalProdCache.stats = newStats;
+        return newStats;
+      });
+
+      sessionStorage.setItem("prod_report_needs_refresh", "true");
       setLabourData({
         date: new Date().toISOString().split("T")[0],
         labourName: "",
@@ -171,6 +302,7 @@ const DailyProduction = () => {
       toast.error("Failed to record payment.");
     } finally {
       setSubmittingLabour(false);
+      setConfirmDialog({ isOpen: false, type: "" });
     }
   };
 
@@ -179,9 +311,7 @@ const DailyProduction = () => {
     else if (confirmDialog.type === "labour") executeLabourSubmit();
   };
 
-  // 🚀 REDIRECT TO REPORT HANDLER
   const handleRowClick = (e, id) => {
-    // Prevent redirect if user clicked Edit or Delete buttons
     if (e.target.closest("button") || e.target.closest("a")) return;
     navigate(`${basePath}/production/report?highlight=${id}`);
   };
@@ -194,54 +324,104 @@ const DailyProduction = () => {
     );
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-8">
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 overflow-x-hidden">
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8"
+      >
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+          <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
             <div
               className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
             >
               <Factory size={28} />
-            </div>{" "}
+            </div>
             Log Management
           </h1>
-          <p className="text-zinc-400 mt-2 text-sm font-medium">
+          <p className="text-zinc-400 mt-2 text-xs md:text-sm font-medium">
             Track daily output and manage payouts.
           </p>
         </div>
-        <div className="w-full xl:w-auto bg-[#09090B] p-1.5 rounded-2xl md:rounded-full border border-zinc-800/60 grid grid-cols-3 md:flex md:items-center gap-1">
-          <button
-            onClick={() => setActiveModule("production")}
-            className={`col-span-1 px-2 md:px-8 py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${activeModule === "production" ? `${theme.primaryTabBg} text-white` : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
-          >
-            Output
-          </button>
-          <button
-            onClick={() => setActiveModule("payouts")}
-            className={`col-span-1 px-2 md:px-8 py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${activeModule === "payouts" ? `${theme.primaryTabBg} text-white` : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
-          >
-            Payouts
-          </button>
-          <button
-            onClick={() => setActiveModule("dues")}
-            className={`col-span-1 px-2 md:px-8 py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all truncate tracking-wide ${activeModule === "dues" ? `${theme.primaryTabBg} text-white` : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
-          >
-            Dues
-          </button>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
+          <div className="w-full sm:w-auto bg-[#09090B] p-1.5 rounded-2xl md:rounded-full border border-zinc-800/60 flex items-center relative">
+            {["production", "payouts", "dues"].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveModule(tab)}
+                className={`relative flex-1 sm:flex-none px-4 md:px-8 py-2.5 md:py-2 text-[10px] sm:text-xs md:text-sm font-bold rounded-xl md:rounded-full transition-all tracking-wide z-10 ${
+                  activeModule === tab
+                    ? "text-white"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                {activeModule === tab && (
+                  <motion.div
+                    layoutId="activeTabIndicator"
+                    className={`absolute inset-0 rounded-xl md:rounded-full ${theme.primaryTabBg} shadow-sm -z-10`}
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  />
+                )}
+                <span className="relative z-20 capitalize">{tab}</span>
+              </button>
+            ))}
+          </div>
+
+          {!isManager && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSyncStats}
+              disabled={syncingStats || isStatsSynced}
+              title={
+                isStatsSynced ? "System Already Updated" : "Click to Sync Stats"
+              }
+              className={`h-11 px-4 w-full sm:w-auto transition-all duration-500 flex justify-center ${
+                isStatsSynced
+                  ? "opacity-40 pointer-events-none cursor-not-allowed bg-emerald-500/5 text-emerald-500 border-emerald-500/20"
+                  : "opacity-100 cursor-pointer border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+              }`}
+            >
+              {isStatsSynced ? (
+                <CheckCircle size={16} />
+              ) : (
+                <Database
+                  size={16}
+                  className={
+                    syncingStats ? "animate-pulse text-indigo-400" : ""
+                  }
+                />
+              )}
+              <span className="ml-2 hidden sm:block text-xs">
+                {syncingStats
+                  ? "Syncing..."
+                  : isStatsSynced
+                    ? "Updated"
+                    : "Sync Stats"}
+              </span>
+            </Button>
+          )}
         </div>
-      </div>
+      </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1">
-          <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden transition-colors duration-700">
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="lg:col-span-1"
+        >
+          <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden transition-colors duration-700 shadow-2xl">
             <div
               className={`absolute top-0 right-0 w-40 h-40 blur-3xl rounded-full pointer-events-none transition-colors duration-700 ${theme.glowOrb}`}
             ></div>
+
             <div className="relative z-10">
               {activeModule === "production" ? (
                 <div
                   key="production"
-                  className="animate-in fade-in slide-in-from-left-8 duration-300"
+                  className="animate-in fade-in slide-in-from-left-4 duration-300"
                 >
                   <div className="flex items-center gap-3 mb-6">
                     <div
@@ -406,7 +586,7 @@ const DailyProduction = () => {
                     <Button
                       type="submit"
                       variant="primary"
-                      className="w-full mt-2 rounded-xl"
+                      className="w-full mt-2 rounded-xl shadow-lg"
                       disabled={submitting}
                     >
                       <Save size={18} className="mr-2" />{" "}
@@ -417,7 +597,7 @@ const DailyProduction = () => {
               ) : (
                 <div
                   key="labour"
-                  className="animate-in fade-in slide-in-from-right-8 duration-300"
+                  className="animate-in fade-in slide-in-from-right-4 duration-300"
                 >
                   <div className="flex items-center gap-3 mb-6">
                     <div
@@ -447,14 +627,18 @@ const DailyProduction = () => {
                                 payoutCategory: cat,
                               })
                             }
-                            className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all border ${labourData.payoutCategory === cat ? `${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText}` : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-white"}`}
+                            className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                              labourData.payoutCategory === cat
+                                ? `${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText}`
+                                : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-white"
+                            }`}
                           >
                             {cat}
                           </button>
                         ))}
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                       <div>
                         <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                           Record Date
@@ -514,7 +698,7 @@ const DailyProduction = () => {
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                           Amount Paid (₹)
@@ -549,7 +733,7 @@ const DailyProduction = () => {
                     <Button
                       type="submit"
                       variant="primary"
-                      className="w-full mt-2 rounded-xl"
+                      className="w-full mt-2 rounded-xl shadow-lg"
                       disabled={submittingLabour}
                     >
                       <Save size={18} className="mr-2" />{" "}
@@ -560,12 +744,16 @@ const DailyProduction = () => {
               )}
             </div>
           </div>
-        </div>
+        </motion.div>
 
-        {/* RECENT LOGS TABLE */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-visible transition-colors duration-500">
-            <div className="p-6 border-b border-zinc-800/60 flex items-center justify-between">
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+          className="lg:col-span-2 space-y-6"
+        >
+          <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-hidden transition-colors duration-500 shadow-2xl">
+            <div className="p-4 sm:p-6 border-b border-zinc-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <h3 className="text-white font-bold text-lg flex items-center gap-2">
                 Recent Logs{" "}
                 <span className="text-zinc-500 text-sm font-normal hidden sm:inline-block">
@@ -574,14 +762,15 @@ const DailyProduction = () => {
               </h3>
               <Link
                 to={`${basePath}/production/report`}
-                className={`text-[10px] sm:text-xs font-bold ${theme.primaryText} ${theme.primaryBg} border ${theme.primaryBorder} px-3 sm:px-4 py-1.5 rounded-lg hover:bg-${isTransport ? "cyan" : "indigo"}-500/20 transition-colors uppercase tracking-widest whitespace-nowrap`}
+                className={`text-[10px] sm:text-xs font-bold ${theme.primaryText} ${theme.primaryBg} border ${theme.primaryBorder} px-4 py-2 rounded-lg hover:bg-${isTransport ? "cyan" : "indigo"}-500/20 transition-colors uppercase tracking-widest whitespace-nowrap w-full sm:w-auto text-center`}
               >
                 VIEW ALL REPORTS
               </Link>
             </div>
-            <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
+
+            <div className="overflow-x-auto w-full pb-4 custom-scrollbar min-h-[400px]">
               {activeModule === "production" && (
-                <table className="w-full text-left animate-in fade-in duration-300">
+                <table className="w-full text-left animate-in fade-in duration-300 min-w-[700px]">
                   <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                     <tr>
                       <th className="p-5 md:pl-6 whitespace-nowrap">Date</th>
@@ -639,8 +828,9 @@ const DailyProduction = () => {
                   </tbody>
                 </table>
               )}
+
               {activeModule === "payouts" && (
-                <table className="w-full text-left animate-in fade-in duration-300">
+                <table className="w-full text-left animate-in fade-in duration-300 min-w-[700px]">
                   <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                     <tr>
                       <th className="p-5 md:pl-6 whitespace-nowrap">
@@ -706,8 +896,9 @@ const DailyProduction = () => {
                   </tbody>
                 </table>
               )}
+
               {activeModule === "dues" && (
-                <table className="w-full text-left animate-in fade-in duration-300">
+                <table className="w-full text-left animate-in fade-in duration-300 min-w-[700px]">
                   <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                     <tr>
                       <th className="p-5 md:pl-6 whitespace-nowrap">
@@ -769,8 +960,9 @@ const DailyProduction = () => {
               )}
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
+
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
         onClose={() => setConfirmDialog({ isOpen: false, type: "" })}
