@@ -68,10 +68,10 @@ const salesService = {
       const onlineData = onlineAgg.data();
 
       const newStats = {
-        total: cashData.totalAmt + onlineData.totalAmt,
-        cash: cashData.totalPaid,
-        online: onlineData.totalPaid,
-        pendingDues: cashData.totalDue + onlineData.totalDue,
+        total: (cashData.totalAmt || 0) + (onlineData.totalAmt || 0),
+        cash: cashData.totalPaid || 0,
+        online: onlineData.totalPaid || 0,
+        pendingDues: (cashData.totalDue || 0) + (onlineData.totalDue || 0),
       };
 
       await setDoc(STATS_DOC_REF, newStats);
@@ -127,6 +127,7 @@ const salesService = {
 
     if (!hasInequality && !filters.exactDate)
       constraints.push(orderBy("date", "desc"));
+
     constraints.push(limit(limitCount));
     if (lastDoc) constraints.push(startAfter(lastDoc));
 
@@ -295,33 +296,44 @@ const salesService = {
     await batch.commit();
   },
 
-  deleteAllSales: async ({ password, email, user }) => {
+  deleteAllSales: async ({ password, email }) => {
     const currentUser = auth.currentUser;
     if (!currentUser || currentUser.email !== email)
-      throw new Error("Mismatch");
-    const credential = EmailAuthProvider.credential(email, password);
-    await reauthenticateWithCredential(currentUser, credential);
+      throw new Error("Authentication Mismatch");
 
-    let totalDeleted = 0;
-    while (totalDeleted < 9500) {
-      const q = query(collection(db, COLLECTION_NAME), limit(500));
-      const snapshot = await getDocs(q);
-      if (snapshot.empty) break;
-      const batch = writeBatch(db);
-      snapshot.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-      totalDeleted += snapshot.size;
+    try {
+      // Step 1: Re-authenticate with password
+      const credential = EmailAuthProvider.credential(email, password);
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // Step 2: Delete in Batches (Limit 9500 for safety)
+      let totalDeleted = 0;
+      while (totalDeleted < 9500) {
+        const q = query(collection(db, COLLECTION_NAME), limit(500));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) break;
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        totalDeleted += snapshot.size;
+      }
+
+      // Step 3: Reset Stats
+      await setDoc(STATS_DOC_REF, {
+        total: 0,
+        cash: 0,
+        online: 0,
+        pendingDues: 0,
+      });
+
+      return { success: true, count: totalDeleted };
+    } catch (error) {
+      console.error("Wipe Error:", error);
+      throw new Error("Invalid Password or Authentication Failed");
     }
-    await setDoc(STATS_DOC_REF, {
-      total: 0,
-      cash: 0,
-      online: 0,
-      pendingDues: 0,
-    });
-    return { success: true, count: totalDeleted };
   },
 
-  // 🚀 NEW: SERVER-SIDE BACKUP LOCKS (No Limits Wasted)
   getBackupState: async (month) => {
     try {
       const snap = await getDoc(doc(db, "systemStats", "backupLocks"));
