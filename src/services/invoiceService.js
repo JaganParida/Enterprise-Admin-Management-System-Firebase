@@ -53,6 +53,7 @@ const getUpdatedHistory = async (id, user) => {
 const invoiceService = {
   cache: {
     data: [],
+    stats: null,
     lastDoc: null,
     hasMore: false,
     filters: null,
@@ -63,6 +64,7 @@ const invoiceService = {
     this.cache.isValid = false;
   },
 
+  // 🚀 PURE ATOMIC BUNCHER: Exactly 4 document reads total. No frontend calculations.
   getInvoiceStats: async () => {
     try {
       const results = await Promise.allSettled([
@@ -96,7 +98,10 @@ const invoiceService = {
         cancelled: getVals(results[3]),
       };
     } catch (error) {
-      console.error("Stats Error:", error);
+      console.error(
+        "Firebase Aggregation Error. Check your Composite Indexes:",
+        error,
+      );
       return {
         total: { amt: 0, count: 0 },
         paid: { amt: 0, count: 0 },
