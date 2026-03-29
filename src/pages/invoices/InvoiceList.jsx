@@ -166,40 +166,49 @@ const InvoiceList = () => {
   const location = useLocation();
 
   const cached = invoiceService.cache;
-  const initValid = cached.isValid;
-
-  const [invoices, setInvoices] = useState(cached.data || []);
-  const [loading, setLoading] = useState(invoices.length === 0 && !initValid);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [syncError, setSyncError] = useState(false);
-
-  const [stats, setStats] = useState({
+  const defaultStats = {
     total: { amt: 0, count: 0 },
     paid: { amt: 0, count: 0 },
     pending: { amt: 0, count: 0 },
     cancelled: { amt: 0, count: 0 },
-  });
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [fallbackStats, setFallbackStats] = useState(null);
+  };
 
-  const [lastDoc, setLastDoc] = useState(cached.lastDoc || null);
-  const [hasMore, setHasMore] = useState(cached.hasMore || false);
+  // 🚀 Load instantly from global cache
+  const [invoices, setInvoices] = useState(cached.isValid ? cached.data : []);
+  const [stats, setStats] = useState(
+    cached.isValid && cached.stats ? cached.stats : defaultStats,
+  );
+  const [loading, setLoading] = useState(
+    invoices.length === 0 && !cached.isValid,
+  );
+  const [loadingStats, setLoadingStats] = useState(
+    !cached.isValid || !cached.stats,
+  );
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncError, setSyncError] = useState(false);
+
+  const [lastDoc, setLastDoc] = useState(
+    cached.isValid ? cached.lastDoc : null,
+  );
+  const [hasMore, setHasMore] = useState(
+    cached.isValid ? cached.hasMore : false,
+  );
   const [loadingMore, setLoadingMore] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState(
-    initValid ? cached.filters?.search || "" : "",
+    cached.isValid ? cached.filters?.search || "" : "",
   );
   const [filterStatus, setFilterStatus] = useState(
-    initValid ? cached.filters?.status || "All" : "All",
+    cached.isValid ? cached.filters?.status || "All" : "All",
   );
   const [filterAmount, setFilterAmount] = useState(
-    initValid ? cached.filters?.amount || "All" : "All",
+    cached.isValid ? cached.filters?.amount || "All" : "All",
   );
   const [filterDate, setFilterDate] = useState(
-    initValid ? cached.filters?.date || "All" : "All",
+    cached.isValid ? cached.filters?.date || "All" : "All",
   );
   const [filterExactDate, setFilterExactDate] = useState(
-    initValid ? cached.filters?.exactDate || "" : "",
+    cached.isValid ? cached.filters?.exactDate || "" : "",
   );
 
   const previousFilters = useRef({
@@ -231,7 +240,7 @@ const InvoiceList = () => {
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
   const isFirstRender = useRef(true);
-  const dataLoaded = useRef(initValid);
+  const dataLoaded = useRef(cached.isValid);
 
   const isTransport = (
     typeof window !== "undefined" && location.pathname === "/"
@@ -298,56 +307,13 @@ const InvoiceList = () => {
     try {
       const data = await invoiceService.getInvoiceStats();
       setStats(data);
+      invoiceService.cache.stats = data; // Persist to cache
     } catch (error) {
       console.error("Error fetching stats:", error);
     } finally {
       if (!isSilent) setLoadingStats(false);
     }
   };
-
-  // 🚀 FIXED: Robust Local Fallback (Removes commas, handles NaNs)
-  useEffect(() => {
-    if (
-      stats.total.amt === 0 &&
-      stats.total.count === 0 &&
-      invoices.length > 0 &&
-      !fallbackStats &&
-      activeFiltersCount === 0
-    ) {
-      const computed = invoices.reduce(
-        (acc, inv) => {
-          const amt =
-            Number(String(inv.grandTotal).replace(/[^0-9.-]+/g, "")) || 0;
-          const statusStr = (inv.status || "").toLowerCase();
-          acc.total.amt += amt;
-          acc.total.count += 1;
-          if (statusStr === "paid") {
-            acc.paid.amt += amt;
-            acc.paid.count += 1;
-          } else if (statusStr === "pending") {
-            acc.pending.amt += amt;
-            acc.pending.count += 1;
-          } else if (statusStr === "cancelled") {
-            acc.cancelled.amt += amt;
-            acc.cancelled.count += 1;
-          }
-          return acc;
-        },
-        {
-          total: { amt: 0, count: 0 },
-          paid: { amt: 0, count: 0 },
-          pending: { amt: 0, count: 0 },
-          cancelled: { amt: 0, count: 0 },
-        },
-      );
-      setFallbackStats(computed);
-    }
-  }, [invoices, stats, activeFiltersCount, fallbackStats]);
-
-  const displayStats =
-    stats.total.amt > 0 || stats.total.count > 0
-      ? stats
-      : fallbackStats || stats;
 
   const fetchInvoices = useCallback(
     async (isManual = false, isLoadMore = false, isSilent = false) => {
@@ -391,7 +357,9 @@ const InvoiceList = () => {
         const newHasMore = response.data && response.data.length === 50;
         setHasMore(newHasMore);
         dataLoaded.current = true;
+
         invoiceService.cache = {
+          ...invoiceService.cache,
           data: newData,
           lastDoc: response.lastVisible || null,
           hasMore: newHasMore,
@@ -420,8 +388,29 @@ const InvoiceList = () => {
   );
 
   useEffect(() => {
+    const currentFilters = {
+      status: filterStatus,
+      search: searchTerm,
+      amount: filterAmount,
+      date: filterDate,
+      exactDate: filterExactDate,
+    };
+    const filtersMatch =
+      JSON.stringify(invoiceService.cache.filters) ===
+      JSON.stringify(currentFilters);
+
+    // Only load if cache isn't valid
+    if (invoiceService.cache.isValid && filtersMatch) {
+      setLoading(false);
+      if (invoiceService.cache.stats) {
+        setLoadingStats(false);
+        return;
+      }
+    }
+
     fetchInvoices(false, false, invoices.length > 0);
     fetchStats(invoices.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -486,6 +475,109 @@ const InvoiceList = () => {
           minute: "2-digit",
         })
       : "";
+
+  const handleStatusChange = async (id, newStatus) => {
+    const invToUpdate = invoices.find((i) => i._id === id);
+    if (!invToUpdate) return;
+
+    const amt =
+      Number(String(invToUpdate.grandTotal).replace(/[^0-9.-]+/g, "")) || 0;
+    const oldStatus = (invToUpdate.status || "pending").toLowerCase();
+    const targetStatus = newStatus.toLowerCase();
+
+    const originalInvoices = [...invoices];
+    const newInvoices = invoices.map((inv) =>
+      inv._id === id ? { ...inv, status: newStatus } : inv,
+    );
+
+    setInvoices(newInvoices);
+    setStats((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next[oldStatus] && next[oldStatus].count > 0) {
+        next[oldStatus].amt = Math.max(0, next[oldStatus].amt - amt);
+        next[oldStatus].count -= 1;
+      }
+      if (next[targetStatus]) {
+        next[targetStatus].amt += amt;
+        next[targetStatus].count += 1;
+      }
+      invoiceService.cache.stats = next;
+      return next;
+    });
+
+    invoiceService.cache.data = newInvoices;
+
+    try {
+      await invoiceService.updateStatus(
+        id,
+        newStatus,
+        admin?.data || admin || { email: "Unknown", role: "admin" },
+      );
+      invoiceService.cache.isValid = true;
+      toast.success(`Status updated to ${newStatus}`);
+    } catch (error) {
+      toast.error("Failed to update status");
+      setInvoices(originalInvoices);
+      invoiceService.cache.data = originalInvoices;
+      fetchStats(true);
+    }
+  };
+
+  const handleDeleteClick = (id) => setDeleteModal({ isOpen: true, id });
+  const handleDisabledClick = (id) => {
+    setWarningTooltip(id);
+    setTimeout(() => setWarningTooltip(null), 2500);
+  };
+
+  const executeDelete = async () => {
+    if (!deleteModal.id) return;
+    const targetId = deleteModal.id;
+    const invToDelete = invoices.find((i) => i._id === targetId);
+    setDeleteModal({ isOpen: false, id: null });
+    if (!invToDelete) return;
+
+    const amt =
+      Number(String(invToDelete.grandTotal).replace(/[^0-9.-]+/g, "")) || 0;
+    const statusStr = (invToDelete.status || "pending").toLowerCase();
+
+    const previousInvoices = [...invoices];
+    const newInvoices = invoices.filter((inv) => inv._id !== targetId);
+
+    setInvoices(newInvoices);
+    setStats((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.total.amt = Math.max(0, next.total.amt - amt);
+      next.total.count = Math.max(0, next.total.count - 1);
+      if (next[statusStr] && next[statusStr].count > 0) {
+        next[statusStr].amt = Math.max(0, next[statusStr].amt - amt);
+        next[statusStr].count -= 1;
+      }
+      invoiceService.cache.stats = next;
+      return next;
+    });
+
+    invoiceService.cache.data = newInvoices;
+
+    try {
+      await invoiceService.deleteInvoice(targetId, admin?.data || admin || {});
+      invoiceService.cache.isValid = true;
+      toast.info("Invoice deleted successfully");
+    } catch (error) {
+      toast.error(error.message || "Failed to delete invoice");
+      setInvoices(previousInvoices);
+      invoiceService.cache.data = previousInvoices;
+      fetchStats(true);
+    }
+  };
+
+  const openHistory = (inv) =>
+    setHistoryModal({
+      isOpen: true,
+      data: Array.isArray(inv?.editHistory)
+        ? [...inv.editHistory].reverse()
+        : [],
+      itemName: `${String(inv?.invoiceNumber || "").replace(/^INV-/i, "")} - ${inv?.client?.name}`,
+    });
 
   const handleFullBackup = async () => {
     try {
@@ -563,103 +655,6 @@ const InvoiceList = () => {
     }
   };
 
-  // 🚀 INSTANT OPTIMISTIC UI: Status Change (No load wait!)
-  const handleStatusChange = async (id, newStatus) => {
-    const invToUpdate = invoices.find((i) => i._id === id);
-    if (!invToUpdate) return;
-
-    const amt =
-      Number(String(invToUpdate.grandTotal).replace(/[^0-9.-]+/g, "")) || 0;
-    const oldStatus = (invToUpdate.status || "").toLowerCase();
-    const targetStatus = newStatus.toLowerCase();
-
-    const originalInvoices = [...invoices];
-    setInvoices(
-      invoices.map((inv) =>
-        inv._id === id ? { ...inv, status: newStatus } : inv,
-      ),
-    );
-
-    setStats((prev) => {
-      const next = JSON.parse(JSON.stringify(prev));
-      if (next[oldStatus] && next[oldStatus].count > 0) {
-        next[oldStatus].amt = Math.max(0, next[oldStatus].amt - amt);
-        next[oldStatus].count -= 1;
-      }
-      if (next[targetStatus]) {
-        next[targetStatus].amt += amt;
-        next[targetStatus].count += 1;
-      }
-      return next;
-    });
-    setFallbackStats(null); // Wipe fallback to rely on Optimistic
-
-    try {
-      await invoiceService.updateStatus(
-        id,
-        newStatus,
-        admin?.data || admin || { email: "Unknown", role: "admin" },
-      );
-      toast.success(`Status updated to ${newStatus}`);
-    } catch (error) {
-      toast.error("Failed to update status");
-      setInvoices(originalInvoices);
-      fetchStats(true);
-    }
-  };
-
-  const handleDeleteClick = (id) => setDeleteModal({ isOpen: true, id });
-  const handleDisabledClick = (id) => {
-    setWarningTooltip(id);
-    setTimeout(() => setWarningTooltip(null), 2500);
-  };
-
-  // 🚀 INSTANT OPTIMISTIC UI: Delete (No load wait!)
-  const executeDelete = async () => {
-    if (!deleteModal.id) return;
-    const targetId = deleteModal.id;
-    const invToDelete = invoices.find((i) => i._id === targetId);
-    setDeleteModal({ isOpen: false, id: null });
-    if (!invToDelete) return;
-
-    const amt =
-      Number(String(invToDelete.grandTotal).replace(/[^0-9.-]+/g, "")) || 0;
-    const statusStr = (invToDelete.status || "").toLowerCase();
-
-    const previousInvoices = [...invoices];
-    setInvoices(invoices.filter((inv) => inv._id !== targetId));
-
-    setStats((prev) => {
-      const next = JSON.parse(JSON.stringify(prev));
-      next.total.amt = Math.max(0, next.total.amt - amt);
-      next.total.count = Math.max(0, next.total.count - 1);
-      if (next[statusStr] && next[statusStr].count > 0) {
-        next[statusStr].amt = Math.max(0, next[statusStr].amt - amt);
-        next[statusStr].count -= 1;
-      }
-      return next;
-    });
-    setFallbackStats(null); // Wipe fallback
-
-    try {
-      await invoiceService.deleteInvoice(targetId, admin?.data || admin || {});
-      toast.info("Invoice deleted successfully");
-    } catch (error) {
-      toast.error(error.message || "Failed to delete invoice");
-      setInvoices(previousInvoices);
-      fetchStats(true);
-    }
-  };
-
-  const openHistory = (inv) =>
-    setHistoryModal({
-      isOpen: true,
-      data: Array.isArray(inv?.editHistory)
-        ? [...inv.editHistory].reverse()
-        : [],
-      itemName: `${String(inv?.invoiceNumber || "").replace(/^INV-/i, "")} - ${inv?.client?.name}`,
-    });
-
   if (loading && invoices.length === 0)
     return (
       <div className="w-full h-full min-h-[80vh] flex flex-col items-center justify-center">
@@ -696,21 +691,25 @@ const InvoiceList = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full xl:w-auto">
-          {/* 🚀 PERFECTED SYNC BUTTON UI */}
-          <div className="flex items-center bg-[#09090B] border border-zinc-800/80 rounded-xl p-1 gap-1 shadow-sm w-full sm:w-auto transition-all">
+          {/* 🚀 PERFECTED SEPARATE SYNC BUTTON UI */}
+          <div className="flex items-center gap-2">
             <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all ${syncError ? "bg-rose-500/10" : "bg-transparent opacity-50"}`}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all ${
+                syncError
+                  ? "border-rose-500/20 bg-rose-500/10 text-rose-500"
+                  : isRefreshing
+                    ? "border-zinc-800/60 bg-zinc-900/50 text-zinc-400"
+                    : "border-emerald-500/20 bg-emerald-500/10 text-emerald-500 opacity-60"
+              }`}
             >
               {isRefreshing ? (
-                <Loader2 size={14} className="animate-spin text-zinc-400" />
+                <Loader2 size={12} className="animate-spin" />
               ) : syncError ? (
-                <XCircle size={14} className="text-rose-500" />
+                <XCircle size={12} />
               ) : (
-                <CheckCircle2 size={14} className="text-emerald-400" />
+                <CheckCircle2 size={12} />
               )}
-              <span
-                className={`text-[10px] font-bold tracking-widest uppercase ${isRefreshing ? "text-zinc-400" : syncError ? "text-rose-500" : "text-emerald-400"}`}
-              >
+              <span className="text-[10px] font-bold uppercase tracking-wider">
                 {isRefreshing
                   ? "Syncing..."
                   : syncError
@@ -719,23 +718,20 @@ const InvoiceList = () => {
               </span>
             </div>
 
-            <div className="w-px h-4 bg-zinc-800"></div>
-
             <button
               type="button"
               onClick={() => {
-                if (!isRefreshing && syncError) {
-                  fetchInvoices(true);
-                  fetchStats();
-                }
+                invoiceService.clearCache();
+                fetchInvoices(true);
+                fetchStats();
               }}
-              disabled={isRefreshing || !syncError}
-              className={`p-2 rounded-lg transition-all focus:outline-none shrink-0 ${syncError ? "text-rose-400 hover:bg-rose-500/20 cursor-pointer" : "text-zinc-600 opacity-40 cursor-not-allowed"}`}
-              title={syncError ? "Click to retry sync" : "Everything is synced"}
+              disabled={isRefreshing}
+              className="p-2 bg-[#09090B] border border-zinc-800 rounded-lg hover:bg-zinc-800 hover:text-white transition-all text-zinc-500"
+              title="Manual Refresh"
             >
               <RefreshCcw
                 size={14}
-                className={isRefreshing ? "animate-spin text-zinc-400" : ""}
+                className={isRefreshing ? "animate-spin text-white" : ""}
               />
             </button>
           </div>
@@ -789,14 +785,15 @@ const InvoiceList = () => {
         </div>
       </motion.div>
 
+      {/* DASHBOARD SUMMARY CARDS (Purely driven by backend & optimistic cache) */}
       <motion.div
         variants={blockVariants}
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden"
       >
         <StatCard
           title="Total Revenue"
-          amount={displayStats.total.amt}
-          count={displayStats.total.count}
+          amount={stats.total.amt}
+          count={stats.total.count}
           icon={<Activity size={16} />}
           color={theme.primaryText}
           bg={theme.primaryBg}
@@ -805,8 +802,8 @@ const InvoiceList = () => {
         />
         <StatCard
           title="Total Paid"
-          amount={displayStats.paid.amt}
-          count={displayStats.paid.count}
+          amount={stats.paid.amt}
+          count={stats.paid.count}
           icon={<CheckCircle2 size={16} />}
           color="text-emerald-400"
           bg="bg-emerald-500/10"
@@ -815,8 +812,8 @@ const InvoiceList = () => {
         />
         <StatCard
           title="Pending Amount"
-          amount={displayStats.pending.amt}
-          count={displayStats.pending.count}
+          amount={stats.pending.amt}
+          count={stats.pending.count}
           icon={<Clock size={16} />}
           color="text-amber-400"
           bg="bg-amber-500/10"
@@ -825,8 +822,8 @@ const InvoiceList = () => {
         />
         <StatCard
           title="Cancelled/Lost"
-          amount={displayStats.cancelled.amt}
-          count={displayStats.cancelled.count}
+          amount={stats.cancelled.amt}
+          count={stats.cancelled.count}
           icon={<XCircle size={16} />}
           color="text-rose-400"
           bg="bg-rose-500/10"
@@ -981,17 +978,12 @@ const InvoiceList = () => {
             }}
             theme={theme}
           />
+
           <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto pb-2 lg:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 px-2 shrink-0">
-              <Filter size={14} /> Filters{" "}
-              {activeFiltersCount > 0 && (
-                <span
-                  className={`ml-1 px-1.5 rounded bg-zinc-800 text-zinc-300`}
-                >
-                  {activeFiltersCount}
-                </span>
-              )}
+              <Filter size={14} /> Filters
             </div>
+
             <div className="relative group shrink-0">
               <select
                 value={filterStatus}
@@ -1016,6 +1008,7 @@ const InvoiceList = () => {
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
               />
             </div>
+
             <div className="relative group shrink-0">
               <select
                 value={filterAmount}
@@ -1044,6 +1037,7 @@ const InvoiceList = () => {
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
               />
             </div>
+
             <div className="relative group shrink-0">
               <select
                 value={filterDate}
@@ -1073,6 +1067,7 @@ const InvoiceList = () => {
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
               />
             </div>
+
             <div className="relative group flex items-center shrink-0">
               <div
                 className={`absolute left-4 flex items-center justify-center pointer-events-none transition-colors ${filterExactDate ? theme.primaryText : "text-zinc-500"}`}
@@ -1092,6 +1087,8 @@ const InvoiceList = () => {
                 className={`appearance-none bg-[#121214] border rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryBg} ${theme.primaryBorder} text-indigo-100` : "border-zinc-800 text-zinc-300 hover:border-zinc-700"}`}
               />
             </div>
+
+            {/* 🚀 STYLISH CLEAR BUTTON */}
             {activeFiltersCount > 0 && (
               <button
                 type="button"
@@ -1102,9 +1099,9 @@ const InvoiceList = () => {
                   setFilterExactDate("");
                   setSearchTerm("");
                 }}
-                className="h-9 px-4 text-xs rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors flex items-center justify-center gap-2 font-bold shrink-0"
+                className="h-9 px-3 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-1.5 font-bold text-xs shrink-0 border border-rose-500/20 hover:border-rose-500"
               >
-                <X size={14} /> Clear
+                <X size={14} /> Clear {activeFiltersCount}
               </button>
             )}
           </div>
