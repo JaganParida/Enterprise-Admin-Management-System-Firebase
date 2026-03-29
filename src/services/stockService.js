@@ -4,6 +4,7 @@ import {
   addDoc,
   getDocs,
   getDoc,
+  setDoc,
   doc,
   updateDoc,
   deleteDoc,
@@ -12,28 +13,68 @@ import {
   limit,
   where,
   startAfter,
+  writeBatch,
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const stockCollection = collection(db, "stocks");
+const METADATA_COLLECTION = "_system_metadata";
+const WIPE_STATE_KEY = "daily_wipe_state";
 
 const stockService = {
-  // 🚀 1. PAGINATED & 100% BACKEND FILTERED FETCH
+  // --- BACKUP STATE LOCK SYSTEM ---
+  getBackupState: async (backupKey) => {
+    try {
+      const snap = await getDoc(doc(db, METADATA_COLLECTION, backupKey));
+      return snap.exists() ? snap.data() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  setBackupState: async (backupKey, stateData) => {
+    try {
+      const docRef = doc(db, METADATA_COLLECTION, backupKey);
+      if (!stateData) await deleteDoc(docRef);
+      else await setDoc(docRef, stateData, { merge: true });
+    } catch (e) {}
+  },
+
+  // --- WIPE STATE LOCK SYSTEM ---
+  getWipeState: async () => {
+    try {
+      const snap = await getDoc(doc(db, METADATA_COLLECTION, WIPE_STATE_KEY));
+      return snap.exists() ? snap.data() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  setWipeState: async (stateData) => {
+    try {
+      await setDoc(doc(db, METADATA_COLLECTION, WIPE_STATE_KEY), stateData, {
+        merge: true,
+      });
+    } catch (e) {}
+  },
+
+  // --- CRUD OPERATIONS ---
   getAllStocks: async (filters = {}, lastDoc = null, limitCount = 50) => {
     try {
       let constraints = [];
       let hasInequality = false;
 
-      // EXACT EQUALITY FILTERS
       if (filters.category && filters.category !== "All") {
         constraints.push(where("category", "==", filters.category));
       }
 
-      // INEQUALITY FILTERS (Priority Logic - Only ONE allowed by Firebase)
       if (filters.search) {
-        constraints.push(where("name", ">=", filters.search));
-        constraints.push(where("name", "<=", filters.search + "\uf8ff"));
-        constraints.push(orderBy("name"));
+        const searchLower = filters.search.toLowerCase().trim();
+        constraints.push(
+          where("searchName", ">=", searchLower),
+          where("searchName", "<=", searchLower + "\uf8ff"),
+          orderBy("searchName", "asc"),
+        );
         hasInequality = true;
       } else if (
         filters.stockLevel &&
@@ -54,7 +95,6 @@ const stockService = {
         hasInequality = true;
       }
 
-      // DEFAULT SORTING
       if (!hasInequality) {
         constraints.push(orderBy("createdAt", "desc"));
       }
@@ -86,10 +126,12 @@ const stockService = {
   createStock: async (stockData, user) => {
     const payload = {
       ...stockData,
-      quantity: Number(stockData.quantity),
-      price: Number(stockData.price),
+      searchName: stockData.name.toLowerCase().trim(),
+      quantity: Number(stockData.quantity) || 0,
+      price: Number(stockData.price) || 0,
       createdAt: new Date().toISOString(),
       createdBy: user?.email || "Unknown",
+      editHistory: [],
     };
 
     const docRef = await addDoc(stockCollection, payload);
@@ -123,14 +165,17 @@ const stockService = {
     };
 
     currentHistory.push(currentEdit);
-    if (currentHistory.length > 10) {
-      currentHistory = currentHistory.slice(-10); // Safe slicing for array
+
+    // 🚀 Strict Limit: Keep only the latest 2 records
+    if (currentHistory.length > 2) {
+      currentHistory = currentHistory.slice(-2);
     }
 
     const payload = {
       ...updateData,
-      quantity: Number(updateData.quantity),
-      price: Number(updateData.price),
+      searchName: updateData.name.toLowerCase().trim(),
+      quantity: Number(updateData.quantity) || 0,
+      price: Number(updateData.price) || 0,
       lastEditedBy: currentEdit.by,
       lastEditedRole: currentEdit.role,
       lastEditedAt: currentEdit.at,
@@ -141,7 +186,6 @@ const stockService = {
     return { message: "Stock updated successfully" };
   },
 
-  // 🚀 2. SECURE DELETE (RBAC Check)
   deleteStock: async (id, user) => {
     const userRole = user?.data?.role || user?.role;
     if (userRole === "manager") {
@@ -152,7 +196,7 @@ const stockService = {
     return { message: "Item deleted successfully" };
   },
 
-  // 🚀 3. SECURE WIPE ALL (Password Re-auth + RBAC Check)
+  // --- SECURE WIPE ALL (10k Limit + 500 Chunking + 24h Lock) ---
   deleteAllStocks: async ({ password, email, user }) => {
     const userRole = user?.data?.role || user?.role;
     if (userRole === "manager") {
@@ -175,16 +219,72 @@ const stockService = {
       throw new Error("Incorrect Admin Password.");
     }
 
-    try {
-      const snapshot = await getDocs(stockCollection);
-      const deletePromises = snapshot.docs.map((document) =>
-        deleteDoc(doc(db, "stocks", document.id)),
-      );
-      await Promise.all(deletePromises);
-      return { message: "All stocks deleted successfully" };
-    } catch (error) {
-      throw new Error("Failed to clear database. Admin rights required.");
+    const WIPE_LIMIT = 10000;
+    const now = Date.now();
+    let state = await stockService.getWipeState();
+
+    // Reset lock if it has expired
+    if (!state || (state.lockedUntil && now > state.lockedUntil)) {
+      state = { count: 0, lockedUntil: null };
     }
+    // Block immediately if still locked
+    else if (state.lockedUntil && now < state.lockedUntil) {
+      throw new Error(
+        "Daily limit reached. Wipe feature is locked for 24 hours.",
+      );
+    }
+
+    let remainingQuota = WIPE_LIMIT - (state.count || 0);
+    if (remainingQuota <= 0) {
+      const lockTime = now + 24 * 60 * 60 * 1000;
+      await stockService.setWipeState({
+        count: WIPE_LIMIT,
+        lockedUntil: lockTime,
+      });
+      throw new Error(
+        "Daily wipe limit (10,000) exhausted. Locked for 24 hours.",
+      );
+    }
+
+    let isDeleting = true;
+    let sessionDeletedCount = 0;
+
+    // Loop for chunked deletion (Max 500 at a time to prevent timeout/crashes)
+    while (isDeleting && remainingQuota > 0) {
+      const chunkSize = Math.min(500, remainingQuota);
+      const q = query(collection(db, "stocks"), limit(chunkSize));
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) break;
+
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+
+      const deletedDocs = snapshot.docs.length;
+      sessionDeletedCount += deletedDocs;
+      remainingQuota -= deletedDocs;
+
+      state.count += deletedDocs;
+      await stockService.setWipeState(state);
+
+      if (deletedDocs < chunkSize) break;
+    }
+
+    // Apply 24 Hour Lock if limit hit during this specific run
+    if (remainingQuota === 0) {
+      state.lockedUntil = Date.now() + 24 * 60 * 60 * 1000;
+      await stockService.setWipeState(state);
+      return {
+        message: `Wiped ${sessionDeletedCount} items. Daily limit reached. Locked for 24 hours.`,
+        locked: true,
+      };
+    }
+
+    return {
+      message: `Successfully wiped ${sessionDeletedCount} items.`,
+      locked: false,
+    };
   },
 };
 
