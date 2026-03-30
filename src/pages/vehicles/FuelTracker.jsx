@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import fuelService from "../../services/fuelService";
 import { useUI } from "../../context/UIProvider";
@@ -10,10 +10,12 @@ import {
   IndianRupee,
   Save,
   Droplet,
-  X,
   History,
   ArrowRight,
   Edit2,
+  CheckCircle2,
+  RefreshCcw,
+  X,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -53,22 +55,42 @@ const GlassInput = ({
   </div>
 );
 
+const defaultFilters = {
+  search: "",
+  amountFilter: "Any Amount",
+  dateFilter: "All",
+  exactDate: "",
+};
+
 const FuelTracker = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [editId, setEditId] = useState(null);
-  const [stats, setStats] = useState({
-    totalLiters: 0,
-    totalCost: 0,
-    refuelCount: 0,
+
+  const [stats, setStats] = useState(
+    () =>
+      fuelService.getCachedStats() || {
+        totalLiters: 0,
+        totalCost: 0,
+        refuelCount: 0,
+      },
+  );
+  const [logs, setLogs] = useState(() => {
+    const cached = fuelService.getCachedLogs(defaultFilters);
+    return cached ? cached.slice(0, 10) : [];
   });
 
-  // 🔥 THEME HOOK
+  const [loading, setLoading] = useState(() => {
+    return !(
+      fuelService.getCachedStats() && fuelService.getCachedLogs(defaultFilters)
+    );
+  });
+
+  const [submitting, setSubmitting] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [isSynced, setIsSynced] = useState(true);
+
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -91,29 +113,40 @@ const FuelTracker = () => {
     data: [],
     itemName: "",
   });
-
   const initialForm = {
     date: new Date().toISOString().split("T")[0],
     vehicleNo: "",
     liters: "",
     pricePerLiter: "",
   };
-
   const [formData, setFormData] = useState(initialForm);
 
   const calculatedTotal =
     (parseFloat(formData.liters) || 0) *
     (parseFloat(formData.pricePerLiter) || 0);
 
-  // 🚀 FETCH OPTIMIZED FOR TOP 10 AND AGGREGATE STATS (Golden Rules #1 & #2)
-  const fetchData = async () => {
+  useEffect(() => {
+    const checkSync = () => {
+      const globalLastUpdate = parseInt(
+        localStorage.getItem("fuel_last_update") || "0",
+        10,
+      );
+      if (globalLastUpdate > fuelService.getLastFetchTime()) setIsSynced(false);
+    };
+    const interval = setInterval(checkSync, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchData = async (force = false) => {
+    if (force) setLoading(true);
     try {
       const [statsRes, logsRes] = await Promise.all([
-        fuelService.getStats(),
-        fuelService.getLogs({}, null, 10), // Limit to top 10
+        fuelService.getStats(force),
+        fuelService.getLogs(defaultFilters, null, 50, force),
       ]);
       setStats(statsRes);
-      setLogs(logsRes.data || []);
+      setLogs(logsRes.data ? logsRes.data.slice(0, 10) : []);
+      setIsSynced(true);
     } catch (err) {
       toast.error("Failed to load tracking data.");
     } finally {
@@ -157,9 +190,7 @@ const FuelTracker = () => {
         formatted += "-";
         if (middleChars.length > 0) {
           formatted += middleChars;
-          if (lastDigits.length > 0) {
-            formatted += "-" + lastDigits;
-          }
+          if (lastDigits.length > 0) formatted += "-" + lastDigits;
         } else {
           formatted += lastDigits;
         }
@@ -172,11 +203,10 @@ const FuelTracker = () => {
     e.preventDefault();
     const vehicleRegex = /^[A-Z]{2}-[0-9]{2}-([A-Z]{1,2}-)?[0-9]{4}$/;
     if (!vehicleRegex.test(formData.vehicleNo))
-      return toast.error("Invalid Vehicle No. Format (e.g., OD-02-AX-1234)");
-    if (Number(formData.liters) <= 0)
-      return toast.error("Liters must be greater than 0");
+      return toast.error("Invalid Vehicle No. Format");
+    if (Number(formData.liters) <= 0) return toast.error("Liters must be > 0");
     if (Number(formData.pricePerLiter) <= 0)
-      return toast.error("Price per liter must be greater than 0");
+      return toast.error("Price per liter must be > 0");
 
     setSubmitting(true);
     try {
@@ -191,7 +221,7 @@ const FuelTracker = () => {
         toast.success("Fuel logged successfully!");
       }
       resetForm();
-      fetchData();
+      fetchData(true);
     } catch (err) {
       toast.error("Failed to save log.");
     } finally {
@@ -200,7 +230,7 @@ const FuelTracker = () => {
   };
 
   const openHistory = (e, log) => {
-    e.stopPropagation(); // Prevents row click redirect
+    e.stopPropagation();
     const sortedHistory = log.editHistory ? [...log.editHistory].reverse() : [];
     setHistoryModal({
       isOpen: true,
@@ -214,9 +244,7 @@ const FuelTracker = () => {
     setFormData(initialForm);
   };
 
-  // 🚀 REDIRECT TO REPORT HANDLER
   const handleRowClick = (e, id) => {
-    // Prevent redirect if user clicked Edit or Delete buttons
     if (
       e.target.closest("button") ||
       e.target.closest("a") ||
@@ -249,6 +277,20 @@ const FuelTracker = () => {
             Monitor vehicle refueling and fuel expenses.
           </p>
         </div>
+
+        <Button
+          variant="ghost"
+          onClick={() => fetchData(true)}
+          disabled={isSynced || loading}
+          className={`flex items-center gap-2 h-[40px] px-4 rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+        >
+          {isSynced ? (
+            <CheckCircle2 size={16} />
+          ) : (
+            <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+          )}
+          {isSynced ? "Dashboard Up to Date" : "Sync Required"}
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
