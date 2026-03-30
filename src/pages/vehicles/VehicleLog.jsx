@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import vehicleService from "../../services/vehicleService";
 import {
@@ -7,29 +7,26 @@ import {
   Calendar,
   User,
   IndianRupee,
-  Save,
   History,
   X,
   Package,
   ArrowRightCircle,
-  Edit2,
-  Map,
   Receipt,
-  Search,
-  Filter,
-  ChevronDown,
   RefreshCcw,
-  AlertOctagon,
-  ShieldAlert,
-  Download,
-  Eye,
-  EyeOff,
+  CloudOff,
+  CloudDrizzle,
+  CheckCircle2,
+  Map,
 } from "lucide-react";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
 import Loader from "../../components/common/Loader";
-import Button from "../../components/common/Button";
-import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+export const dashboardCache = {
+  version: "0",
+  logs: null,
+  expenses: null,
+};
 
 const GlassInput = ({
   label,
@@ -71,15 +68,40 @@ const VehicleLog = () => {
   const { admin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("trips");
 
-  // 🚀 Highlight Animation State
+  const [loading, setLoading] = useState(() => {
+    const dbVersion = localStorage.getItem("vehicle_db_version") || "0";
+    return !(
+      dashboardCache.version === dbVersion &&
+      dashboardCache.logs &&
+      dashboardCache.expenses
+    );
+  });
+
+  const [logs, setLogs] = useState(() => {
+    const dbVersion = localStorage.getItem("vehicle_db_version") || "0";
+    return dashboardCache.version === dbVersion && dashboardCache.logs
+      ? dashboardCache.logs
+      : [];
+  });
+
+  const [expenses, setExpenses] = useState(() => {
+    const dbVersion = localStorage.getItem("vehicle_db_version") || "0";
+    return dashboardCache.version === dbVersion && dashboardCache.expenses
+      ? dashboardCache.expenses
+      : [];
+  });
+
+  const [activeTab, setActiveTab] = useState("trips");
+  const [syncStatus, setSyncStatus] = useState("up-to-date");
+  const [localVersion, setLocalVersion] = useState(
+    localStorage.getItem("vehicle_db_version") || "0",
+  );
+
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -104,11 +126,8 @@ const VehicleLog = () => {
       : "bg-indigo-600 hover:bg-indigo-500 text-white",
   };
 
-  const [logs, setLogs] = useState([]);
-  const [expenses, setExpenses] = useState([]);
   const [editId, setEditId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
     data: [],
@@ -139,7 +158,77 @@ const VehicleLog = () => {
   const [formData, setFormData] = useState(initialTripForm);
   const [expenseData, setExpenseData] = useState(initialExpenseForm);
 
-  // 🚀 Scroll & Highlight Effect
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const currentDbVersion = localStorage.getItem("vehicle_db_version");
+      if (currentDbVersion && currentDbVersion !== localVersion)
+        setSyncStatus("required");
+    };
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("focus", handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("focus", handleStorageChange);
+    };
+  }, [localVersion]);
+
+  const fetchData = useCallback(
+    async (force = false) => {
+      const dbVersion = localStorage.getItem("vehicle_db_version") || "0";
+
+      if (dashboardCache.version !== dbVersion) {
+        dashboardCache.logs = null;
+        dashboardCache.expenses = null;
+        dashboardCache.version = dbVersion;
+      }
+
+      if (!force && dashboardCache.logs && dashboardCache.expenses) {
+        setSyncStatus("up-to-date");
+        setLoading(false);
+        return;
+      }
+
+      if (force) setSyncStatus("syncing");
+      else setLoading(true);
+
+      try {
+        const [tripRes, expRes] = await Promise.all([
+          vehicleService.getLogs({}, null, 10),
+          vehicleService.getExpenses({}, null, 10),
+        ]);
+
+        const newLogs = tripRes.data || [];
+        const newExpenses = expRes.data || [];
+
+        setLogs(newLogs);
+        setExpenses(newExpenses);
+
+        dashboardCache.logs = newLogs;
+        dashboardCache.expenses = newExpenses;
+
+        setLocalVersion(dbVersion);
+        setSyncStatus("up-to-date");
+      } catch (err) {
+        setSyncStatus("error");
+        toast.error("Error loading data.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [toast],
+  );
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const triggerDataUpdate = () => {
+    const newVersion = Date.now().toString();
+    localStorage.setItem("vehicle_db_version", newVersion);
+    setLocalVersion(newVersion);
+    fetchData(true);
+  };
+
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
@@ -154,11 +243,11 @@ const VehicleLog = () => {
   }, [urlHighlightId, loading]);
 
   useEffect(() => {
-    if (location.state && location.state.editLog) {
+    if (location.state?.editLog) {
       setActiveTab("trips");
       handleEdit(location.state.editLog, "trips");
       window.history.replaceState({}, document.title);
-    } else if (location.state && location.state.editExpense) {
+    } else if (location.state?.editExpense) {
       setActiveTab("expenses");
       handleEdit(location.state.editExpense, "expenses");
       window.history.replaceState({}, document.title);
@@ -173,7 +262,6 @@ const VehicleLog = () => {
     const paid = Number(formData.amountPaid) || 0;
     const total = qty * rate + food;
     const calculatedDue = total - paid;
-
     setFormData((prev) => ({
       ...prev,
       totalAmount: total,
@@ -186,25 +274,6 @@ const VehicleLog = () => {
     formData.amountPaid,
     activeTab,
   ]);
-
-  const fetchData = async () => {
-    try {
-      const [tripRes, expRes] = await Promise.all([
-        vehicleService.getLogs({}, null, 10), // Limit Dashboard views to 10
-        vehicleService.getExpenses({}, null, 10),
-      ]);
-      setLogs(tripRes.data || []);
-      setExpenses(expRes.data || []);
-    } catch (err) {
-      toast.error("Error loading data.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const handleVehicleNoChange = (e) => {
     let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -235,7 +304,7 @@ const VehicleLog = () => {
       }
       setFormData(initialTripForm);
       setEditId(null);
-      fetchData();
+      triggerDataUpdate();
     } catch (err) {
       toast.error("Failed to save trip.");
     } finally {
@@ -257,7 +326,7 @@ const VehicleLog = () => {
       }
       setExpenseData(initialExpenseForm);
       setEditId(null);
-      fetchData();
+      triggerDataUpdate();
     } catch (err) {
       toast.error("Failed to save expense.");
     } finally {
@@ -294,7 +363,7 @@ const VehicleLog = () => {
   const openHistory = (e, item, type) => {
     e.stopPropagation();
     const sortedHistory = item.editHistory
-      ? [...item.editHistory].reverse()
+      ? [...item.editHistory].reverse().slice(0, 2)
       : [];
     setHistoryModal({
       isOpen: true,
@@ -303,7 +372,6 @@ const VehicleLog = () => {
     });
   };
 
-  // 🚀 REDIRECT TO REPORT HANDLER
   const handleRowClick = (e, id, type) => {
     if (
       e.target.closest("button") ||
@@ -314,11 +382,10 @@ const VehicleLog = () => {
     navigate(`${basePath}/logs/report?highlight=${id}`);
   };
 
-  if (loading) return <Loader />;
-
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-2 sm:px-4">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+    <div className="space-y-6 pb-10 px-2 sm:px-4">
+      {/* HEADER SECTION (Smooth slide down) */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
         <div className="flex items-center gap-4">
           <div
             className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
@@ -334,577 +401,621 @@ const VehicleLog = () => {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto bg-[#09090B] p-1.5 rounded-2xl border border-zinc-800/60 shadow-inner h-[44px]">
+
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           <button
-            onClick={() => {
-              setActiveTab("trips");
-              cancelEdit();
-            }}
-            className={`flex-1 md:flex-none px-6 h-full text-xs font-bold rounded-xl transition-all ${activeTab === "trips" ? theme.tabActive : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
+            onClick={() => fetchData(true)}
+            disabled={syncStatus === "up-to-date" || syncStatus === "syncing"}
+            className={`flex items-center gap-2 px-4 h-[44px] text-xs font-bold rounded-xl transition-all border ${
+              syncStatus === "up-to-date"
+                ? "bg-zinc-800/30 text-zinc-500 border-zinc-800/50 cursor-not-allowed opacity-50"
+                : syncStatus === "syncing"
+                  ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
+                  : syncStatus === "error"
+                    ? "bg-red-500/20 text-red-400 border-red-500/40"
+                    : "bg-blue-500/20 text-blue-400 border-blue-500/40 animate-pulse hover:bg-blue-500/30"
+            }`}
           >
-            Trips Data
+            {syncStatus === "up-to-date" && <CheckCircle2 size={14} />}
+            {syncStatus === "syncing" && (
+              <RefreshCcw size={14} className="animate-spin" />
+            )}
+            {syncStatus === "required" && <CloudDrizzle size={14} />}
+            {syncStatus === "error" && <CloudOff size={14} />}
+            {syncStatus === "up-to-date"
+              ? "Up to Date"
+              : syncStatus === "syncing"
+                ? "Syncing..."
+                : syncStatus === "error"
+                  ? "DB Error"
+                  : "Sync Required"}
           </button>
-          <button
-            onClick={() => {
-              setActiveTab("expenses");
-              cancelEdit();
-            }}
-            className={`flex-1 md:flex-none px-6 h-full text-xs font-bold rounded-xl transition-all ${activeTab === "expenses" ? "bg-rose-600 text-white shadow-lg shadow-rose-900/20" : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
-          >
-            Expenses
-          </button>
+
+          <div className="flex items-center gap-3 bg-[#09090B] p-1.5 rounded-2xl border border-zinc-800/60 shadow-inner h-[44px]">
+            <button
+              onClick={() => {
+                setActiveTab("trips");
+                cancelEdit();
+              }}
+              className={`flex-1 md:flex-none px-6 h-full text-xs font-bold rounded-xl transition-all ${activeTab === "trips" ? theme.tabActive : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
+            >
+              Trips Data
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("expenses");
+                cancelEdit();
+              }}
+              className={`flex-1 md:flex-none px-6 h-full text-xs font-bold rounded-xl transition-all ${activeTab === "expenses" ? "bg-rose-600 text-white shadow-lg shadow-rose-900/20" : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"}`}
+            >
+              Expenses
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-        <div className="xl:col-span-5">
-          <div
-            className={`bg-[#09090B] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? (activeTab === "trips" ? (isTransport ? "border-[#0ea5e9]/50 ring-1 ring-[#0ea5e9]/20" : "border-indigo-500/50 ring-1 ring-indigo-500/20") : "border-rose-500/50 ring-1 ring-rose-500/20") : "border-zinc-800/60"}`}
-          >
+      {loading ? (
+        <div className="h-[50vh] flex items-center justify-center animate-in fade-in zoom-in-95 duration-500 ease-out">
+          <Loader />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+          {/* FORMS (Smooth pop-up) */}
+          <div className="xl:col-span-5 animate-in fade-in zoom-in-[0.98] duration-500 ease-out">
             <div
-              className={`absolute top-0 right-0 w-64 h-64 blur-[80px] rounded-full pointer-events-none ${activeTab === "trips" ? theme.glowOrb : "bg-rose-500/5"}`}
-            ></div>
+              className={`bg-[#09090B] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? (activeTab === "trips" ? (isTransport ? "border-[#0ea5e9]/50 ring-1 ring-[#0ea5e9]/20" : "border-indigo-500/50 ring-1 ring-indigo-500/20") : "border-rose-500/50 ring-1 ring-rose-500/20") : "border-zinc-800/60"}`}
+            >
+              <div
+                className={`absolute top-0 right-0 w-64 h-64 blur-[80px] rounded-full pointer-events-none ${activeTab === "trips" ? theme.glowOrb : "bg-rose-500/5"}`}
+              ></div>
 
-            <div className="flex justify-between items-center mb-8 relative z-10">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                {activeTab === "trips" ? (
-                  <Truck size={18} className={theme.iconColor} />
-                ) : (
-                  <Receipt size={18} className="text-rose-400" />
+              <div className="flex justify-between items-center mb-8 relative z-10">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  {activeTab === "trips" ? (
+                    <Truck size={18} className={theme.iconColor} />
+                  ) : (
+                    <Receipt size={18} className="text-rose-400" />
+                  )}
+                  {editId
+                    ? `Edit ${activeTab === "trips" ? "Trip Log" : "Expense"}`
+                    : `Log ${activeTab === "trips" ? "New Trip" : "Expense"}`}
+                </h3>
+                {editId && (
+                  <button
+                    onClick={cancelEdit}
+                    className="px-3 py-1.5 text-[10px] text-rose-400 hover:text-rose-300 tracking-widest uppercase font-bold border border-rose-500/30 rounded-lg hover:bg-rose-500/10 transition-colors"
+                  >
+                    Cancel Edit
+                  </button>
                 )}
-                {editId
-                  ? `Edit ${activeTab === "trips" ? "Trip Log" : "Expense"}`
-                  : `Log ${activeTab === "trips" ? "New Trip" : "Expense"}`}
-              </h3>
-              {editId && (
-                <button
-                  onClick={cancelEdit}
-                  className="px-3 py-1.5 text-[10px] text-rose-400 hover:text-rose-300 tracking-widest uppercase font-bold border border-rose-500/30 rounded-lg hover:bg-rose-500/10 transition-colors"
-                >
-                  Cancel Edit
-                </button>
-              )}
-            </div>
+              </div>
 
-            {/* TRIP FORM */}
-            {activeTab === "trips" && (
-              <form
-                onSubmit={handleTripSubmit}
-                className="space-y-5 relative z-10 animate-in fade-in zoom-in-95 duration-300"
-              >
-                <div className="grid grid-cols-2 gap-4">
-                  <GlassInput
-                    theme={theme}
-                    label="Date"
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) =>
-                      setFormData({ ...formData, date: e.target.value })
-                    }
-                    icon={Calendar}
-                    required
-                  />
-                  <GlassInput
-                    theme={theme}
-                    label="Vehicle No."
-                    placeholder="OD-02-AX-1234"
-                    value={formData.vehicleNo}
-                    onChange={handleVehicleNoChange}
-                    icon={Truck}
-                    required
-                  />
-                </div>
-                <GlassInput
-                  theme={theme}
-                  label="Driver Name"
-                  placeholder="e.g. Ramesh Kumar"
-                  value={formData.driverName}
-                  onChange={(e) =>
-                    setFormData({ ...formData, driverName: e.target.value })
-                  }
-                  icon={User}
-                  required
-                />
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <GlassInput
-                    theme={theme}
-                    label="Loading Point"
-                    placeholder="City/Hub"
-                    value={formData.loadingPoint}
-                    onChange={(e) =>
-                      setFormData({ ...formData, loadingPoint: e.target.value })
-                    }
-                    icon={MapPin}
-                    required
-                  />
-                  <GlassInput
-                    theme={theme}
-                    label="Unloading Site"
-                    placeholder="Destination"
-                    value={formData.unloadingSite}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        unloadingSite: e.target.value,
-                      })
-                    }
-                    icon={ArrowRightCircle}
-                    required
-                  />
-                  <GlassInput
-                    theme={theme}
-                    label="Distance (km)"
-                    type="number"
-                    placeholder="e.g. 150"
-                    value={formData.distanceTravelled}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        distanceTravelled: e.target.value,
-                      })
-                    }
-                    icon={Map}
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="col-span-1">
+              {/* TRIP FORM */}
+              {activeTab === "trips" && (
+                <form
+                  onSubmit={handleTripSubmit}
+                  className="space-y-5 relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500"
+                >
+                  <div className="grid grid-cols-2 gap-4">
                     <GlassInput
                       theme={theme}
-                      label="Item"
-                      placeholder="Cement.."
-                      value={formData.items}
+                      label="Date"
+                      type="date"
+                      value={formData.date}
                       onChange={(e) =>
-                        setFormData({ ...formData, items: e.target.value })
+                        setFormData({ ...formData, date: e.target.value })
                       }
-                      icon={Package}
+                      icon={Calendar}
+                      required
+                    />
+                    <GlassInput
+                      theme={theme}
+                      label="Vehicle No."
+                      placeholder="OD-02-AX-1234"
+                      value={formData.vehicleNo}
+                      onChange={handleVehicleNoChange}
+                      icon={Truck}
                       required
                     />
                   </div>
                   <GlassInput
                     theme={theme}
-                    label="Qty"
-                    type="number"
-                    placeholder="0"
-                    value={formData.quantity}
+                    label="Driver Name"
+                    placeholder="e.g. Ramesh Kumar"
+                    value={formData.driverName}
                     onChange={(e) =>
-                      setFormData({ ...formData, quantity: e.target.value })
+                      setFormData({ ...formData, driverName: e.target.value })
                     }
+                    icon={User}
                     required
                   />
-                  <GlassInput
-                    theme={theme}
-                    label="Rate (₹)"
-                    type="number"
-                    step="any"
-                    placeholder="0.00"
-                    value={formData.rate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, rate: e.target.value })
-                    }
-                    icon={IndianRupee}
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4 p-5 bg-zinc-900/30 rounded-2xl border border-zinc-800/60">
-                  <GlassInput
-                    theme={theme}
-                    label="Food Charge (₹)"
-                    type="number"
-                    placeholder="0"
-                    value={formData.foodCharge}
-                    onChange={(e) =>
-                      setFormData({ ...formData, foodCharge: e.target.value })
-                    }
-                    icon={IndianRupee}
-                  />
-                  <GlassInput
-                    theme={theme}
-                    label="Amount Paid (₹)"
-                    type="number"
-                    placeholder="0"
-                    value={formData.amountPaid}
-                    onChange={(e) =>
-                      setFormData({ ...formData, amountPaid: e.target.value })
-                    }
-                    icon={IndianRupee}
-                    className={`${theme.primaryText} font-bold`}
-                  />
-                </div>
-                <div className="flex items-center gap-4 bg-[#09090B] p-5 rounded-2xl border border-zinc-800/60">
-                  <div className="flex-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <GlassInput
                       theme={theme}
-                      label="Amount Due (₹) - Opt"
-                      type="number"
-                      placeholder="0 (Optional)"
-                      value={formData.amountDue}
+                      label="Loading Point"
+                      placeholder="City/Hub"
+                      value={formData.loadingPoint}
                       onChange={(e) =>
-                        setFormData({ ...formData, amountDue: e.target.value })
+                        setFormData({
+                          ...formData,
+                          loadingPoint: e.target.value,
+                        })
                       }
-                      className="text-rose-400 font-bold"
+                      icon={MapPin}
+                      required
+                    />
+                    <GlassInput
+                      theme={theme}
+                      label="Unloading Site"
+                      placeholder="Destination"
+                      value={formData.unloadingSite}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          unloadingSite: e.target.value,
+                        })
+                      }
+                      icon={ArrowRightCircle}
+                      required
+                    />
+                    <GlassInput
+                      theme={theme}
+                      label="Distance (km)"
+                      type="number"
+                      placeholder="e.g. 150"
+                      value={formData.distanceTravelled}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          distanceTravelled: e.target.value,
+                        })
+                      }
+                      icon={Map}
+                      required
                     />
                   </div>
-                  <div className="flex-1 text-right pr-2">
-                    <p className="text-zinc-500 uppercase tracking-widest text-[10px] font-bold mb-1">
-                      Calculated Total
-                    </p>
-                    <p className="text-3xl font-black text-white font-mono">
-                      <span className={`text-sm mr-1 ${theme.primaryText}`}>
-                        ₹
-                      </span>
-                      {formData.totalAmount.toLocaleString("en-IN")}
-                    </p>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-1">
+                      <GlassInput
+                        theme={theme}
+                        label="Item"
+                        placeholder="Cement.."
+                        value={formData.items}
+                        onChange={(e) =>
+                          setFormData({ ...formData, items: e.target.value })
+                        }
+                        icon={Package}
+                        required
+                      />
+                    </div>
+                    <GlassInput
+                      theme={theme}
+                      label="Qty"
+                      type="number"
+                      placeholder="0"
+                      value={formData.quantity}
+                      onChange={(e) =>
+                        setFormData({ ...formData, quantity: e.target.value })
+                      }
+                      required
+                    />
+                    <GlassInput
+                      theme={theme}
+                      label="Rate (₹)"
+                      type="number"
+                      step="any"
+                      placeholder="0.00"
+                      value={formData.rate}
+                      onChange={(e) =>
+                        setFormData({ ...formData, rate: e.target.value })
+                      }
+                      icon={IndianRupee}
+                      required
+                    />
                   </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className={`w-full mt-4 py-3.5 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 ${theme.gradientBtn}`}
-                >
-                  {submitting ? (
-                    <RefreshCcw className="animate-spin" size={18} />
-                  ) : null}
-                  {submitting
-                    ? "Processing..."
-                    : editId
-                      ? "Update Trip Entry"
-                      : "Save Record"}
-                </button>
-              </form>
-            )}
-
-            {/* EXPENSE FORM */}
-            {activeTab === "expenses" && (
-              <form
-                onSubmit={handleExpenseSubmit}
-                className="space-y-5 relative z-10 animate-in fade-in zoom-in-95 duration-300"
-              >
-                <GlassInput
-                  theme={{
-                    primaryFocus:
-                      "focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50",
-                    primaryText: "text-rose-400",
-                  }}
-                  label="Date"
-                  type="date"
-                  value={expenseData.date}
-                  onChange={(e) =>
-                    setExpenseData({ ...expenseData, date: e.target.value })
-                  }
-                  icon={Calendar}
-                  required
-                />
-                <GlassInput
-                  theme={{
-                    primaryFocus:
-                      "focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50",
-                    primaryText: "text-rose-400",
-                  }}
-                  label="Expense Reason"
-                  placeholder="e.g. Fuel, Toll, Repairs..."
-                  value={expenseData.reason}
-                  onChange={(e) =>
-                    setExpenseData({ ...expenseData, reason: e.target.value })
-                  }
-                  icon={Receipt}
-                  required
-                />
-                <GlassInput
-                  theme={{
-                    primaryFocus:
-                      "focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50",
-                    primaryText: "text-rose-400",
-                  }}
-                  label="Amount (₹)"
-                  type="number"
-                  placeholder="0.00"
-                  value={expenseData.amount}
-                  onChange={(e) =>
-                    setExpenseData({ ...expenseData, amount: e.target.value })
-                  }
-                  icon={IndianRupee}
-                  className="text-rose-400 font-bold text-lg"
-                  required
-                />
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full mt-4 bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-rose-900/20 transition-all flex items-center justify-center gap-2"
-                >
-                  {submitting ? (
-                    <RefreshCcw className="animate-spin" size={18} />
-                  ) : null}
-                  {submitting
-                    ? "Processing..."
-                    : editId
-                      ? "Update Expense"
-                      : "Save Record"}
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-
-        <div className="xl:col-span-7">
-          <div
-            className={`bg-[#09090B] border rounded-3xl overflow-hidden shadow-2xl transition-colors duration-300 ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/30"}`}
-          >
-            <div
-              className={`p-6 border-b flex justify-between items-center ${activeTab === "trips" ? "border-zinc-800/60 bg-zinc-900/10" : "border-rose-900/20 bg-rose-900/10"}`}
-            >
-              <h3 className="font-bold text-white">
-                Recent {activeTab === "trips" ? "Working Logs" : "Expenses"}{" "}
-                <span className="text-xs font-normal text-zinc-400 ml-2">
-                  (Top 10)
-                </span>
-              </h3>
-              <Link to={`${basePath}/logs/report`}>
-                <button
-                  className={`h-9 px-4 rounded-xl text-[10px] font-bold uppercase tracking-[0.15em] border transition-colors ${activeTab === "trips" ? `border-zinc-800 text-zinc-300 bg-transparent hover:text-white hover:bg-zinc-800/50` : "text-rose-400 bg-transparent border-rose-900/40 hover:bg-rose-500/10"}`}
-                >
-                  View All{" "}
-                  <span
-                    className={
-                      activeTab === "trips"
-                        ? theme.primaryText
-                        : "text-rose-300"
-                    }
+                  <div className="grid grid-cols-2 gap-4 p-5 bg-zinc-900/30 rounded-2xl border border-zinc-800/60">
+                    <GlassInput
+                      theme={theme}
+                      label="Food Charge (₹)"
+                      type="number"
+                      placeholder="0"
+                      value={formData.foodCharge}
+                      onChange={(e) =>
+                        setFormData({ ...formData, foodCharge: e.target.value })
+                      }
+                      icon={IndianRupee}
+                    />
+                    <GlassInput
+                      theme={theme}
+                      label="Amount Paid (₹)"
+                      type="number"
+                      placeholder="0"
+                      value={formData.amountPaid}
+                      onChange={(e) =>
+                        setFormData({ ...formData, amountPaid: e.target.value })
+                      }
+                      icon={IndianRupee}
+                      className={`${theme.primaryText} font-bold`}
+                    />
+                  </div>
+                  <div className="flex items-center gap-4 bg-[#09090B] p-5 rounded-2xl border border-zinc-800/60">
+                    <div className="flex-1">
+                      <GlassInput
+                        theme={theme}
+                        label="Amount Due (₹) - Opt"
+                        type="number"
+                        placeholder="0 (Optional)"
+                        value={formData.amountDue}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            amountDue: e.target.value,
+                          })
+                        }
+                        className="text-rose-400 font-bold"
+                      />
+                    </div>
+                    <div className="flex-1 text-right pr-2">
+                      <p className="text-zinc-500 uppercase tracking-widest text-[10px] font-bold mb-1">
+                        Calculated Total
+                      </p>
+                      <p className="text-3xl font-black text-white font-mono">
+                        <span className={`text-sm mr-1 ${theme.primaryText}`}>
+                          ₹
+                        </span>
+                        {formData.totalAmount.toLocaleString("en-IN")}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className={`w-full mt-4 py-3.5 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 ${theme.gradientBtn}`}
                   >
-                    {activeTab === "trips" ? logs.length : expenses.length}
-                  </span>
-                </button>
-              </Link>
-            </div>
+                    {submitting ? (
+                      <RefreshCcw className="animate-spin" size={18} />
+                    ) : null}
+                    {submitting
+                      ? "Processing..."
+                      : editId
+                        ? "Update Trip Entry"
+                        : "Save Record"}
+                  </button>
+                </form>
+              )}
 
-            <div className="overflow-x-auto max-h-[700px] custom-scrollbar p-2">
-              {activeTab === "trips" ? (
-                <table className="w-full text-left min-w-[550px] animate-in fade-in duration-300">
-                  <thead className="sticky top-0 bg-transparent text-[10px] uppercase font-bold text-zinc-500 tracking-[0.15em] z-10 border-b border-zinc-800/60">
-                    <tr>
-                      <th className="py-4 px-4 w-[40%]">Shipment Details</th>
-                      <th className="py-4 px-4 w-[35%]">Route & Site</th>
-                      <th className="py-4 px-4 text-right w-[25%]">Payment</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-sm divide-y divide-zinc-800/60">
-                    {logs.map((log) => {
-                      const hasEdits =
-                        log.editHistory && log.editHistory.length > 0;
-                      const latestLog = hasEdits
-                        ? log.editHistory[log.editHistory.length - 1]
-                        : null;
-
-                      return (
-                        <tr
-                          key={log._id}
-                          id={log._id}
-                          onClick={(e) => handleRowClick(e, log._id, "trips")}
-                          className={`transition-all duration-1000 ease-out group cursor-pointer border-l-4 ${
-                            activeHighlight === log._id
-                              ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
-                              : "border-transparent hover:bg-zinc-800/30"
-                          }`}
-                        >
-                          <td className="p-4 align-top">
-                            <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
-                              {new Date(log.date).toLocaleDateString("en-GB")}
-                            </p>
-                            <p className="font-bold text-white text-md uppercase tracking-wider flex items-center gap-2">
-                              <Truck size={14} className="text-zinc-500" />{" "}
-                              {log.vehicleNo}
-                            </p>
-                            <p className="text-[11px] text-zinc-500 mt-1.5 uppercase tracking-widest font-semibold flex items-center gap-1.5">
-                              <User size={12} className="text-zinc-600" />{" "}
-                              {log.driverName}
-                            </p>
-                            <div className="text-[11px] text-zinc-300 mt-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2.5 py-1 rounded-md font-medium border border-zinc-800/60">
-                              <Package size={12} className={theme.iconColor} />{" "}
-                              {log.items}{" "}
-                              <span className="text-zinc-600">|</span>{" "}
-                              {log.quantity} Qty
-                            </div>
-                            {hasEdits && (
-                              <div
-                                onClick={(e) => openHistory(e, log, "trips")}
-                                className="history-btn mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
-                              >
-                                <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
-                                  <History
-                                    size={10}
-                                    className="text-zinc-400"
-                                  />
-                                  <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
-                                    {latestLog.role || "ADMIN"}
-                                  </span>
-                                  {log.editHistory.length > 1 && (
-                                    <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
-                                      +{log.editHistory.length - 1} MORE
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-4 align-top">
-                            <div className="flex flex-col gap-2.5">
-                              <div className="flex items-start gap-2">
-                                <div
-                                  className={`mt-0.5 w-5 h-5 rounded-full ${theme.primaryBg} flex items-center justify-center border ${theme.primaryBorder} shrink-0`}
-                                >
-                                  <MapPin
-                                    size={10}
-                                    className={theme.iconColor}
-                                  />
-                                </div>
-                                <div>
-                                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">
-                                    Origin
-                                  </p>
-                                  <span className="text-xs font-semibold text-zinc-300">
-                                    {log.loadingPoint}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="w-0.5 h-3 bg-zinc-800 ml-3"></div>
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shrink-0">
-                                  <ArrowRightCircle
-                                    size={12}
-                                    className="text-rose-400"
-                                  />
-                                </div>
-                                <span className="text-xs font-semibold text-zinc-300">
-                                  {log.unloadingSite}
-                                </span>
-                                {log.distanceTravelled && (
-                                  <span className="text-[10px] text-zinc-500 font-mono ml-1">
-                                    ({log.distanceTravelled} km)
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-4 align-top text-right">
-                            <p className="text-lg font-black text-white font-mono drop-shadow-sm">
-                              ₹{log.totalAmount?.toLocaleString("en-IN")}
-                            </p>
-                            <div className="flex flex-col items-end gap-1.5 mt-2">
-                              <span
-                                className={`text-[10px] font-bold ${theme.primaryText} uppercase tracking-widest`}
-                              >
-                                Paid: ₹
-                                {Number(log.amountPaid || 0).toLocaleString(
-                                  "en-IN",
-                                )}
-                              </span>
-                              {log.amountDue > 0 && (
-                                <span className="text-[10px] font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 mt-0.5">
-                                  Due: ₹{log.amountDue?.toLocaleString("en-IN")}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {logs.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan="3"
-                          className="p-12 text-center text-zinc-500 italic"
-                        >
-                          No trip records found.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              ) : (
-                <table className="w-full text-left min-w-[500px] animate-in fade-in duration-300">
-                  <thead className="sticky top-0 bg-transparent text-[10px] uppercase font-bold text-rose-100/40 tracking-[0.15em] z-10 border-b border-rose-900/20">
-                    <tr>
-                      <th className="py-4 px-4 w-[30%]">Date</th>
-                      <th className="py-4 px-4 w-[45%]">Reason</th>
-                      <th className="py-4 px-4 text-right w-[25%]">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-sm divide-y divide-rose-900/10">
-                    {expenses.map((exp) => {
-                      const hasEdits =
-                        exp.editHistory && exp.editHistory.length > 0;
-                      const latestLog = hasEdits
-                        ? exp.editHistory[exp.editHistory.length - 1]
-                        : null;
-
-                      return (
-                        <tr
-                          key={exp._id}
-                          id={exp._id}
-                          onClick={(e) =>
-                            handleRowClick(e, exp._id, "expenses")
-                          }
-                          className={`transition-all duration-1000 ease-out group cursor-pointer border-l-4 ${
-                            activeHighlight === exp._id
-                              ? `bg-rose-500/[0.08] shadow-[inset_0_0_20px_rgba(244,63,94,0.05)] border-rose-500`
-                              : "border-transparent hover:bg-rose-900/10"
-                          }`}
-                        >
-                          <td className="p-4 align-top">
-                            <div className="text-[11px] font-mono text-rose-400 mb-1.5">
-                              {new Date(exp.date).toLocaleDateString("en-GB")}
-                            </div>
-                            {hasEdits && (
-                              <div
-                                onClick={(e) => openHistory(e, exp, "expenses")}
-                                className="history-btn mt-2 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
-                              >
-                                <div className="flex items-center gap-1.5 bg-rose-950/30 border border-rose-900/50 px-2 py-1 rounded-lg">
-                                  <History
-                                    size={10}
-                                    className="text-rose-500"
-                                  />
-                                  <span className="text-[9px] font-bold text-rose-400 uppercase tracking-widest">
-                                    {latestLog.role || "ADMIN"}
-                                  </span>
-                                  {exp.editHistory.length > 1 && (
-                                    <span className="bg-rose-900/80 text-rose-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
-                                      +{exp.editHistory.length - 1} MORE
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-4 align-top text-white font-medium capitalize">
-                            {exp.reason}
-                          </td>
-                          <td className="p-4 align-top text-right">
-                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-3 py-1.5 rounded-lg font-mono font-bold">
-                              ₹{Number(exp.amount).toLocaleString("en-IN")}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {expenses.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan="3"
-                          className="p-12 text-center text-rose-100/30 italic"
-                        >
-                          No expenses recorded yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              {/* EXPENSE FORM */}
+              {activeTab === "expenses" && (
+                <form
+                  onSubmit={handleExpenseSubmit}
+                  className="space-y-5 relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500"
+                >
+                  <GlassInput
+                    theme={{
+                      primaryFocus:
+                        "focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50",
+                      primaryText: "text-rose-400",
+                    }}
+                    label="Date"
+                    type="date"
+                    value={expenseData.date}
+                    onChange={(e) =>
+                      setExpenseData({ ...expenseData, date: e.target.value })
+                    }
+                    icon={Calendar}
+                    required
+                  />
+                  <GlassInput
+                    theme={{
+                      primaryFocus:
+                        "focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50",
+                      primaryText: "text-rose-400",
+                    }}
+                    label="Expense Reason"
+                    placeholder="e.g. Fuel, Toll, Repairs..."
+                    value={expenseData.reason}
+                    onChange={(e) =>
+                      setExpenseData({ ...expenseData, reason: e.target.value })
+                    }
+                    icon={Receipt}
+                    required
+                  />
+                  <GlassInput
+                    theme={{
+                      primaryFocus:
+                        "focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50",
+                      primaryText: "text-rose-400",
+                    }}
+                    label="Amount (₹)"
+                    type="number"
+                    placeholder="0.00"
+                    value={expenseData.amount}
+                    onChange={(e) =>
+                      setExpenseData({ ...expenseData, amount: e.target.value })
+                    }
+                    icon={IndianRupee}
+                    className="text-rose-400 font-bold text-lg"
+                    required
+                  />
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full mt-4 bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-rose-900/20 transition-all flex items-center justify-center gap-2"
+                  >
+                    {submitting ? (
+                      <RefreshCcw className="animate-spin" size={18} />
+                    ) : null}
+                    {submitting
+                      ? "Processing..."
+                      : editId
+                        ? "Update Expense"
+                        : "Save Record"}
+                  </button>
+                </form>
               )}
             </div>
           </div>
-        </div>
-      </div>
 
+          {/* TABLE SECTION (Smooth Slide UP) */}
+          <div className="xl:col-span-7 animate-in fade-in slide-in-from-bottom-6 duration-500 ease-out">
+            <div
+              className={`bg-[#09090B] border rounded-3xl overflow-hidden shadow-2xl transition-colors duration-300 ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/30"}`}
+            >
+              <div
+                className={`p-6 border-b flex justify-between items-center ${activeTab === "trips" ? "border-zinc-800/60 bg-zinc-900/10" : "border-rose-900/20 bg-rose-900/10"}`}
+              >
+                <h3 className="font-bold text-white">
+                  Recent {activeTab === "trips" ? "Working Logs" : "Expenses"}{" "}
+                  <span className="text-xs font-normal text-zinc-400 ml-2">
+                    (Top 10)
+                  </span>
+                </h3>
+                <Link to={`${basePath}/logs/report`}>
+                  <button
+                    className={`h-9 px-4 rounded-xl text-[10px] font-bold uppercase tracking-[0.15em] border transition-colors ${activeTab === "trips" ? "border-zinc-800 text-zinc-300 bg-transparent hover:text-white hover:bg-zinc-800/50" : "text-rose-400 bg-transparent border-rose-900/40 hover:bg-rose-500/10"}`}
+                  >
+                    View All{" "}
+                    <span
+                      className={
+                        activeTab === "trips"
+                          ? theme.primaryText
+                          : "text-rose-300"
+                      }
+                    >
+                      {activeTab === "trips" ? logs.length : expenses.length}
+                    </span>
+                  </button>
+                </Link>
+              </div>
+
+              <div className="overflow-x-auto max-h-[700px] custom-scrollbar p-2">
+                {activeTab === "trips" ? (
+                  <table className="w-full text-left min-w-[550px] animate-in fade-in duration-300">
+                    <thead className="sticky top-0 bg-transparent text-[10px] uppercase font-bold text-zinc-500 tracking-[0.15em] z-10 border-b border-zinc-800/60">
+                      <tr>
+                        <th className="py-4 px-4 w-[40%]">Shipment Details</th>
+                        <th className="py-4 px-4 w-[35%]">Route & Site</th>
+                        <th className="py-4 px-4 text-right w-[25%]">
+                          Payment
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm divide-y divide-zinc-800/60">
+                      {logs.map((log) => {
+                        const hasEdits =
+                          log.editHistory && log.editHistory.length > 0;
+                        const latestLog = hasEdits
+                          ? log.editHistory[log.editHistory.length - 1]
+                          : null;
+                        return (
+                          <tr
+                            key={log._id}
+                            id={log._id}
+                            onClick={(e) => handleRowClick(e, log._id, "trips")}
+                            className={`transition-all duration-500 ease-out group cursor-pointer border-l-4 animate-in fade-in slide-in-from-bottom-2 ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
+                          >
+                            <td className="p-4 align-top">
+                              <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
+                                {new Date(log.date).toLocaleDateString("en-GB")}
+                              </p>
+                              <p className="font-bold text-white text-md uppercase tracking-wider flex items-center gap-2">
+                                <Truck size={14} className="text-zinc-500" />{" "}
+                                {log.vehicleNo}
+                              </p>
+                              <p className="text-[11px] text-zinc-500 mt-1.5 uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                                <User size={12} className="text-zinc-600" />{" "}
+                                {log.driverName}
+                              </p>
+                              <div className="text-[11px] text-zinc-300 mt-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2.5 py-1 rounded-md font-medium border border-zinc-800/60">
+                                <Package
+                                  size={12}
+                                  className={theme.iconColor}
+                                />{" "}
+                                {log.items}{" "}
+                                <span className="text-zinc-600">|</span>{" "}
+                                {log.quantity} Qty
+                              </div>
+                              {hasEdits && (
+                                <div
+                                  onClick={(e) => openHistory(e, log, "trips")}
+                                  className="history-btn mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                                >
+                                  <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
+                                    <History
+                                      size={10}
+                                      className="text-zinc-400"
+                                    />
+                                    <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
+                                      {latestLog.role || "ADMIN"}
+                                    </span>
+                                    {log.editHistory.length > 1 && (
+                                      <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                        +{log.editHistory.length - 1} MORE
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-4 align-top">
+                              <div className="flex flex-col gap-2.5">
+                                <div className="flex items-start gap-2">
+                                  <div
+                                    className={`mt-0.5 w-5 h-5 rounded-full ${theme.primaryBg} flex items-center justify-center border ${theme.primaryBorder} shrink-0`}
+                                  >
+                                    <MapPin
+                                      size={10}
+                                      className={theme.iconColor}
+                                    />
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">
+                                      Origin
+                                    </p>
+                                    <span className="text-xs font-semibold text-zinc-300">
+                                      {log.loadingPoint}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="w-0.5 h-3 bg-zinc-800 ml-3"></div>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shrink-0">
+                                    <ArrowRightCircle
+                                      size={12}
+                                      className="text-rose-400"
+                                    />
+                                  </div>
+                                  <span className="text-xs font-semibold text-zinc-300">
+                                    {log.unloadingSite}
+                                  </span>
+                                  {log.distanceTravelled && (
+                                    <span className="text-[10px] text-zinc-500 font-mono ml-1">
+                                      ({log.distanceTravelled} km)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-4 align-top text-right">
+                              <p className="text-lg font-black text-white font-mono drop-shadow-sm">
+                                ₹{log.totalAmount?.toLocaleString("en-IN")}
+                              </p>
+                              <div className="flex flex-col items-end gap-1.5 mt-2">
+                                <span
+                                  className={`text-[10px] font-bold ${theme.primaryText} uppercase tracking-widest`}
+                                >
+                                  Paid: ₹
+                                  {Number(log.amountPaid || 0).toLocaleString(
+                                    "en-IN",
+                                  )}
+                                </span>
+                                {log.amountDue > 0 && (
+                                  <span className="text-[10px] font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 mt-0.5">
+                                    Due: ₹
+                                    {log.amountDue?.toLocaleString("en-IN")}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {logs.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan="3"
+                            className="p-12 text-center text-zinc-500 italic animate-in fade-in"
+                          >
+                            No trip records found.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full text-left min-w-[500px] animate-in fade-in duration-300">
+                    <thead className="sticky top-0 bg-transparent text-[10px] uppercase font-bold text-rose-100/40 tracking-[0.15em] z-10 border-b border-rose-900/20">
+                      <tr>
+                        <th className="py-4 px-4 w-[30%]">Date</th>
+                        <th className="py-4 px-4 w-[45%]">Reason</th>
+                        <th className="py-4 px-4 text-right w-[25%]">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm divide-y divide-rose-900/10">
+                      {expenses.map((exp) => {
+                        const hasEdits =
+                          exp.editHistory && exp.editHistory.length > 0;
+                        const latestLog = hasEdits
+                          ? exp.editHistory[exp.editHistory.length - 1]
+                          : null;
+                        return (
+                          <tr
+                            key={exp._id}
+                            id={exp._id}
+                            onClick={(e) =>
+                              handleRowClick(e, exp._id, "expenses")
+                            }
+                            className={`transition-all duration-500 ease-out group cursor-pointer border-l-4 animate-in fade-in slide-in-from-bottom-2 ${activeHighlight === exp._id ? `bg-rose-500/[0.08] shadow-[inset_0_0_20px_rgba(244,63,94,0.05)] border-rose-500` : "border-transparent hover:bg-rose-900/10"}`}
+                          >
+                            <td className="p-4 align-top">
+                              <div className="text-[11px] font-mono text-rose-400 mb-1.5">
+                                {new Date(exp.date).toLocaleDateString("en-GB")}
+                              </div>
+                              {hasEdits && (
+                                <div
+                                  onClick={(e) =>
+                                    openHistory(e, exp, "expenses")
+                                  }
+                                  className="history-btn mt-2 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                                >
+                                  <div className="flex items-center gap-1.5 bg-rose-950/30 border border-rose-900/50 px-2 py-1 rounded-lg">
+                                    <History
+                                      size={10}
+                                      className="text-rose-500"
+                                    />
+                                    <span className="text-[9px] font-bold text-rose-400 uppercase tracking-widest">
+                                      {latestLog.role || "ADMIN"}
+                                    </span>
+                                    {exp.editHistory.length > 1 && (
+                                      <span className="bg-rose-900/80 text-rose-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
+                                        +{exp.editHistory.length - 1} MORE
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-4 align-top text-white font-medium capitalize">
+                              {exp.reason}
+                            </td>
+                            <td className="p-4 align-top text-right">
+                              <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-3 py-1.5 rounded-lg font-mono font-bold">
+                                ₹{Number(exp.amount).toLocaleString("en-IN")}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {expenses.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan="3"
+                            className="p-12 text-center text-rose-100/30 italic animate-in fade-in"
+                          >
+                            No expenses recorded yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HISTORY MODAL (Smooth Pop-up) */}
       {historyModal.isOpen && historyModal.data && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
@@ -914,7 +1025,7 @@ const VehicleLog = () => {
             }
           />
           <div
-            className={`bg-[#09090B] border ${activeTab === "trips" ? theme.primaryBorder : "border-rose-900/30"} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200`}
+            className={`bg-[#09090B] border ${activeTab === "trips" ? theme.primaryBorder : "border-rose-900/30"} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-[0.95] duration-300 ease-out`}
           >
             <div
               className={`flex items-center justify-between p-5 border-b ${activeTab === "trips" ? `${theme.primaryBorder} ${theme.primaryBg}` : "border-rose-900/20 bg-rose-900/10"} shrink-0`}
@@ -946,7 +1057,7 @@ const VehicleLog = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-[#09090B] border ${index === 0 ? (activeTab === "trips" ? theme.primaryBorder : "border-rose-500/30") : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-[#09090B] border ${index === 0 ? (activeTab === "trips" ? theme.primaryBorder : "border-rose-500/30") : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300`}
                 >
                   {index === 0 && (
                     <div
