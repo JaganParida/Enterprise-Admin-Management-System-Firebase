@@ -15,14 +15,59 @@ import {
   getAggregateFromServer,
   sum,
   count,
+  writeBatch,
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const fuelCollection = collection(db, "fuels");
 
+// 🚀 GLOBAL CACHE TO PREVENT TAB-CHANGE READ LIMIT OVERLOAD
+let localCache = {
+  stats: null,
+  logs: null,
+  lastVisible: null,
+  filtersKey: "",
+  isDirty: true,
+  lastFetchTime: 0,
+};
+
+// Call this whenever data is modified to force tabs to fetch fresh data
+const markDirty = () => {
+  localCache.isDirty = true;
+  localStorage.setItem("fuel_last_update", Date.now().toString());
+};
+
 const fuelService = {
-  // 1. 🚀 SERVER-SIDE STATS CALCULATION
-  getStats: async () => {
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
+  getDocs,
+
+  getLastFetchTime: () => localCache.lastFetchTime,
+
+  // 🚀 SYNCHRONOUS CACHE GETTERS TO ELIMINATE UI LOADER FLICKER
+  getCachedStats: () => (!localCache.isDirty ? localCache.stats : null),
+  getCachedLogs: (filters) => {
+    const key = JSON.stringify(filters);
+    if (
+      !localCache.isDirty &&
+      localCache.filtersKey === key &&
+      localCache.logs
+    ) {
+      return localCache.logs;
+    }
+    return null;
+  },
+
+  // 🚀 ATOMIC AGGREGATION WITH SMART FALLBACK FOR STRINGS/INDEXES
+  getStats: async (force = false) => {
+    if (!force && !localCache.isDirty && localCache.stats) {
+      return localCache.stats; // 0 Reads (Cached)
+    }
+
     try {
       const q = query(fuelCollection);
       const snapshot = await getAggregateFromServer(q, {
@@ -31,51 +76,91 @@ const fuelService = {
         refuelCount: count(),
       });
 
-      return {
-        totalLiters: snapshot.data().totalLiters || 0,
-        totalCost: snapshot.data().totalCost || 0,
-        refuelCount: snapshot.data().refuelCount || 0,
-      };
+      let totalLiters = snapshot.data().totalLiters || 0;
+      let totalCost = snapshot.data().totalCost || 0;
+      let refuelCount = snapshot.data().refuelCount || 0;
+
+      // 🔥 If count > 0 but sums are 0, old data was saved as STRINGS. Fallback.
+      if (refuelCount > 0 && totalLiters === 0 && totalCost === 0) {
+        console.warn(
+          "Detected string-based numbers in Firebase. Falling back to client calculation.",
+        );
+        const snap = await getDocs(q);
+        totalLiters = 0;
+        totalCost = 0;
+        snap.forEach((doc) => {
+          totalLiters += Number(doc.data().liters) || 0;
+          totalCost += Number(doc.data().totalCost) || 0;
+        });
+      }
+
+      const result = { totalLiters, totalCost, refuelCount };
+      localCache.stats = result;
+      return result;
     } catch (error) {
-      console.warn("Aggregation failed, falling back to client calc:", error);
-      const snap = await getDocs(query(fuelCollection));
-      let totalLiters = 0;
-      let totalCost = 0;
-      snap.forEach((doc) => {
-        totalLiters += Number(doc.data().liters) || 0;
-        totalCost += Number(doc.data().totalCost) || 0;
-      });
-      return { totalLiters, totalCost, refuelCount: snap.size };
+      console.warn(
+        "Server Aggregation failed. Executing fallback calculation.",
+      );
+      try {
+        const snap = await getDocs(query(fuelCollection));
+        let totalLiters = 0;
+        let totalCost = 0;
+        snap.forEach((doc) => {
+          totalLiters += Number(doc.data().liters) || 0;
+          totalCost += Number(doc.data().totalCost) || 0;
+        });
+
+        const result = { totalLiters, totalCost, refuelCount: snap.size };
+        localCache.stats = result;
+        return result;
+      } catch (fallbackError) {
+        return { totalLiters: 0, totalCost: 0, refuelCount: 0 };
+      }
     }
   },
 
-  // 🚀 2. PAGINATED & 100% BACKEND FILTERED FETCH
-  getLogs: async (filters = {}, lastVisibleDoc = null, limitCount = 50) => {
+  // 🚀 PAGINATED & CACHED SEARCH
+  getLogs: async (
+    filters = {},
+    lastVisibleDoc = null,
+    limitCount = 50,
+    force = false,
+  ) => {
+    const filterKey = JSON.stringify(filters);
+    const isLoadMore = !!lastVisibleDoc;
+
+    if (
+      !force &&
+      !localCache.isDirty &&
+      !isLoadMore &&
+      localCache.filtersKey === filterKey &&
+      localCache.logs
+    ) {
+      return { data: localCache.logs, lastVisible: localCache.lastVisible };
+    }
+
     let constraints = [];
     let hasInequality = false;
 
-    // --- 1. EQUALITY FILTERS ---
     if (filters.exactDate) {
       constraints.push(where("date", "==", filters.exactDate));
     }
 
-    // --- 2. MUTUALLY EXCLUSIVE INEQUALITY FILTERS ---
     if (filters.search) {
       constraints.push(where("vehicleNo", ">=", filters.search));
       constraints.push(where("vehicleNo", "<=", filters.search + "\uf8ff"));
       constraints.push(orderBy("vehicleNo"));
       hasInequality = true;
     } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
-      if (filters.amountFilter === "Under ₹5k") {
+      if (filters.amountFilter === "Under ₹5k")
         constraints.push(where("totalCost", "<", 5000));
-      } else if (filters.amountFilter === "₹5k - ₹20k") {
+      else if (filters.amountFilter === "₹5k - ₹20k")
         constraints.push(
           where("totalCost", ">=", 5000),
           where("totalCost", "<=", 20000),
         );
-      } else if (filters.amountFilter === "Over ₹20k") {
+      else if (filters.amountFilter === "Over ₹20k")
         constraints.push(where("totalCost", ">", 20000));
-      }
       constraints.push(orderBy("totalCost", "desc"));
       hasInequality = true;
     } else if (
@@ -90,31 +175,37 @@ const fuelService = {
         pastDate.setDate(today.getDate() - 7);
       else if (filters.dateFilter === "ThisMonth") pastDate.setDate(1);
 
-      const pastDateStr = pastDate.toISOString().split("T")[0];
-      constraints.push(where("date", ">=", pastDateStr));
+      constraints.push(
+        where("date", ">=", pastDate.toISOString().split("T")[0]),
+      );
       constraints.push(orderBy("date", "desc"));
       hasInequality = true;
     }
 
-    // Default sorting
     if (!hasInequality && !filters.exactDate) {
       constraints.push(orderBy("date", "desc"));
     }
 
-    // --- 3. APPLY PAGINATION ---
     constraints.push(limit(limitCount));
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
     try {
       const q = query(fuelCollection, ...constraints);
       const snapshot = await getDocs(q);
-      const data = snapshot.docs.map((doc) => ({
-        _id: doc.id,
-        ...doc.data(),
-      }));
-      return { data, lastVisible: snapshot.docs[snapshot.docs.length - 1] };
+      const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
+      const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
+
+      if (!isLoadMore) {
+        localCache.logs = data;
+        localCache.filtersKey = filterKey;
+        localCache.isDirty = false;
+        localCache.lastFetchTime = Date.now();
+      }
+      localCache.lastVisible = newLastVisible;
+
+      return { data, lastVisible: newLastVisible };
     } catch (error) {
-      console.error("🔥 Firebase Query Error:", error);
+      console.error("Firebase Query Error:", error);
       throw error;
     }
   },
@@ -131,6 +222,7 @@ const fuelService = {
       editHistory: [],
     };
     const docRef = await addDoc(fuelCollection, dataToSave);
+    markDirty();
     return { data: { _id: docRef.id, ...dataToSave } };
   },
 
@@ -142,54 +234,56 @@ const fuelService = {
         ? snapshot.data().editHistory
         : [];
 
-    const currentEdit = {
+    currentHistory.push({
       by: user?.email || "Unknown",
       role: user?.role || "Admin",
       at: new Date().toISOString(),
-    };
-    currentHistory.push(currentEdit);
+    });
 
-    if (currentHistory.length > 10) {
-      currentHistory = currentHistory.slice(currentHistory.length - 10);
+    // 🚀 STRICT MAX 2 EDITS LIMIT TO PRESERVE PAYLOAD SIZE
+    if (currentHistory.length > 2) {
+      currentHistory = currentHistory.slice(currentHistory.length - 2);
     }
 
-    const dataToUpdate = {
+    await updateDoc(docRef, {
       ...payload,
       liters: Number(payload.liters),
       pricePerLiter: Number(payload.pricePerLiter),
       totalCost: Number(payload.totalCost),
-      lastEditedRole: currentEdit.role,
-      lastEditedAt: currentEdit.at,
+      lastEditedRole: currentHistory[currentHistory.length - 1].role,
+      lastEditedAt: currentHistory[currentHistory.length - 1].at,
       editHistory: currentHistory,
-    };
-    await updateDoc(docRef, dataToUpdate);
+    });
+    markDirty();
     return { message: "Updated" };
   },
 
   deleteLog: async (id, user) => {
-    if (user?.role === "manager" || user?.data?.role === "manager") {
-      throw new Error(
-        "Action Denied: Managers are not allowed to delete records.",
-      );
-    }
+    if (user?.role === "manager" || user?.data?.role === "manager")
+      throw new Error("Action Denied.");
     await deleteDoc(doc(db, "fuels", id));
+    markDirty();
     return { message: "Deleted" };
   },
 
+  // 🚀 BATCH WIPE DATABASE (CHUNK LIMIT: 10,000/DAY)
   deleteAllLogs: async ({ password, email, user }) => {
-    if (user?.role === "manager" || user?.data?.role === "manager") {
-      throw new Error("Action Denied: Managers cannot wipe the database.");
-    }
+    if (user?.role === "manager" || user?.data?.role === "manager")
+      throw new Error("Action Denied.");
 
-    if (!password || !email) {
-      throw new Error("Authentication Error: Unable to verify admin identity.");
+    const today = new Date().toISOString().split("T")[0];
+    let wipeMeta = JSON.parse(
+      localStorage.getItem("fuel_wipe_meta") || '{"date":"","count":0}',
+    );
+
+    if (wipeMeta.date === today && wipeMeta.count >= 10000) {
+      throw new Error(
+        "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours to prevent backend crashes.",
+      );
     }
+    if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
 
     const currentUser = auth.currentUser;
-    if (!currentUser || currentUser.email !== email) {
-      throw new Error("Active session mismatch.");
-    }
-
     try {
       const credential = EmailAuthProvider.credential(
         currentUser.email,
@@ -197,21 +291,40 @@ const fuelService = {
       );
       await reauthenticateWithCredential(currentUser, credential);
     } catch (error) {
-      throw new Error("Access Denied: Incorrect Admin Password.");
+      throw new Error("Incorrect Admin Password.");
     }
 
-    try {
-      const snapshot = await getDocs(fuelCollection);
-      const deletePromises = [];
-      snapshot.forEach((document) => {
-        deletePromises.push(deleteDoc(doc(db, "fuels", document.id)));
-      });
-      await Promise.all(deletePromises);
-      return { success: true };
-    } catch (error) {
-      console.error("Wipe Database Error:", error);
-      throw new Error("Failed to clear database. Admin rights required.");
+    let totalDeleted = 0;
+    let hasMore = true;
+    const maxAllowed = 10000 - wipeMeta.count;
+
+    while (hasMore && totalDeleted < maxAllowed) {
+      const currentBatchSize = Math.min(500, maxAllowed - totalDeleted);
+      const q = query(fuelCollection, limit(currentBatchSize));
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        hasMore = false;
+        break;
+      }
+
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      totalDeleted += snapshot.size;
     }
+
+    wipeMeta.count += totalDeleted;
+    localStorage.setItem("fuel_wipe_meta", JSON.stringify(wipeMeta));
+    markDirty();
+
+    if (totalDeleted >= maxAllowed && hasMore) {
+      return {
+        warning:
+          "10,000 records deleted. Daily limit reached. Come back tomorrow for the remaining records.",
+      };
+    }
+    return { success: true };
   },
 };
 
