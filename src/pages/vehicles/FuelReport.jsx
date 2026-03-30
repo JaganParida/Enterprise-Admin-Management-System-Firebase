@@ -22,18 +22,25 @@ import {
   Droplet,
   IndianRupee,
   RefreshCcw,
+  CheckCircle2,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import Button from "../../components/common/Button";
-import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
 const getPreviousMonthString = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${d.getFullYear()}-${m}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const defaultFilters = {
+  search: "",
+  amountFilter: "Any Amount",
+  dateFilter: "All",
+  exactDate: "",
 };
 
 const FuelReport = () => {
@@ -41,13 +48,22 @@ const FuelReport = () => {
   const { admin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  // Pagination States
+  const [filters, setFilters] = useState(defaultFilters);
+
+  const [logs, setLogs] = useState(
+    () => fuelService.getCachedLogs(defaultFilters) || [],
+  );
+  const [loading, setLoading] = useState(
+    () => !fuelService.getCachedLogs(defaultFilters),
+  );
+
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadedCount, setLoadedCount] = useState(0);
+
+  const [isSynced, setIsSynced] = useState(true);
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -58,69 +74,42 @@ const FuelReport = () => {
       ? window.location.pathname
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
+  const isManager =
+    admin?.data?.role === "manager" || admin?.role === "manager";
 
   const theme = {
     primaryText: isTransport ? "text-[#38bdf8]" : "text-indigo-400",
     primaryBg: isTransport ? "bg-[#0c4a6e]/30" : "bg-indigo-500/10",
     primaryBorder: isTransport ? "border-[#0284c7]/30" : "border-indigo-500/20",
-    primaryHoverBorder: isTransport
-      ? "hover:border-[#0ea5e9]/50"
-      : "hover:border-indigo-500/30",
     primaryFocus: isTransport
       ? "focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
       : "focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50",
   };
 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
-  const [warningTooltip, setWarningTooltip] = useState(null);
-  const [historyModal, setHistoryModal] = useState({
-    isOpen: false,
-    data: null,
-    itemName: "",
-  });
-
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [wiping, setWiping] = useState(false);
 
-  const [filters, setFilters] = useState({
-    search: "",
-    amountFilter: "Any Amount",
-    dateFilter: "All",
-    exactDate: "",
+  const [historyModal, setHistoryModal] = useState({
+    isOpen: false,
+    data: null,
+    itemName: "",
   });
-
+  const [warningTooltip, setWarningTooltip] = useState(null);
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
-  const [showBackupWarning, setShowBackupWarning] = useState(null);
-
-  const isManager =
-    admin?.data?.role === "manager" || admin?.role === "manager";
 
   useEffect(() => {
-    const checkBackupNeeded = async () => {
-      const prevMonth = getPreviousMonthString();
-
-      if (!localStorage.getItem(`backup_fuel_${prevMonth}`)) {
-        try {
-          const q = query(
-            collection(db, "fuels"),
-            where("date", ">=", prevMonth),
-            where("date", "<=", prevMonth + "\uf8ff"),
-            limit(1),
-          );
-          const snap = await getDocs(q);
-
-          if (!snap.empty) {
-            setShowBackupWarning(prevMonth);
-          }
-        } catch (error) {
-          console.error("Failed to check backup status:", error);
-        }
-      }
+    const checkSync = () => {
+      const globalLastUpdate = parseInt(
+        localStorage.getItem("fuel_last_update") || "0",
+        10,
+      );
+      if (globalLastUpdate > fuelService.getLastFetchTime()) setIsSynced(false);
     };
-
-    checkBackupNeeded();
+    const interval = setInterval(checkSync, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -128,41 +117,39 @@ const FuelReport = () => {
       setActiveHighlight(urlHighlightId);
       setTimeout(() => {
         const element = document.getElementById(urlHighlightId);
-        if (element) {
+        if (element)
           element.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
       }, 500);
-
       const timer = setTimeout(() => setActiveHighlight(null), 3500);
       return () => clearTimeout(timer);
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 100% BACKEND FETCH LOGIC
-  const fetchLogs = async (isLoadMore = false) => {
+  const fetchLogs = async (isLoadMore = false, force = false) => {
     if (isLoadMore) setLoadingMore(true);
-    else setLoading(true);
+    else if (logs.length === 0 || force) setLoading(true);
 
     try {
       const response = await fuelService.getLogs(
         filters,
         isLoadMore ? lastDoc : null,
+        50,
+        force,
       );
 
-      if (isLoadMore) setLogs((prev) => [...prev, ...(response.data || [])]);
-      else setLogs(response.data || []);
+      if (isLoadMore) {
+        setLogs((prev) => [...prev, ...(response.data || [])]);
+        setLoadedCount((prev) => prev + (response.data?.length || 0));
+      } else {
+        setLogs(response.data || []);
+        setLoadedCount(response.data?.length || 0);
+        setIsSynced(true);
+      }
 
       setLastDoc(response.lastVisible || null);
       setHasMore(response.data && response.data.length === 50);
     } catch (error) {
-      if (error.message && error.message.toLowerCase().includes("index")) {
-        toast.error(
-          "Firebase Index required! Check browser console to create it.",
-          { duration: 6000 },
-        );
-      } else {
-        toast.error("Failed to load report data.");
-      }
+      toast.error("Failed to load report data.");
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -182,14 +169,12 @@ const FuelReport = () => {
   };
 
   const executeDelete = async () => {
-    if (!deleteModal.id) return;
     try {
-      const currentUser = admin?.data || admin || {};
-      await fuelService.deleteLog(deleteModal.id, currentUser);
-      toast.success("Fuel record deleted successfully");
-      fetchLogs(false);
+      await fuelService.deleteLog(deleteModal.id, admin?.data || admin);
+      toast.success("Record deleted");
+      fetchLogs(false, true);
     } catch (error) {
-      toast.error(error.message || "Failed to delete record");
+      toast.error(error.message);
     } finally {
       setDeleteModal({ isOpen: false, id: null });
     }
@@ -213,58 +198,49 @@ const FuelReport = () => {
 
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
-      if (!monthToFetch) return toast.error("Please select a month to backup.");
-      toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
+      if (!monthToFetch) return toast.error("Select a month");
 
-      const q = query(
-        collection(db, "fuels"),
-        where("date", ">=", monthToFetch),
-        where("date", "<=", monthToFetch + "\uf8ff"),
+      const today = new Date().toISOString().split("T")[0];
+      let dlMeta = JSON.parse(
+        localStorage.getItem(`backup_${monthToFetch}_meta`) ||
+          '{"date":"","count":0,"lastId":null}',
       );
-      const snapshot = await getDocs(q);
-      const allData = snapshot.docs.map((doc) => doc.data());
 
-      if (allData.length === 0)
-        return toast.info(`No records found for ${monthToFetch}.`);
-
-      const headers = [
-        "Date",
-        "Vehicle No",
-        "Liters",
-        "Price/Liter",
-        "Total Cost",
-      ];
-      const rows = allData.map((log) => {
-        let dateStr = log.date
-          ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
-          : "-";
-        return `${dateStr},"${log.vehicleNo || ""}",${log.liters || 0},${log.pricePerLiter || 0},${log.totalCost || 0}`;
-      });
-
-      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `Full_Backup_Fuel_${monthToFetch}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success(`Backup for ${monthToFetch} downloaded securely!`);
-
-      localStorage.setItem(`backup_fuel_${monthToFetch}`, "true");
-      if (showBackupWarning === monthToFetch) {
-        setShowBackupWarning(null);
+      if (dlMeta.date === today && dlMeta.count >= 10000)
+        return toast.error(
+          "Daily Download Limit (10,000) reached. Next batch available tomorrow.",
+        );
+      if (dlMeta.date !== today) {
+        dlMeta.date = today;
+        dlMeta.count = 0;
       }
-    } catch (e) {
-      console.error(e);
-      toast.error("Backup failed.");
-    }
-  };
 
-  const handleExport = () => {
-    try {
-      if (logs.length === 0) return toast.info("No records to export");
+      const fetchLimit = 10000 - dlMeta.count;
+      toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
+
+      const qConstraints = [
+        fuelService.where("date", ">=", monthToFetch),
+        fuelService.where("date", "<=", monthToFetch + "\uf8ff"),
+        fuelService.orderBy("date"),
+        fuelService.limit(fetchLimit),
+      ];
+
+      if (dlMeta.lastId) {
+        const lastDocRef = await getDoc(doc(db, "fuels", dlMeta.lastId));
+        if (lastDocRef.exists())
+          qConstraints.push(fuelService.startAfter(lastDocRef));
+      }
+
+      const q = fuelService.query(
+        fuelService.collection(db, "fuels"),
+        ...qConstraints,
+      );
+      const snapshot = await fuelService.getDocs(q);
+
+      if (snapshot.empty)
+        return toast.info(
+          `All records for ${monthToFetch} downloaded completely.`,
+        );
 
       const headers = [
         "Date",
@@ -273,28 +249,39 @@ const FuelReport = () => {
         "Price/Liter",
         "Total Cost",
       ];
-      const rows = logs.map((log) => {
-        let dateStr = log.date
-          ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
-          : "-";
-        return `${dateStr},"${log.vehicleNo || ""}",${log.liters || 0},${log.pricePerLiter || 0},${log.totalCost || 0}`;
+      const rows = snapshot.docs.map((document) => {
+        const d = document.data();
+        return `\t${new Date(d.date).toLocaleDateString("en-GB")},"${d.vehicleNo}",${d.liters},${d.pricePerLiter},${d.totalCost}`;
       });
 
-      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
+      const blob = new Blob(
+        ["\uFEFF" + [headers.join(","), ...rows].join("\n")],
+        { type: "text/csv;charset=utf-8;" },
+      );
       const link = document.createElement("a");
-      link.href = url;
+      link.href = URL.createObjectURL(blob);
       link.setAttribute(
         "download",
-        `Fuel_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
+        `Backup_Fuel_${monthToFetch}_Part${Math.floor(dlMeta.count / 10000) + 1}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Visible records exported successfully");
-    } catch (error) {
-      toast.error("Export failed");
+
+      dlMeta.count += snapshot.size;
+      dlMeta.lastId = snapshot.docs[snapshot.docs.length - 1].id;
+      localStorage.setItem(
+        `backup_${monthToFetch}_meta`,
+        JSON.stringify(dlMeta),
+      );
+
+      if (snapshot.size === fetchLimit)
+        toast.warning(
+          "10,000 Limit reached. System remembered the state. Download the next batch tomorrow.",
+        );
+      else toast.success(`Backup completed (${snapshot.size} records)!`);
+    } catch (e) {
+      toast.error("Backup failed.");
     }
   };
 
@@ -303,19 +290,18 @@ const FuelReport = () => {
       return toast.error("Verification failed.");
     setWiping(true);
     try {
-      const currentUser = admin?.data || admin || {};
-      await fuelService.deleteAllLogs({
+      const response = await fuelService.deleteAllLogs({
         password: deletePassword,
-        email: currentUser.email,
-        user: currentUser,
+        email: admin?.email || admin?.data?.email,
+        user: admin?.data || admin,
       });
-      toast.success("Fuel database cleared successfully.");
+      if (response.warning) toast.warning(response.warning);
+      else toast.success("Database wiped.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
-      setShowPassword(false);
-      fetchLogs(false);
+      fetchLogs(false, true);
     } catch (error) {
-      toast.error(error.message || "Incorrect Admin Password.");
+      toast.error(error.message);
     } finally {
       setWiping(false);
     }
@@ -340,7 +326,21 @@ const FuelReport = () => {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row gap-3 items-center">
+          <Button
+            variant="ghost"
+            onClick={() => fetchLogs(false, true)}
+            disabled={isSynced || loading}
+            className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+          >
+            {isSynced ? (
+              <CheckCircle2 size={16} />
+            ) : (
+              <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+            )}
+            {isSynced ? "Database Up to Date" : "Update Detected: Sync Now"}
+          </Button>
+
           <div className="relative h-[44px] w-full sm:w-auto">
             <Button
               variant="module"
@@ -364,6 +364,7 @@ const FuelReport = () => {
               </div>
             )}
           </div>
+
           <Link
             to={`${isTransport ? "/transportation/fuel" : "/enterprise/fuel"}`}
             className="w-full sm:w-auto"
@@ -378,39 +379,6 @@ const FuelReport = () => {
         </div>
       </div>
 
-      {/* 🚀 SMART BACKUP WARNING */}
-      {showBackupWarning && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
-          <div className="flex items-center gap-3">
-            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
-              <ShieldAlert size={20} />
-            </div>
-            <div>
-              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
-                Monthly Data Backup Required
-              </h4>
-              <p className="text-amber-100/60 text-xs mt-0.5">
-                You haven't downloaded the fuel backup for{" "}
-                <strong>
-                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </strong>
-                . Download it now to keep records secure.
-              </p>
-            </div>
-          </div>
-          <Button
-            onClick={() => handleFullBackup(showBackupWarning)}
-            variant="outline"
-            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
-          >
-            <Download size={14} className="mr-2" /> Download Backup
-          </Button>
-        </div>
-      )}
-
       <div
         className={`bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl border-zinc-800/60`}
       >
@@ -422,7 +390,6 @@ const FuelReport = () => {
               size={16}
               className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
-            {/* 🚀 UI LOCK: Search clears other inequalities */}
             <input
               type="text"
               placeholder="Search vehicle..."
@@ -434,17 +401,11 @@ const FuelReport = () => {
                   search: e.target.value,
                   amountFilter: "Any Amount",
                   dateFilter: "All",
+                  exactDate: "",
                 })
               }
             />
           </div>
-          <Button
-            variant="outline"
-            onClick={handleExport}
-            className="h-11 gap-2 text-xs font-bold tracking-widest border border-zinc-800 px-4 rounded-xl bg-[#09090B] text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors flex items-center w-full sm:w-auto justify-center"
-          >
-            <Download size={16} /> Export View
-          </Button>
         </div>
 
         <div
@@ -463,7 +424,6 @@ const FuelReport = () => {
             )}
           </div>
 
-          {/* 🚀 UI LOCK: Amount Filter clears Search and Date Range */}
           <div className="relative group">
             <select
               value={filters.amountFilter}
@@ -473,6 +433,7 @@ const FuelReport = () => {
                   amountFilter: e.target.value,
                   search: "",
                   dateFilter: "All",
+                  exactDate: "",
                 })
               }
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
@@ -488,7 +449,6 @@ const FuelReport = () => {
             />
           </div>
 
-          {/* 🚀 UI LOCK: Date Range clears Search and Amount */}
           <div className="relative group">
             <select
               value={filters.dateFilter}
@@ -528,10 +488,12 @@ const FuelReport = () => {
                   ...filters,
                   exactDate: e.target.value,
                   dateFilter: "All",
+                  search: "",
+                  amountFilter: "Any Amount",
                 })
               }
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
+              className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
 
@@ -589,11 +551,7 @@ const FuelReport = () => {
                       <tr
                         key={log._id}
                         id={log._id}
-                        className={`transition-all duration-1000 ease-out group border-l-4 ${
-                          activeHighlight === log._id
-                            ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
-                            : "border-transparent hover:bg-zinc-800/30"
-                        }`}
+                        className={`transition-all duration-1000 ease-out group border-l-4 ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
                       >
                         <td className="p-5 px-6 align-top">
                           <p
@@ -652,9 +610,7 @@ const FuelReport = () => {
                               onClick={() =>
                                 navigate(
                                   `${isTransport ? "/transportation/fuel" : "/enterprise/fuel"}`,
-                                  {
-                                    state: { editLog: log },
-                                  },
+                                  { state: { editLog: log } },
                                 )
                               }
                               className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
@@ -697,8 +653,7 @@ const FuelReport = () => {
                 </tbody>
               </table>
 
-              {/* 🚀 LOAD MORE BUTTON */}
-              {hasMore && logs.length > 0 && (
+              {hasMore && loadedCount < 5000 && logs.length > 0 && (
                 <div className="flex justify-center p-6 border-t border-zinc-800/60">
                   <Button
                     onClick={() => fetchLogs(true)}
@@ -709,8 +664,30 @@ const FuelReport = () => {
                     {loadingMore ? (
                       <RefreshCcw size={16} className="animate-spin mr-2" />
                     ) : null}
-                    {loadingMore ? "Loading..." : "Load Next 50 Records"}
+                    {loadingMore
+                      ? "Loading..."
+                      : `Load Next 50 Records (Loaded: ${loadedCount})`}
                   </Button>
+                </div>
+              )}
+
+              {loadedCount >= 5000 && (
+                <div className="p-6 border-t border-zinc-800/60 flex justify-center">
+                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md animate-in fade-in slide-in-from-bottom-2 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+                    <AlertOctagon
+                      className="mx-auto mb-2 opacity-80"
+                      size={24}
+                    />
+                    <h4 className="font-bold text-sm mb-1">
+                      Display Limit Reached
+                    </h4>
+                    <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
+                      To preserve system performance and Firebase Read limits,
+                      infinite scrolling stops at 5,000 records. Please utilize
+                      the Search and Filters at the top to precisely locate
+                      older records.
+                    </p>
+                  </div>
                 </div>
               )}
             </>
@@ -728,7 +705,6 @@ const FuelReport = () => {
         isDestructive={true}
       />
 
-      {/* 🛑 SECURE WIPE DATA MODAL */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
@@ -741,7 +717,6 @@ const FuelReport = () => {
               <h2 className="text-xl font-bold tracking-wide">Wipe Database</h2>
             </div>
 
-            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -750,11 +725,15 @@ const FuelReport = () => {
                 />
                 <div className="w-full">
                   <h3 className="text-yellow-500 font-bold text-sm mb-1">
-                    Recommended: Safe Backup
+                    Backup Recommendation
                   </h3>
                   <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
-                    Before wiping, please download the backup for a specific
-                    month to prevent browser crash.
+                    Download backup before wiping.{" "}
+                    <strong className="text-amber-400">
+                      Limit: 10,000 records/day.
+                    </strong>{" "}
+                    If you exceed this, the system will save your progress, and
+                    you can download the rest tomorrow.
                   </p>
                   <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
                     <input
@@ -769,7 +748,7 @@ const FuelReport = () => {
                       onClick={() => handleFullBackup(backupMonth)}
                       className="w-full sm:flex-1 h-9 text-yellow-500 border-yellow-600/40 hover:bg-yellow-500/10"
                     >
-                      <Download size={14} className="mr-2" /> Download Backup
+                      <Download size={14} className="mr-2" /> Save Backup
                     </Button>
                   </div>
                 </div>
@@ -825,7 +804,6 @@ const FuelReport = () => {
         </div>
       )}
 
-      {/* 🚀 HISTORY MODAL REFINED UI */}
       {historyModal.isOpen && historyModal.data && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
