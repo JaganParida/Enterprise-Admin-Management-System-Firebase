@@ -33,6 +33,7 @@ import {
   Home,
   Fuel,
   CheckCircle2,
+  ArrowRight,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useUI } from "../../context/UIProvider";
@@ -52,19 +53,20 @@ const useThemeColors = () => {
     isTransport,
     colors: isTransport
       ? {
-          bgMain: "bg-[#09090B]",
-          border: "border-white/5",
+          bgMain: "bg-[#09090B]/95 supports-[backdrop-filter]:bg-[#09090B]/80",
+          border: "border-white/10",
           textSubtle: "text-zinc-400",
-          textHighlight: "text-cyan-400", // 🚀 Fixed to match cyan transport theme
+          textHighlight: "text-cyan-400",
           icon: "text-cyan-500",
-          hoverBg: "hover:bg-zinc-900/40",
-          hoverText: "hover:text-zinc-200",
-          activeBg: "bg-cyan-500/10",
-          activeBorder: "border-cyan-500/20",
-          activeText: "text-cyan-400",
-          toggleBtn: "bg-zinc-800 hover:bg-zinc-700",
+          hoverBg: "hover:bg-cyan-500/10",
+          hoverText: "hover:text-cyan-50",
+          activeBg: "bg-cyan-500/15",
+          activeBorder: "border-cyan-500/30",
+          activeIndicator: "bg-cyan-400",
+          activeText: "text-cyan-300",
+          toggleBtn: "bg-[#09090B] hover:bg-zinc-800 border-white/10",
           logoBg:
-            "bg-gradient-to-br from-cyan-500 to-blue-600 shadow-cyan-900/20",
+            "bg-gradient-to-br from-cyan-500 to-blue-600 shadow-lg shadow-cyan-900/30",
           scrollThumb: "bg-zinc-800 hover:bg-zinc-700",
           modalBorder: "border-zinc-800",
           strengthGood: "text-cyan-400",
@@ -75,19 +77,20 @@ const useThemeColors = () => {
           shadowGlow: "shadow-[0_0_30px_rgba(6,182,212,0.15)]",
         }
       : {
-          bgMain: "bg-[#09090B]",
-          border: "border-white/5",
+          bgMain: "bg-[#09090B]/95 supports-[backdrop-filter]:bg-[#09090B]/80",
+          border: "border-white/10",
           textSubtle: "text-zinc-400",
           textHighlight: "text-indigo-400",
           icon: "text-indigo-500",
-          hoverBg: "hover:bg-zinc-900/40",
-          hoverText: "hover:text-zinc-200",
-          activeBg: "bg-indigo-500/10",
-          activeBorder: "border-indigo-500/20",
-          activeText: "text-indigo-400",
-          toggleBtn: "bg-zinc-800 hover:bg-zinc-700",
+          hoverBg: "hover:bg-indigo-500/10",
+          hoverText: "hover:text-indigo-50",
+          activeBg: "bg-indigo-500/15",
+          activeBorder: "border-indigo-500/30",
+          activeIndicator: "bg-indigo-400",
+          activeText: "text-indigo-300",
+          toggleBtn: "bg-[#09090B] hover:bg-zinc-800 border-white/10",
           logoBg:
-            "bg-gradient-to-br from-indigo-500 to-violet-600 shadow-indigo-900/20",
+            "bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-900/30",
           scrollThumb: "bg-zinc-800 hover:bg-zinc-700",
           modalBorder: "border-zinc-800",
           strengthGood: "text-indigo-400",
@@ -100,8 +103,6 @@ const useThemeColors = () => {
   };
 };
 
-// ... (GoogleTranslate and ChangePasswordModal remain completely identical)
-// --- I am skipping typing them here to save your time, keep them exactly as you have them ---
 const GoogleTranslate = ({ isCollapsed }) => {
   const { colors } = useThemeColors();
   const [isOpen, setIsOpen] = useState(false);
@@ -165,28 +166,39 @@ const GoogleTranslate = ({ isCollapsed }) => {
     addScript();
   }, []);
 
+  // 🔥 ROCK SOLID FIX: Correctly triggers Google Translate dropdown
   const changeLanguage = (langCode) => {
-    const cookieValue = `/en/${langCode}`;
-    document.cookie = `googtrans=${cookieValue}; path=/`;
-    document.cookie = `googtrans=${cookieValue}; path=/; domain=${window.location.hostname}`;
+    // 1. Set the cookie so Google persists it
+    document.cookie = `googtrans=/en/${langCode}; path=/`;
+    document.cookie = `googtrans=/en/${langCode}; path=/; domain=${window.location.hostname}`;
 
+    // 2. Locate the hidden Google Translate select element
     const select = document.querySelector(".goog-te-combo");
     if (select) {
+      // 3. Update value and trigger change natively
       select.value = langCode;
-      select.dispatchEvent(new Event("change"));
+      const event = new Event("change", { bubbles: true, cancelable: true });
+      select.dispatchEvent(event);
     } else {
+      // Fallback only if Google script completely fails to build the combo box
       window.location.reload();
     }
     setIsOpen(false);
   };
 
   const resetTranslation = () => {
-    const cookies = ["googtrans", "googtrans=/en/en"];
-    cookies.forEach((c) => {
-      document.cookie = `${c}; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-      document.cookie = `${c}; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname}`;
-    });
-    window.location.reload();
+    document.cookie = `googtrans=/en/en; path=/`;
+    document.cookie = `googtrans=/en/en; path=/; domain=${window.location.hostname}`;
+
+    const select = document.querySelector(".goog-te-combo");
+    if (select) {
+      select.value = "en";
+      const event = new Event("change", { bubbles: true, cancelable: true });
+      select.dispatchEvent(event);
+    } else {
+      window.location.reload();
+    }
+    setIsOpen(false);
   };
 
   return (
@@ -194,20 +206,26 @@ const GoogleTranslate = ({ isCollapsed }) => {
       ref={dropdownRef}
       className={`px-3 py-4 border-t ${colors.border} mt-auto relative ${isCollapsed ? "flex justify-center" : ""}`}
     >
-      <div id="google_translate_element" style={{ display: "none" }}></div>
+      {/* 🔥 FIX: Changed display:none to opacity-0 so Google's script can still render the select box */}
+      <div
+        id="google_translate_element"
+        className="absolute opacity-0 pointer-events-none w-0 h-0 overflow-hidden z-[-1]"
+      ></div>
+
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className={`absolute bottom-[110%] ${isCollapsed ? "left-2 w-44" : "left-3 right-3"} bg-[#09090B] border border-zinc-800 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[300px]`}
+            className={`absolute bottom-[110%] ${isCollapsed ? "left-2 w-44" : "left-3 right-3"} bg-[#09090B]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[300px]`}
           >
-            <div className="px-4 py-3 border-b border-zinc-800/80 bg-zinc-900/30 flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+            <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                 Language
               </span>
               <button
+                type="button"
                 onClick={resetTranslation}
                 className="text-[9px] font-bold uppercase text-rose-400 hover:text-rose-300 transition-colors"
               >
@@ -218,8 +236,9 @@ const GoogleTranslate = ({ isCollapsed }) => {
               {languages.map((lang) => (
                 <button
                   key={lang.code}
+                  type="button"
                   onClick={() => changeLanguage(lang.code)}
-                  className="w-full text-left px-4 py-2.5 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
+                  className="w-full text-left px-4 py-2.5 text-xs font-medium text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
                 >
                   {lang.name}
                 </button>
@@ -229,8 +248,9 @@ const GoogleTranslate = ({ isCollapsed }) => {
         )}
       </AnimatePresence>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-3 w-full rounded-xl transition-all group ${colors.hoverBg} ${isCollapsed ? "p-3 justify-center w-11 h-11" : "px-4 py-3"}`}
+        className={`flex items-center gap-3 w-full rounded-xl transition-all duration-200 group ${colors.hoverBg} ${isCollapsed ? "p-3 justify-center w-11 h-11" : "px-4 py-3"}`}
       >
         <Languages
           size={20}
@@ -251,12 +271,15 @@ const GoogleTranslate = ({ isCollapsed }) => {
 const ChangePasswordModal = ({ isOpen, onClose }) => {
   const { toast } = useUI();
   const { colors, isTransport } = useThemeColors();
+
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     oldPassword: "",
     newPassword: "",
     confirmPassword: "",
   });
+
   const [showOld, setShowOld] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -271,8 +294,8 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
   }, [formData.newPassword]);
 
   const strengthData = [
-    { label: "Very Weak", color: "bg-red-900" },
-    { label: "Weak", color: "bg-red-500" },
+    { label: "Very Weak", color: "bg-rose-900" },
+    { label: "Weak", color: "bg-rose-500" },
     { label: "Fair", color: "bg-amber-500" },
     { label: "Good", color: isTransport ? "bg-cyan-400" : "bg-indigo-400" },
     { label: "Strong", color: isTransport ? "bg-cyan-500" : "bg-violet-500" },
@@ -282,12 +305,19 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
     formData.newPassword.length > 0 &&
     formData.newPassword === formData.confirmPassword;
 
-  const handleSubmit = async (e) => {
+  const handleModalClose = () => {
+    setStep(1);
+    setFormData({ oldPassword: "", newPassword: "", confirmPassword: "" });
+    setShowOld(false);
+    setShowNew(false);
+    setShowConfirm(false);
+    onClose();
+  };
+
+  const handleVerifyCurrentPassword = async (e) => {
     e.preventDefault();
-    if (!isMatch) return toast.error("Confirmation password does not match.");
-    if (formData.oldPassword === formData.newPassword)
-      return toast.error("New password cannot be same as current.");
-    if (strength < 3) return toast.error("Password is too weak.");
+    if (!formData.oldPassword)
+      return toast.error("Please enter current password.");
 
     setLoading(true);
     const user = auth.currentUser;
@@ -298,15 +328,44 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
         formData.oldPassword,
       );
       await reauthenticateWithCredential(user, credential);
-      await updatePassword(user, formData.newPassword);
-      toast.success("Password updated successfully!");
-      setFormData({ oldPassword: "", newPassword: "", confirmPassword: "" });
-      onClose();
+
+      setStep(2);
     } catch (error) {
-      toast.error("Verify your current password.");
+      toast.error("Incorrect current password.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (!isMatch) return toast.error("Confirmation password does not match.");
+    if (formData.oldPassword === formData.newPassword)
+      return toast.error("New password cannot be same as current.");
+    if (strength < 3) return toast.error("Password is too weak.");
+
+    setLoading(true);
+    const user = auth.currentUser;
+    try {
+      if (!user) throw new Error("No active user session.");
+      await updatePassword(user, formData.newPassword);
+      toast.success("Password updated successfully!");
+      handleModalClose();
+    } catch (error) {
+      toast.error("Failed to update password. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fadeVariants = {
+    hidden: { opacity: 0, y: 15 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] },
+    },
+    exit: { opacity: 0, y: -15, transition: { duration: 0.2, ease: "easeIn" } },
   };
 
   return (
@@ -316,153 +375,238 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
         >
-          <div className="absolute inset-0 cursor-pointer" onClick={onClose} />
+          <div
+            className="absolute inset-0 cursor-pointer"
+            onClick={handleModalClose}
+          />
+
           <motion.div
-            initial={{ scale: 0.95, opacity: 0, y: 20 }}
+            initial={{ scale: 0.98, opacity: 0, y: 10 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            className={`w-full max-w-md bg-[#09090B] border border-zinc-800/80 p-8 rounded-[2rem] shadow-2xl relative z-10 overflow-hidden`}
+            exit={{ scale: 0.98, opacity: 0, y: 10 }}
+            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+            className={`w-full max-w-md bg-[#09090B] border border-white/10 p-6 md:p-8 rounded-[24px] shadow-2xl relative z-10 flex flex-col`}
           >
             <div
-              className={`absolute -top-20 -right-20 w-64 h-64 blur-[80px] rounded-full pointer-events-none opacity-20 ${colors.strengthStrong}`}
+              className={`absolute -top-32 -right-32 w-64 h-64 blur-[100px] rounded-full pointer-events-none opacity-20 ${colors.strengthStrong}`}
             />
-            <button
-              onClick={onClose}
-              className="absolute top-6 right-6 p-2 rounded-full bg-zinc-900/50 border border-zinc-800/80 text-zinc-400 hover:text-white transition-all z-20"
-            >
-              <X size={18} />
-            </button>
+
+            <div className="flex items-center justify-between mb-8 relative z-10">
+              <div className="w-[80px]">
+                {step === 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setStep(1)}
+                    className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors py-1 pl-1 pr-2 rounded-lg hover:bg-white/5"
+                  >
+                    <ChevronLeft size={16} /> Back
+                  </button>
+                )}
+              </div>
+
+              <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400">
+                  Step {step} of 2
+                </span>
+              </div>
+
+              <div className="w-[80px] flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleModalClose}
+                  className="p-1.5 rounded-full bg-white/5 border border-white/10 text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
             <div className="text-center mb-8 relative z-10">
               <div
-                className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center mb-5 border ${colors.activeBorder} ${colors.activeBg} ${colors.shadowGlow} backdrop-blur-md`}
+                className={`w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-4 border ${colors.activeBorder} ${colors.activeBg} ${colors.shadowGlow}`}
               >
-                <ShieldCheck size={32} className={colors.textHighlight} />
-              </div>
-              <h3 className="text-2xl font-black text-white tracking-tight">
-                Security Settings
-              </h3>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
-              <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-800/60">
-                <div className="relative group">
-                  <Input
-                    label="Current Password"
-                    type={showOld ? "text" : "password"}
-                    icon={Key}
-                    required
-                    value={formData.oldPassword}
-                    onChange={(e) =>
-                      setFormData({ ...formData, oldPassword: e.target.value })
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowOld(!showOld)}
-                    className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
-                  >
-                    {showOld ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center justify-center gap-4 py-1">
-                <div className="h-px bg-zinc-800/60 flex-1" />
-                <div className="w-1.5 h-1.5 rounded-full bg-zinc-800" />
-                <div className="h-px bg-zinc-800/60 flex-1" />
-              </div>
-              <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-800/60 space-y-5">
-                <div className="relative group">
-                  <Input
-                    label="New Password"
-                    type={showNew ? "text" : "password"}
-                    icon={Lock}
-                    required
-                    value={formData.newPassword}
-                    onChange={(e) =>
-                      setFormData({ ...formData, newPassword: e.target.value })
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowNew(!showNew)}
-                    className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
-                  >
-                    {showNew ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                  <div className="mt-3.5 px-1">
-                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest mb-2">
-                      <span className="text-zinc-500">Strength</span>
-                      <span
-                        className={
-                          strength > 2 ? colors.strengthGood : "text-rose-400"
-                        }
-                      >
-                        {formData.newPassword
-                          ? strengthData[strength].label
-                          : "None"}
-                      </span>
-                    </div>
-                    <div className="flex gap-1.5 h-1">
-                      {[1, 2, 3, 4].map((i) => (
-                        <div
-                          key={i}
-                          className={`flex-1 rounded-full transition-all duration-500 ${formData.newPassword && strength >= i ? strengthData[strength].color : "bg-zinc-800"}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="relative group">
-                  <Input
-                    label="Confirm New Password"
-                    type={showConfirm ? "text" : "password"}
-                    icon={(p) => (
-                      <CheckCircle2
-                        {...p}
-                        className={`${p.className} ${isMatch ? "!text-emerald-500" : ""}`}
-                      />
-                    )}
-                    required
-                    value={formData.confirmPassword}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        confirmPassword: e.target.value,
-                      })
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirm(!showConfirm)}
-                    className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
-                  >
-                    {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-              <button
-                type="submit"
-                disabled={loading || !isMatch}
-                className={`w-full mt-8 bg-gradient-to-r ${colors.gradientBtn} text-white font-bold py-4 rounded-xl shadow-lg border border-white/10 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2`}
-              >
-                {loading ? (
-                  <RefreshCcw className="animate-spin" size={20} />
+                {step === 1 ? (
+                  <Key size={22} className={colors.textHighlight} />
                 ) : (
-                  <>
-                    <Save size={18} /> Update Password
-                  </>
+                  <ShieldCheck size={22} className={colors.textHighlight} />
                 )}
-              </button>
-            </form>
+              </div>
+              <h3 className="text-xl md:text-2xl font-bold text-white tracking-tight mb-2">
+                {step === 1 ? "Verify Identity" : "New Password"}
+              </h3>
+              <p className="text-sm text-zinc-400 px-4">
+                {step === 1
+                  ? "For your security, please confirm your current password."
+                  : "Create a strong new password to secure your account."}
+              </p>
+            </div>
+
+            <div className="relative z-10">
+              <AnimatePresence mode="wait">
+                {step === 1 && (
+                  <motion.form
+                    key="step1"
+                    variants={fadeVariants}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                    onSubmit={handleVerifyCurrentPassword}
+                    className="space-y-6"
+                  >
+                    <div className="relative group">
+                      <Input
+                        label="Current Password"
+                        type={showOld ? "text" : "password"}
+                        icon={Key}
+                        required
+                        value={formData.oldPassword}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            oldPassword: e.target.value,
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowOld(!showOld)}
+                        className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
+                      >
+                        {showOld ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || !formData.oldPassword}
+                      className={`w-full bg-white text-black font-semibold py-3.5 rounded-xl shadow-lg transition-all hover:bg-zinc-200 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 group`}
+                    >
+                      {loading ? (
+                        <RefreshCcw className="animate-spin" size={18} />
+                      ) : (
+                        <>
+                          Continue{" "}
+                          <ArrowRight
+                            size={16}
+                            className="group-hover:translate-x-1 transition-transform"
+                          />
+                        </>
+                      )}
+                    </button>
+                  </motion.form>
+                )}
+
+                {step === 2 && (
+                  <motion.form
+                    key="step2"
+                    variants={fadeVariants}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                    onSubmit={handleUpdatePassword}
+                    className="space-y-5"
+                  >
+                    <div className="relative group">
+                      <Input
+                        label="New Password"
+                        type={showNew ? "text" : "password"}
+                        icon={Lock}
+                        required
+                        value={formData.newPassword}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            newPassword: e.target.value,
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNew(!showNew)}
+                        className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
+                      >
+                        {showNew ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+
+                      <div className="mt-3">
+                        <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest mb-1.5">
+                          <span className="text-zinc-500">Strength</span>
+                          <span
+                            className={
+                              strength > 2
+                                ? colors.strengthGood
+                                : "text-rose-400"
+                            }
+                          >
+                            {formData.newPassword
+                              ? strengthData[strength].label
+                              : "None"}
+                          </span>
+                        </div>
+                        <div className="flex gap-1 h-1">
+                          {[1, 2, 3, 4].map((i) => (
+                            <div
+                              key={i}
+                              className={`flex-1 rounded-full transition-all duration-300 ${formData.newPassword && strength >= i ? strengthData[strength].color : "bg-white/10"}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="relative group mt-2">
+                      <Input
+                        label="Confirm New Password"
+                        type={showConfirm ? "text" : "password"}
+                        icon={(p) => (
+                          <CheckCircle2
+                            {...p}
+                            className={`${p.className} ${isMatch ? "!text-emerald-500" : ""}`}
+                          />
+                        )}
+                        required
+                        value={formData.confirmPassword}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            confirmPassword: e.target.value,
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirm(!showConfirm)}
+                        className={`absolute right-4 top-[38px] ${colors.inputIcon}`}
+                      >
+                        {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || !isMatch}
+                      className={`w-full mt-4 bg-gradient-to-r ${colors.gradientBtn} text-white font-bold py-3.5 rounded-xl shadow-lg border border-white/10 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2`}
+                    >
+                      {loading ? (
+                        <RefreshCcw className="animate-spin" size={18} />
+                      ) : (
+                        <>
+                          <Save size={18} /> Update Password
+                        </>
+                      )}
+                    </button>
+                  </motion.form>
+                )}
+              </AnimatePresence>
+            </div>
           </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
   );
 };
-
-// --- THIS IS THE PART THAT WAS FIXED FOR NAVIGATION ---
 
 const Sidebar = ({
   isMobileOpen,
@@ -514,71 +658,96 @@ const Sidebar = ({
   return (
     <>
       <aside
-        className={`fixed top-0 left-0 h-full ${colors.bgMain} border-r ${colors.border} text-white z-50 transition-all duration-300 flex flex-col ${isMobileOpen ? "translate-x-0 w-64 shadow-2xl" : "-translate-x-full md:translate-x-0"} ${isCollapsed ? "md:w-20" : "md:w-64"}`}
+        className={`fixed top-0 left-0 h-full ${colors.bgMain} backdrop-blur-2xl border-r ${colors.border} text-white z-50 transition-all duration-300 flex flex-col ${
+          isMobileOpen
+            ? "translate-x-0 w-64 shadow-2xl"
+            : "-translate-x-full md:translate-x-0"
+        } ${isCollapsed ? "md:w-20" : "md:w-64"}`}
       >
         <div
-          className={`h-20 flex items-center ${isCollapsed ? "justify-center" : "px-6 justify-between"} border-b ${colors.border} shrink-0`}
+          className={`h-16 md:h-20 flex items-center ${isCollapsed ? "justify-center" : "px-6 justify-between"} border-b ${colors.border} shrink-0 transition-all`}
         >
           <div className="flex items-center gap-3 overflow-hidden">
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg shadow-lg shrink-0 transition-all duration-500 text-white ${colors.logoBg}`}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg shrink-0 transition-all duration-500 text-white ${colors.logoBg} ring-1 ring-white/10`}
             >
               {isTransport ? "T" : "E"}
             </div>
+
             {!isCollapsed && (
-              <div>
-                <h1 className="font-bold text-base text-zinc-100 tracking-tight">
+              <div className="flex flex-col">
+                <h1 className="font-semibold text-sm md:text-base text-zinc-100 tracking-tight">
                   {isTransport ? "Transport" : "Enterprise"}
                 </h1>
                 <p
-                  className={`text-[9px] uppercase tracking-widest font-black opacity-80 ${colors.textHighlight}`}
+                  className={`text-[9px] uppercase tracking-[0.2em] font-bold ${colors.textHighlight}`}
                 >
                   Portal Hub
                 </p>
               </div>
             )}
           </div>
+
           <button
+            type="button"
             onClick={() => setIsMobileOpen(false)}
-            className={`md:hidden ${colors.textHighlight} p-1`}
+            className={`md:hidden p-2 rounded-lg text-zinc-400 hover:text-white ${colors.hoverBg} transition-colors`}
           >
             <X size={20} />
           </button>
         </div>
+
         <button
+          type="button"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className={`hidden md:flex absolute -right-3 top-24 w-6 h-6 rounded-full items-center justify-center shadow-lg border border-zinc-700 z-50 transition-all text-white ${colors.toggleBtn}`}
+          className={`hidden md:flex absolute -right-3 top-24 w-6 h-6 rounded-full items-center justify-center border shadow-md z-50 transition-all duration-200 text-zinc-400 hover:text-white hover:scale-110 ${colors.toggleBtn}`}
         >
-          {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          {isCollapsed ? (
+            <ChevronRight size={14} strokeWidth={3} />
+          ) : (
+            <ChevronLeft size={14} strokeWidth={3} />
+          )}
         </button>
+
         <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
-          <ul className="space-y-1.5 relative">
+          <ul className="space-y-1.5">
             {allLinks.map((item) => (
-              <li key={item.path} className="relative">
-                {/* 🚀 THE FIX: Using simplified Native NavLink to avoid Framer Motion reloading the DOM */}
+              <li key={item.path} className="relative group/navitem">
                 <NavLink
                   to={item.path}
                   onClick={() => setIsMobileOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center rounded-xl transition-all duration-200 group relative z-10 ${
+                    `flex items-center rounded-xl transition-all duration-200 relative overflow-hidden ${
                       isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3"
                     } ${
                       isActive
-                        ? `${colors.activeBg} border ${colors.activeBorder} text-white font-bold`
-                        : `${colors.textSubtle} hover:text-white ${colors.hoverBg} border border-transparent`
+                        ? `${colors.activeBg} border ${colors.activeBorder} text-white font-medium`
+                        : `text-zinc-400 hover:text-zinc-100 ${colors.hoverBg} border border-transparent`
                     }`
                   }
                 >
                   {({ isActive }) => (
                     <>
+                      {isActive && (
+                        <motion.div
+                          layoutId="activeNavIndicator"
+                          className={`absolute left-0 top-2 bottom-2 w-1 rounded-r-full ${colors.activeIndicator}`}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ duration: 0.2 }}
+                        />
+                      )}
+
                       <item.icon
                         size={20}
+                        strokeWidth={isActive ? 2.5 : 2}
                         className={`shrink-0 transition-colors duration-200 ${
                           isActive
                             ? colors.activeText
-                            : `group-hover:${colors.textHighlight}`
+                            : `group-hover/navitem:${colors.textHighlight}`
                         }`}
                       />
+
                       {!isCollapsed && (
                         <span className="text-sm whitespace-nowrap">
                           {item.label}
@@ -591,13 +760,15 @@ const Sidebar = ({
             ))}
           </ul>
         </nav>
+
         <GoogleTranslate isCollapsed={isCollapsed} />
+
         <div
-          className={`p-4 border-t ${colors.border} ${colors.bgMain} space-y-1.5`}
+          className={`p-4 border-t ${colors.border} space-y-1.5 bg-black/20`}
         >
           <NavLink
             to="/"
-            className={`w-full flex items-center rounded-xl ${colors.textSubtle} ${colors.hoverBg} ${colors.hoverText} transition-all group ${isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3"}`}
+            className={`w-full flex items-center rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition-all duration-200 active:scale-95 group ${isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3"}`}
           >
             <Home
               size={18}
@@ -607,28 +778,32 @@ const Sidebar = ({
               <span className="font-medium text-sm">Back to Home</span>
             )}
           </NavLink>
+
           <button
+            type="button"
             onClick={() => setIsPassModalOpen(true)}
-            className={`w-full flex items-center rounded-xl ${colors.textSubtle} ${colors.hoverBg} ${colors.hoverText} transition-all group ${isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3"}`}
+            className={`w-full flex items-center rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition-all duration-200 active:scale-95 group ${isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3"}`}
           >
             <Lock
               size={18}
               className="shrink-0 group-hover:scale-110 transition-transform"
             />
             {!isCollapsed && (
-              <span className="font-medium text-sm">Security Settings</span>
+              <span className="font-medium text-sm">Security</span>
             )}
           </button>
+
           <button
+            type="button"
             onClick={() => {
               logout();
               navigate("/");
             }}
-            className={`w-full flex items-center rounded-xl ${colors.textSubtle} hover:bg-rose-500/10 hover:text-rose-400 transition-all group ${isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3"}`}
+            className={`w-full flex items-center rounded-xl text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200 active:scale-95 group ${isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3"}`}
           >
             <LogOut
               size={18}
-              className="group-hover:-translate-x-1 transition-transform shrink-0"
+              className="shrink-0 group-hover:-translate-x-1 transition-transform"
             />
             {!isCollapsed && (
               <span className="font-medium text-sm">Sign Out</span>
@@ -636,6 +811,7 @@ const Sidebar = ({
           </button>
         </div>
       </aside>
+
       <ChangePasswordModal
         isOpen={isPassModalOpen}
         onClose={() => setIsPassModalOpen(false)}
