@@ -23,11 +23,13 @@ import {
   RefreshCcw,
   Eye,
   EyeOff,
+  CheckCircle2,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
 const getPreviousMonthString = () => {
@@ -42,20 +44,32 @@ const MaintenanceReport = () => {
   const { admin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  // 🚀 Pagination States
+  const [filters, setFilters] = useState({
+    search: "",
+    amountFilter: "Any Amount",
+    dateFilter: "All",
+    exactDate: "",
+  });
+
+  const [logs, setLogs] = useState(
+    () => maintenanceService.getCachedLogs(filters) || [],
+  );
+  const [loading, setLoading] = useState(
+    () => !maintenanceService.getCachedLogs(filters),
+  );
+
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadedCount, setLoadedCount] = useState(0);
 
-  // 🚀 Highlight Animation State
+  const [isSynced, setIsSynced] = useState(true);
+
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -84,23 +98,29 @@ const MaintenanceReport = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [wiping, setWiping] = useState(false);
 
-  const [filters, setFilters] = useState({
-    search: "",
-    amountFilter: "Any Amount",
-    dateFilter: "All",
-    exactDate: "",
-  });
-
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
+  // 🚀 CHECK SYNC STATUS EVERY 2 SECONDS
+  useEffect(() => {
+    const checkSync = () => {
+      const globalLastUpdate = parseInt(
+        localStorage.getItem("maintenance_last_update") || "0",
+        10,
+      );
+      if (globalLastUpdate > maintenanceService.getLastFetchTime())
+        setIsSynced(false);
+    };
+    const interval = setInterval(checkSync, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
-
       if (!localStorage.getItem(`backup_maintenance_${prevMonth}`)) {
         try {
           const q = query(
@@ -110,16 +130,12 @@ const MaintenanceReport = () => {
             limit(1),
           );
           const snap = await getDocs(q);
-
-          if (!snap.empty) {
-            setShowBackupWarning(prevMonth);
-          }
+          if (!snap.empty) setShowBackupWarning(prevMonth);
         } catch (error) {
           console.error("Failed to check backup status:", error);
         }
       }
     };
-
     checkBackupNeeded();
   }, []);
 
@@ -136,27 +152,32 @@ const MaintenanceReport = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 100% BACKEND FETCH LOGIC
-  const fetchLogs = async (isLoadMore = false) => {
+  // 🚀 100% CACHED FETCH LOGIC
+  const fetchLogs = async (isLoadMore = false, force = false) => {
     if (isLoadMore) setLoadingMore(true);
-    else setLoading(true);
+    else if (logs.length === 0 || force) setLoading(true);
 
     try {
       const response = await maintenanceService.getLogs(
         filters,
         isLoadMore ? lastDoc : null,
+        50,
+        force,
       );
-      if (isLoadMore) setLogs((prev) => [...prev, ...(response.data || [])]);
-      else setLogs(response.data || []);
+
+      if (isLoadMore) {
+        setLogs((prev) => [...prev, ...(response.data || [])]);
+        setLoadedCount((prev) => prev + (response.data?.length || 0));
+      } else {
+        setLogs(response.data || []);
+        setLoadedCount(response.data?.length || 0);
+        setIsSynced(true);
+      }
 
       setLastDoc(response.lastVisible || null);
       setHasMore(response.data && response.data.length === 50);
     } catch (error) {
-      if (error.message && error.message.toLowerCase().includes("index")) {
-        toast.error("Firebase Index required! Check browser console.");
-      } else {
-        toast.error("Failed to load report data.");
-      }
+      toast.error("Failed to load report data.");
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -181,7 +202,7 @@ const MaintenanceReport = () => {
       const currentUser = admin?.data || admin || {};
       await maintenanceService.deleteLog(deleteModal.id, currentUser);
       toast.success("Maintenance record deleted successfully");
-      fetchLogs(false);
+      fetchLogs(false, true);
     } catch (error) {
       toast.error(error.message || "Failed to delete record");
     } finally {
@@ -205,21 +226,48 @@ const MaintenanceReport = () => {
     (filters.exactDate ? 1 : 0) +
     (filters.search ? 1 : 0);
 
+  // 🚀 SMART BACKUP WITH 10,000 CHUNK LIMIT
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
-      toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
 
-      const q = query(
+      const today = new Date().toISOString().split("T")[0];
+      let dlMeta = JSON.parse(
+        localStorage.getItem(`backup_maintenance_${monthToFetch}_meta`) ||
+          '{"date":"","count":0,"lastId":null}',
+      );
+
+      if (dlMeta.date === today && dlMeta.count >= 10000)
+        return toast.error(
+          "Daily Download Limit (10,000) reached. Next batch available tomorrow.",
+        );
+      if (dlMeta.date !== today) {
+        dlMeta.date = today;
+        dlMeta.count = 0;
+      }
+
+      const fetchLimit = 10000 - dlMeta.count;
+      toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
+
+      let q = query(
         collection(db, "maintenances"),
         where("date", ">=", monthToFetch),
         where("date", "<=", monthToFetch + "\uf8ff"),
+        orderBy("date"),
+        limit(fetchLimit),
       );
-      const snapshot = await getDocs(q);
-      const allData = snapshot.docs.map((doc) => doc.data());
 
-      if (allData.length === 0)
-        return toast.info(`No records found for ${monthToFetch}.`);
+      if (dlMeta.lastId) {
+        const lastDocRef = await getDoc(doc(db, "maintenances", dlMeta.lastId));
+        if (lastDocRef.exists()) q = query(q, startAfter(lastDocRef));
+      }
+
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty)
+        return toast.info(
+          `All records for ${monthToFetch} downloaded completely.`,
+        );
 
       const headers = [
         "Date",
@@ -229,7 +277,8 @@ const MaintenanceReport = () => {
         "Cost",
         "Description",
       ];
-      const rows = allData.map((log) => {
+      const rows = snapshot.docs.map((document) => {
+        const log = document.data();
         let dateStr = log.date
           ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
           : "-";
@@ -242,17 +291,27 @@ const MaintenanceReport = () => {
       link.href = URL.createObjectURL(blob);
       link.setAttribute(
         "download",
-        `Full_Backup_Maintenance_${monthToFetch}.csv`,
+        `Backup_Maintenance_${monthToFetch}_Part${Math.floor(dlMeta.count / 10000) + 1}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      toast.success(`Backup for ${monthToFetch} downloaded securely!`);
+      dlMeta.count += snapshot.size;
+      dlMeta.lastId = snapshot.docs[snapshot.docs.length - 1].id;
+      localStorage.setItem(
+        `backup_maintenance_${monthToFetch}_meta`,
+        JSON.stringify(dlMeta),
+      );
 
-      localStorage.setItem(`backup_maintenance_${monthToFetch}`, "true");
-      if (showBackupWarning === monthToFetch) {
-        setShowBackupWarning(null);
+      if (snapshot.size === fetchLimit) {
+        toast.warning(
+          "10,000 Limit reached. System remembered the state. Download the next batch tomorrow.",
+        );
+      } else {
+        toast.success(`Backup completed (${snapshot.size} records)!`);
+        localStorage.setItem(`backup_maintenance_${monthToFetch}`, "true");
+        if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
       }
     } catch (e) {
       console.error(e);
@@ -260,59 +319,23 @@ const MaintenanceReport = () => {
     }
   };
 
-  const handleExport = () => {
-    try {
-      if (logs.length === 0) return toast.info("No records to export");
-
-      const headers = [
-        "Date",
-        "Vehicle No",
-        "Meter/Km",
-        "Service Type",
-        "Cost",
-        "Description",
-      ];
-      const rows = logs.map((log) => {
-        let dateStr = log.date
-          ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
-          : "-";
-        return `${dateStr},"${log.vehicleNo || ""}","${log.meterKm || 0}","${log.serviceType || ""}","${log.cost || 0}","${log.description || ""}"`;
-      });
-
-      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute(
-        "download",
-        `Maintenance_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success("Visible records exported successfully");
-    } catch (error) {
-      toast.error("Export failed");
-    }
-  };
-
   const handleWipeAll = async () => {
-    if (isManager || !deletePassword)
+    if (isManager || !deletePassword.trim())
       return toast.error("Verification failed.");
     setWiping(true);
     try {
       const currentUser = admin?.data || admin || {};
-      await maintenanceService.deleteAllLogs({
+      const response = await maintenanceService.deleteAllLogs({
         password: deletePassword,
         email: currentUser.email,
         user: currentUser,
       });
-      toast.success("Maintenance database cleared successfully.");
+      if (response.warning) toast.warning(response.warning);
+      else toast.success("Maintenance database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchLogs(false);
+      fetchLogs(false, true);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
@@ -347,6 +370,20 @@ const MaintenanceReport = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
+          <Button
+            variant="ghost"
+            onClick={() => fetchLogs(false, true)}
+            disabled={isSynced || loading}
+            className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+          >
+            {isSynced ? (
+              <CheckCircle2 size={16} />
+            ) : (
+              <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+            )}
+            {isSynced ? "Database Up to Date" : "Update Detected: Sync Now"}
+          </Button>
+
           <div className="relative h-[44px] w-full sm:w-auto">
             <Button
               variant="module"
@@ -431,7 +468,6 @@ const MaintenanceReport = () => {
               size={16}
               className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
-            {/* 🚀 UI LOCK: Search clears Amount and Date Filter */}
             <input
               type="text"
               placeholder="Search vehicle no..."
@@ -447,13 +483,6 @@ const MaintenanceReport = () => {
               }
             />
           </div>
-          <Button
-            variant="outline"
-            onClick={handleExport}
-            className="h-11 gap-2 text-xs font-bold tracking-widest border border-zinc-800 px-4 rounded-xl bg-[#09090B] text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors flex items-center w-full sm:w-auto justify-center"
-          >
-            <Download size={16} /> Export View
-          </Button>
         </div>
 
         <div
@@ -472,7 +501,6 @@ const MaintenanceReport = () => {
             )}
           </div>
 
-          {/* 🚀 UI LOCK: Amount Filter clears Search and Date Filter */}
           <div className="relative group">
             <select
               value={filters.amountFilter}
@@ -497,7 +525,6 @@ const MaintenanceReport = () => {
             />
           </div>
 
-          {/* 🚀 UI LOCK: Date Filter clears Search and Amount Filter */}
           <div className="relative group">
             <select
               value={filters.dateFilter}
@@ -589,10 +616,10 @@ const MaintenanceReport = () => {
                   <tr
                     key={log._id}
                     id={log._id}
-                    className={`transition-all duration-1000 ease-out group border-l-4 ${
+                    className={`transition-all duration-1000 ease-out group ${
                       activeHighlight === log._id
-                        ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
-                        : "border-transparent hover:bg-zinc-800/30"
+                        ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}`
+                        : "hover:bg-zinc-800/30"
                     }`}
                   >
                     <td className="p-5 px-6 align-top">
@@ -687,8 +714,8 @@ const MaintenanceReport = () => {
             </tbody>
           </table>
 
-          {/* 🚀 LOAD MORE BUTTON */}
-          {hasMore && logs.length > 0 && (
+          {/* 🚀 LOAD MORE 5000 LIMIT */}
+          {hasMore && loadedCount < 5000 && logs.length > 0 && (
             <div className="flex justify-center p-6 border-t border-zinc-800/60">
               <Button
                 onClick={() => fetchLogs(true)}
@@ -699,8 +726,28 @@ const MaintenanceReport = () => {
                 {loadingMore ? (
                   <RefreshCcw size={16} className="animate-spin mr-2" />
                 ) : null}
-                {loadingMore ? "Loading..." : "Load Next 50 Records"}
+                {loadingMore
+                  ? "Loading..."
+                  : `Load Next 50 Records (Loaded: ${loadedCount})`}
               </Button>
+            </div>
+          )}
+
+          {/* 🚀 5000 WARNING BANNER */}
+          {loadedCount >= 5000 && (
+            <div className="p-6 border-t border-zinc-800/60 flex justify-center">
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md animate-in fade-in slide-in-from-bottom-2 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+                <AlertOctagon className="mx-auto mb-2 opacity-80" size={24} />
+                <h4 className="font-bold text-sm mb-1">
+                  Display Limit Reached
+                </h4>
+                <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
+                  To preserve system performance and Firebase Read limits,
+                  infinite scrolling stops at 5,000 records. Please utilize the
+                  Search and Filters at the top to precisely locate older
+                  records.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -729,7 +776,6 @@ const MaintenanceReport = () => {
               <h2 className="text-xl font-bold tracking-wide">Wipe Database</h2>
             </div>
 
-            {/* 🚀 UPDATED: WIPE MODAL BACKUP SECTION WITH MONTH SELECTOR */}
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -741,8 +787,10 @@ const MaintenanceReport = () => {
                     Recommended: Safe Backup
                   </h3>
                   <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
-                    Before wiping, please download the backup for a specific
-                    month to prevent browser crash.
+                    Download backup before wiping.{" "}
+                    <strong className="text-amber-400">
+                      Limit: 10,000 records/day.
+                    </strong>
                   </p>
                   <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
                     <input
@@ -795,10 +843,15 @@ const MaintenanceReport = () => {
               >
                 Cancel
               </button>
+              {/* 🚀 DYNAMIC BUTTON STYLING FOR WIPE LOCK */}
               <button
                 onClick={handleWipeAll}
-                disabled={wiping || !deletePassword}
-                className="h-11 px-6 rounded-xl text-sm font-bold border border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-colors flex items-center justify-center gap-2"
+                disabled={wiping || !deletePassword.trim()}
+                className={`h-11 px-6 rounded-xl text-sm font-bold border transition-colors flex items-center justify-center gap-2 ${
+                  wiping || !deletePassword.trim()
+                    ? "border-rose-900/30 text-rose-500/50 bg-rose-950/20 cursor-not-allowed"
+                    : "border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20"
+                }`}
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
@@ -810,7 +863,6 @@ const MaintenanceReport = () => {
         </div>
       )}
 
-      {/* 🚀 HISTORY MODAL REFINED UI */}
       {historyModal.isOpen && historyModal.data && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
