@@ -15,6 +15,8 @@ import {
   Map,
   ArrowRight,
   Edit2,
+  CheckCircle2,
+  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -59,15 +61,40 @@ const Maintenance = () => {
   const { admin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // 🚀 INITIALIZE FROM CACHE TO PREVENT LOADER FLICKER AND READS
+  const [logs, setLogs] = useState(() => {
+    const cached = maintenanceService.getCachedLogs({
+      search: "",
+      amountFilter: "Any Amount",
+      dateFilter: "All",
+      exactDate: "",
+    });
+    return cached ? cached.slice(0, 10) : [];
+  });
+
+  const [loading, setLoading] = useState(() => {
+    return !(
+      maintenanceService.getCachedStats() &&
+      maintenanceService.getCachedLogs({
+        search: "",
+        amountFilter: "Any Amount",
+        dateFilter: "All",
+        exactDate: "",
+      })
+    );
+  });
+
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [isSynced, setIsSynced] = useState(true);
 
   // 🚀 SERVER-SIDE STATS STATE
-  const [stats, setStats] = useState({ totalCost: 0, serviceCount: 0 });
+  const [stats, setStats] = useState(
+    () =>
+      maintenanceService.getCachedStats() || { totalCost: 0, serviceCount: 0 },
+  );
 
-  // 🚀 Highlight Animation State
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
@@ -105,7 +132,21 @@ const Maintenance = () => {
   };
   const [formData, setFormData] = useState(initialForm);
 
-  // 🚀 Auto-Scroll & Low-Opacity Fade-Out Animation Logic
+  // 🚀 CHECK SYNC STATUS
+  useEffect(() => {
+    const checkSync = () => {
+      const globalLastUpdate = parseInt(
+        localStorage.getItem("maintenance_last_update") || "0",
+        10,
+      );
+      if (globalLastUpdate > maintenanceService.getLastFetchTime())
+        setIsSynced(false);
+    };
+    const interval = setInterval(checkSync, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 🚀 Auto-Scroll Animation Logic
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
@@ -119,15 +160,17 @@ const Maintenance = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 FETCH OPTIMIZED FOR TOP 10 AND AGGREGATE STATS
-  const fetchData = async () => {
+  // 🚀 FETCH OPTIMIZED WITH CACHING
+  const fetchData = async (force = false) => {
+    if (force) setLoading(true);
     try {
       const [statsRes, logsRes] = await Promise.all([
-        maintenanceService.getStats(),
-        maintenanceService.getLogs({}, null, 10), // Limit to top 10
+        maintenanceService.getStats(force),
+        maintenanceService.getLogs({}, null, 50, force), // Fetch max 50, display top 10
       ]);
       setStats(statsRes);
-      setLogs(logsRes.data || []);
+      setLogs(logsRes.data ? logsRes.data.slice(0, 10) : []);
+      setIsSynced(true);
     } catch (err) {
       toast.error("Failed to load tracking data.");
     } finally {
@@ -201,7 +244,7 @@ const Maintenance = () => {
         toast.success("Logged successfully!");
       }
       resetForm();
-      fetchData();
+      fetchData(true);
     } catch (err) {
       toast.error("Failed to save record.");
     } finally {
@@ -226,7 +269,6 @@ const Maintenance = () => {
     setFormData(initialForm);
   };
 
-  // 🚀 REDIRECT TO REPORT HANDLER
   const handleRowClick = (e, id) => {
     if (
       e.target.closest("button") ||
@@ -260,6 +302,21 @@ const Maintenance = () => {
             Track vehicle repairs and servicing costs.
           </p>
         </div>
+
+        {/* 🚀 SYNC STATUS BUTTON */}
+        <Button
+          variant="ghost"
+          onClick={() => fetchData(true)}
+          disabled={isSynced || loading}
+          className={`flex items-center gap-2 h-[40px] px-4 rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+        >
+          {isSynced ? (
+            <CheckCircle2 size={16} />
+          ) : (
+            <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+          )}
+          {isSynced ? "Dashboard Up to Date" : "Sync Required"}
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
@@ -452,10 +509,10 @@ const Maintenance = () => {
                         key={log._id}
                         id={log._id}
                         onClick={(e) => handleRowClick(e, log._id)}
-                        className={`transition-all duration-1000 ease-out group cursor-pointer border-l-4 ${
+                        className={`transition-all duration-1000 ease-out group cursor-pointer ${
                           activeHighlight === log._id
-                            ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
-                            : "border-transparent hover:bg-zinc-800/30"
+                            ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}`
+                            : "hover:bg-zinc-800/30"
                         }`}
                       >
                         <td className="p-3 align-top">
@@ -512,7 +569,7 @@ const Maintenance = () => {
                       </tr>
                     );
                   })}
-                  {logs.length === 0 && (
+                  {logs.length === 0 && !loading && (
                     <tr>
                       <td
                         colSpan="3"
@@ -545,7 +602,7 @@ const Maintenance = () => {
             >
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
                 <History size={16} className={theme.primaryText} /> Log History:{" "}
-                <span className={`${theme.primaryText} font-normal`}>
+                <span className="text-zinc-400 font-normal">
                   {historyModal.itemName}
                 </span>
               </div>
@@ -553,7 +610,7 @@ const Maintenance = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-zinc-400 hover:text-white transition-colors"
+                className="text-zinc-500 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
@@ -562,7 +619,7 @@ const Maintenance = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-[#09090B] border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-zinc-900/30 border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
                     <div
@@ -571,13 +628,13 @@ const Maintenance = () => {
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-500"}`}
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-400"}`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
