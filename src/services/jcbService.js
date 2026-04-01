@@ -15,24 +15,71 @@ import {
   getAggregateFromServer,
   sum,
   count,
+  writeBatch,
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const jcbCollection = collection(db, "jcb_logs");
 
+// 🚀 GLOBAL CACHE TO PREVENT TAB-CHANGE READ LIMIT OVERLOAD
+let localCache = {
+  stats: null,
+  logs: null,
+  lastVisible: null,
+  filtersKey: "",
+  isDirty: true,
+  lastFetchTime: 0,
+};
+
+// Call this whenever data is modified to force tabs to fetch fresh data
+const markDirty = () => {
+  localCache.isDirty = true;
+  localStorage.setItem("jcb_last_update", Date.now().toString());
+};
+
 const jcbService = {
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
+  getDocs,
+
+  getLastFetchTime: () => localCache.lastFetchTime,
+
+  // 🚀 SYNCHRONOUS CACHE GETTERS TO ELIMINATE UI LOADER FLICKER
+  getCachedStats: () => (!localCache.isDirty ? localCache.stats : null),
+  getCachedLogs: (filters) => {
+    const key = JSON.stringify(filters);
+    if (
+      !localCache.isDirty &&
+      localCache.filtersKey === key &&
+      localCache.logs
+    ) {
+      return localCache.logs;
+    }
+    return null;
+  },
+
   // 1. 🚀 SERVER-SIDE STATS CALCULATION
-  getStats: async () => {
+  getStats: async (force = false) => {
+    if (!force && !localCache.isDirty && localCache.stats) {
+      return localCache.stats; // 0 Reads (Cached)
+    }
+
     try {
       const q = query(jcbCollection);
       const snapshot = await getAggregateFromServer(q, {
         totalMins: sum("totalMins"),
         logCount: count(),
       });
-      return {
+      const result = {
         totalMins: snapshot.data().totalMins || 0,
         logCount: snapshot.data().logCount || 0,
       };
+      localCache.stats = result;
+      return result;
     } catch (error) {
       console.warn("Aggregation failed, falling back to client calc:", error);
       const snap = await getDocs(query(jcbCollection));
@@ -40,16 +87,35 @@ const jcbService = {
       snap.forEach((doc) => {
         totalMins += Number(doc.data().totalMins) || 0;
       });
-      return { totalMins, logCount: snap.size };
+      const result = { totalMins, logCount: snap.size };
+      localCache.stats = result;
+      return result;
     }
   },
 
-  // 🚀 2. PAGINATED & 100% BACKEND FILTERED FETCH
-  getLogs: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
+  // 🚀 2. PAGINATED & CACHED SEARCH
+  getLogs: async (
+    filters = {},
+    lastVisibleDoc = null,
+    pageSize = 50,
+    force = false,
+  ) => {
+    const filterKey = JSON.stringify(filters);
+    const isLoadMore = !!lastVisibleDoc;
+
+    if (
+      !force &&
+      !localCache.isDirty &&
+      !isLoadMore &&
+      localCache.filtersKey === filterKey &&
+      localCache.logs
+    ) {
+      return { data: localCache.logs, lastVisible: localCache.lastVisible };
+    }
+
     let constraints = [];
     let hasInequality = false;
 
-    // --- 1. EQUALITY FILTERS ---
     if (filters.vehicleFilter && filters.vehicleFilter !== "All") {
       constraints.push(where("vehicleNo", "==", filters.vehicleFilter));
     }
@@ -57,9 +123,6 @@ const jcbService = {
       constraints.push(where("date", "==", filters.exactDate));
     }
 
-    // --- 2. MUTUALLY EXCLUSIVE INEQUALITY FILTERS ---
-    // Note: Firebase doesn't support OR queries well for prefix search across multiple fields
-    // So we will prioritize searching by Customer Name
     if (filters.search) {
       constraints.push(where("customerName", ">=", filters.search));
       constraints.push(where("customerName", "<=", filters.search + "\uf8ff"));
@@ -85,12 +148,10 @@ const jcbService = {
       hasInequality = true;
     }
 
-    // Default sorting
     if (!hasInequality && !filters.exactDate) {
       constraints.push(orderBy("date", "desc"));
     }
 
-    // --- 3. APPLY PAGINATION ---
     constraints.push(limit(pageSize));
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
@@ -102,11 +163,17 @@ const jcbService = {
         _id: doc.id,
         ...doc.data(),
       }));
+      const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
-      return {
-        data,
-        lastVisible: snapshot.docs[snapshot.docs.length - 1],
-      };
+      if (!isLoadMore) {
+        localCache.logs = data;
+        localCache.filtersKey = filterKey;
+        localCache.isDirty = false;
+        localCache.lastFetchTime = Date.now();
+      }
+      localCache.lastVisible = newLastVisible;
+
+      return { data, lastVisible: newLastVisible };
     } catch (error) {
       console.error("🔥 Firebase Query Error:", error);
       throw error;
@@ -123,6 +190,7 @@ const jcbService = {
       editHistory: [],
     };
     const docRef = await addDoc(jcbCollection, dataToSave);
+    markDirty();
     return { data: { _id: docRef.id, ...dataToSave } };
   },
 
@@ -142,7 +210,10 @@ const jcbService = {
     };
 
     currentHistory.push(currentEdit);
-    if (currentHistory.length > 10) currentHistory = currentHistory.slice(-10);
+    // 🚀 STRICT MAX 2 EDITS LIMIT TO PRESERVE PAYLOAD SIZE
+    if (currentHistory.length > 2) {
+      currentHistory = currentHistory.slice(currentHistory.length - 2);
+    }
 
     const dataToUpdate = {
       ...payload,
@@ -153,6 +224,7 @@ const jcbService = {
     };
 
     await updateDoc(docRef, dataToUpdate);
+    markDirty();
     return { message: "Updated" };
   },
 
@@ -161,22 +233,29 @@ const jcbService = {
       throw new Error("Action Denied: Managers cannot delete records.");
     }
     await deleteDoc(doc(db, "jcb_logs", id));
+    markDirty();
     return { message: "Deleted" };
   },
 
+  // 🚀 BATCH WIPE DATABASE (CHUNK LIMIT: 10,000/DAY)
   deleteAllLogs: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager") {
       throw new Error("Action Denied: Managers cannot wipe the database.");
     }
-    if (!password || !email) {
-      throw new Error("Authentication Error: Missing credentials.");
+
+    const today = new Date().toISOString().split("T")[0];
+    let wipeMeta = JSON.parse(
+      localStorage.getItem("jcb_wipe_meta") || '{"date":"","count":0}',
+    );
+
+    if (wipeMeta.date === today && wipeMeta.count >= 10000) {
+      throw new Error(
+        "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours to prevent backend crashes.",
+      );
     }
+    if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
 
     const currentUser = auth.currentUser;
-    if (!currentUser || currentUser.email !== email) {
-      throw new Error("Active session mismatch.");
-    }
-
     try {
       const credential = EmailAuthProvider.credential(
         currentUser.email,
@@ -187,17 +266,37 @@ const jcbService = {
       throw new Error("Access Denied: Incorrect Admin Password.");
     }
 
-    try {
-      const snapshot = await getDocs(jcbCollection);
-      const deletePromises = [];
-      snapshot.forEach((document) => {
-        deletePromises.push(deleteDoc(doc(db, "jcb_logs", document.id)));
-      });
-      await Promise.all(deletePromises);
-      return { success: true };
-    } catch (error) {
-      throw new Error("Failed to clear database. Admin rights required.");
+    let totalDeleted = 0;
+    let hasMore = true;
+    const maxAllowed = 10000 - wipeMeta.count;
+
+    while (hasMore && totalDeleted < maxAllowed) {
+      const currentBatchSize = Math.min(500, maxAllowed - totalDeleted);
+      const q = query(jcbCollection, limit(currentBatchSize));
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        hasMore = false;
+        break;
+      }
+
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      totalDeleted += snapshot.size;
     }
+
+    wipeMeta.count += totalDeleted;
+    localStorage.setItem("jcb_wipe_meta", JSON.stringify(wipeMeta));
+    markDirty();
+
+    if (totalDeleted >= maxAllowed && hasMore) {
+      return {
+        warning:
+          "10,000 records deleted. Daily limit reached. Come back tomorrow for the remaining records.",
+      };
+    }
+    return { success: true };
   },
 };
 
