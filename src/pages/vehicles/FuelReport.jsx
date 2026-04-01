@@ -50,20 +50,15 @@ const FuelReport = () => {
   const navigate = useNavigate();
 
   const [filters, setFilters] = useState(defaultFilters);
-
-  const [logs, setLogs] = useState(
-    () => fuelService.getCachedLogs(defaultFilters) || [],
-  );
-  const [loading, setLoading] = useState(
-    () => !fuelService.getCachedLogs(defaultFilters),
-  );
+  const [logs, setLogs] = useState([]);
 
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadedCount, setLoadedCount] = useState(0);
 
-  const [isSynced, setIsSynced] = useState(true);
+  // 🚀 Smart Sync State
+  const [syncStatus, setSyncStatus] = useState("syncing");
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -101,19 +96,7 @@ const FuelReport = () => {
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
 
   useEffect(() => {
-    const checkSync = () => {
-      const globalLastUpdate = parseInt(
-        localStorage.getItem("fuel_last_update") || "0",
-        10,
-      );
-      if (globalLastUpdate > fuelService.getLastFetchTime()) setIsSynced(false);
-    };
-    const interval = setInterval(checkSync, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (urlHighlightId && !loading) {
+    if (urlHighlightId && logs.length > 0) {
       setActiveHighlight(urlHighlightId);
       setTimeout(() => {
         const element = document.getElementById(urlHighlightId);
@@ -123,11 +106,12 @@ const FuelReport = () => {
       const timer = setTimeout(() => setActiveHighlight(null), 3500);
       return () => clearTimeout(timer);
     }
-  }, [urlHighlightId, loading]);
+  }, [urlHighlightId, logs.length]);
 
+  // 🚀 Pass 'force' parameter to bypass RAM cache
   const fetchLogs = async (isLoadMore = false, force = false) => {
     if (isLoadMore) setLoadingMore(true);
-    else if (logs.length === 0 || force) setLoading(true);
+    else setSyncStatus("syncing");
 
     try {
       const response = await fuelService.getLogs(
@@ -143,15 +127,15 @@ const FuelReport = () => {
       } else {
         setLogs(response.data || []);
         setLoadedCount(response.data?.length || 0);
-        setIsSynced(true);
+        setSyncStatus("synced"); // All Good
       }
 
       setLastDoc(response.lastVisible || null);
       setHasMore(response.data && response.data.length === 50);
     } catch (error) {
+      if (!isLoadMore) setSyncStatus("error");
       toast.error("Failed to load report data.");
     } finally {
-      setLoading(false);
       setLoadingMore(false);
     }
   };
@@ -172,7 +156,7 @@ const FuelReport = () => {
     try {
       await fuelService.deleteLog(deleteModal.id, admin?.data || admin);
       toast.success("Record deleted");
-      fetchLogs(false, true);
+      fetchLogs(false);
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -197,15 +181,14 @@ const FuelReport = () => {
     (filters.search ? 1 : 0);
 
   const handleFullBackup = async (monthToFetch = backupMonth) => {
+    // ... exactly the same backup logic as before ...
     try {
       if (!monthToFetch) return toast.error("Select a month");
-
       const today = new Date().toISOString().split("T")[0];
       let dlMeta = JSON.parse(
         localStorage.getItem(`backup_${monthToFetch}_meta`) ||
           '{"date":"","count":0,"lastId":null}',
       );
-
       if (dlMeta.date === today && dlMeta.count >= 10000)
         return toast.error(
           "Daily Download Limit (10,000) reached. Next batch available tomorrow.",
@@ -214,7 +197,6 @@ const FuelReport = () => {
         dlMeta.date = today;
         dlMeta.count = 0;
       }
-
       const fetchLimit = 10000 - dlMeta.count;
       toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
 
@@ -241,7 +223,6 @@ const FuelReport = () => {
         return toast.info(
           `All records for ${monthToFetch} downloaded completely.`,
         );
-
       const headers = [
         "Date",
         "Vehicle No",
@@ -277,7 +258,7 @@ const FuelReport = () => {
 
       if (snapshot.size === fetchLimit)
         toast.warning(
-          "10,000 Limit reached. System remembered the state. Download the next batch tomorrow.",
+          "10,000 Limit reached. Download the next batch tomorrow.",
         );
       else toast.success(`Backup completed (${snapshot.size} records)!`);
     } catch (e) {
@@ -299,7 +280,7 @@ const FuelReport = () => {
       else toast.success("Database wiped.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
-      fetchLogs(false, true);
+      fetchLogs(false);
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -327,18 +308,23 @@ const FuelReport = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 items-center">
+          {/* 🚀 Smart Sync Button -> onClick passes TRUE to force fetch */}
           <Button
             variant="ghost"
             onClick={() => fetchLogs(false, true)}
-            disabled={isSynced || loading}
-            className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+            disabled={syncStatus === "synced" || syncStatus === "syncing"}
+            className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-700 ${syncStatus === "synced" ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : syncStatus === "error" ? "text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 shadow-[0_0_15px_rgba(243,64,84,0.2)] animate-pulse" : "text-zinc-300 bg-zinc-800/40 border border-zinc-700/50"}`}
           >
-            {isSynced ? (
-              <CheckCircle2 size={16} />
-            ) : (
-              <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+            {syncStatus === "synced" && <CheckCircle2 size={16} />}
+            {syncStatus === "syncing" && (
+              <RefreshCcw size={16} className="animate-spin" />
             )}
-            {isSynced ? "Database Up to Date" : "Update Detected: Sync Now"}
+            {syncStatus === "error" && <AlertOctagon size={16} />}
+            {syncStatus === "synced"
+              ? "Up to Date"
+              : syncStatus === "syncing"
+                ? "Syncing..."
+                : "Sync Failed"}
           </Button>
 
           <div className="relative h-[44px] w-full sm:w-auto">
@@ -516,7 +502,7 @@ const FuelReport = () => {
         </div>
 
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
-          {loading && !loadingMore ? (
+          {syncStatus === "syncing" && logs.length === 0 ? (
             <div className="flex justify-center items-center h-64">
               <Loader />
             </div>
@@ -551,7 +537,7 @@ const FuelReport = () => {
                       <tr
                         key={log._id}
                         id={log._id}
-                        className={`transition-all duration-1000 ease-out group border-l-4 ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
+                        className={`transition-all duration-1000 ease-out group ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
                       >
                         <td className="p-5 px-6 align-top">
                           <p
@@ -716,7 +702,6 @@ const FuelReport = () => {
               <AlertOctagon size={24} />
               <h2 className="text-xl font-bold tracking-wide">Wipe Database</h2>
             </div>
-
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -754,7 +739,6 @@ const FuelReport = () => {
                 </div>
               </div>
             </div>
-
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
@@ -856,7 +840,7 @@ const FuelReport = () => {
                       >
                         {log.role || "ADMIN"}
                       </h4>
-                      <p className="text-zinc-500 text-[10px] font-mono mt-0.5">
+                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
                         {log.by || "admin@system.com"}
                       </p>
                       <p
@@ -868,12 +852,15 @@ const FuelReport = () => {
                           year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
+                          second: "2-digit",
                         })}
                       </p>
                     </div>
                   </div>
                   {index === 0 && (
-                    <div className="bg-indigo-500/10 border-indigo-500/20 text-indigo-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
+                    <div
+                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                    >
                       LATEST
                     </div>
                   )}
