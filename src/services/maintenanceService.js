@@ -15,24 +15,60 @@ import {
   getAggregateFromServer,
   sum,
   count,
+  writeBatch,
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const maintCollection = collection(db, "maintenances");
 
+// 🚀 GLOBAL CACHE TO PREVENT TAB-CHANGE READ LIMIT OVERLOAD
+let localCache = {
+  stats: null,
+  logs: null,
+  lastVisible: null,
+  filtersKey: "",
+  isDirty: true,
+  lastFetchTime: 0,
+};
+
+const markDirty = () => {
+  localCache.isDirty = true;
+  localStorage.setItem("maintenance_last_update", Date.now().toString());
+};
+
 const maintenanceService = {
-  // 1. 🚀 SERVER-SIDE STATS CALCULATION
-  getStats: async () => {
+  getLastFetchTime: () => localCache.lastFetchTime,
+  getCachedStats: () => (!localCache.isDirty ? localCache.stats : null),
+  getCachedLogs: (filters) => {
+    const key = JSON.stringify(filters);
+    if (
+      !localCache.isDirty &&
+      localCache.filtersKey === key &&
+      localCache.logs
+    ) {
+      return localCache.logs;
+    }
+    return null;
+  },
+
+  // 1. 🚀 SERVER-SIDE STATS CALCULATION WITH CACHING
+  getStats: async (force = false) => {
+    if (!force && !localCache.isDirty && localCache.stats) {
+      return localCache.stats; // 0 Reads!
+    }
+
     try {
       const q = query(maintCollection);
       const snapshot = await getAggregateFromServer(q, {
         totalCost: sum("cost"),
         serviceCount: count(),
       });
-      return {
+      const result = {
         totalCost: snapshot.data().totalCost || 0,
         serviceCount: snapshot.data().serviceCount || 0,
       };
+      localCache.stats = result;
+      return result;
     } catch (error) {
       console.warn("Aggregation failed, falling back to client calc:", error);
       const snap = await getDocs(query(maintCollection));
@@ -40,24 +76,40 @@ const maintenanceService = {
       snap.forEach((doc) => {
         totalCost += Number(doc.data().cost) || 0;
       });
-      return { totalCost, serviceCount: snap.size };
+      const result = { totalCost, serviceCount: snap.size };
+      localCache.stats = result;
+      return result;
     }
   },
 
-  // 2 & 3. 🚀 PAGINATION & 100% BACKEND FILTERING
-  getLogs: async (filters = {}, lastVisibleDoc = null, pageSize = 50) => {
+  // 2 & 3. 🚀 PAGINATION & CACHED FETCHING
+  getLogs: async (
+    filters = {},
+    lastVisibleDoc = null,
+    pageSize = 50,
+    force = false,
+  ) => {
+    const filterKey = JSON.stringify(filters);
+    const isLoadMore = !!lastVisibleDoc;
+
+    if (
+      !force &&
+      !localCache.isDirty &&
+      !isLoadMore &&
+      localCache.filtersKey === filterKey &&
+      localCache.logs
+    ) {
+      return { data: localCache.logs, lastVisible: localCache.lastVisible };
+    }
+
     try {
       let queryConstraints = [];
       let hasInequality = false;
 
-      // --- 1. EQUALITY FILTERS ---
       if (filters.exactDate) {
-        // Using strict equality for dates mapped to YYYY-MM-DD
         queryConstraints.push(where("date", "==", filters.exactDate));
       }
 
-      // --- 2. MUTUALLY EXCLUSIVE INEQUALITY FILTERS ---
-      // Firebase allows only ONE inequality filter. The UI locks ensure only one is passed.
       if (filters.search) {
         queryConstraints.push(where("vehicleNo", ">=", filters.search));
         queryConstraints.push(
@@ -102,12 +154,10 @@ const maintenanceService = {
         hasInequality = true;
       }
 
-      // Default sorting if no inequalities
       if (!hasInequality && !filters.exactDate) {
         queryConstraints.push(orderBy("date", "desc"));
       }
 
-      // --- 3. APPLY PAGINATION ---
       queryConstraints.push(limit(pageSize));
       if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
 
@@ -119,10 +169,17 @@ const maintenanceService = {
         ...doc.data(),
       }));
 
-      return {
-        data: fetchedData,
-        lastVisible: snapshot.docs[snapshot.docs.length - 1],
-      };
+      const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
+
+      if (!isLoadMore) {
+        localCache.logs = fetchedData;
+        localCache.filtersKey = filterKey;
+        localCache.isDirty = false;
+        localCache.lastFetchTime = Date.now();
+      }
+      localCache.lastVisible = newLastVisible;
+
+      return { data: fetchedData, lastVisible: newLastVisible };
     } catch (error) {
       console.error("Fetch Error:", error);
       throw error;
@@ -140,6 +197,7 @@ const maintenanceService = {
       editHistory: [],
     };
     const docRef = await addDoc(maintCollection, dataToSave);
+    markDirty();
     return { data: { _id: docRef.id, ...dataToSave } };
   },
 
@@ -159,7 +217,11 @@ const maintenanceService = {
     };
 
     currentHistory.push(currentEdit);
-    if (currentHistory.length > 10) currentHistory = currentHistory.slice(-10);
+
+    // 🚀 STRICT MAX 2 EDITS LIMIT TO PRESERVE PAYLOAD SIZE
+    if (currentHistory.length > 2) {
+      currentHistory = currentHistory.slice(-2);
+    }
 
     const dataToUpdate = {
       ...payload,
@@ -171,10 +233,10 @@ const maintenanceService = {
     };
 
     await updateDoc(docRef, dataToUpdate);
+    markDirty();
     return { message: "Updated" };
   },
 
-  // 4. 🚀 BACKEND SECURITY (RBAC Check)
   deleteLog: async (id, user) => {
     const userRole = user?.data?.role || user?.role;
     if (userRole === "manager") {
@@ -182,23 +244,33 @@ const maintenanceService = {
     }
     const docRef = doc(db, "maintenances", id);
     await deleteDoc(docRef);
+    markDirty();
     return { message: "Deleted" };
   },
 
-  // 4. 🚀 BACKEND SECURITY WIPE FEATURE (Password Re-Auth + RBAC)
+  // 🚀 BATCH WIPE DATABASE (CHUNK LIMIT: 10,000/DAY)
   deleteAllLogs: async ({ password, email, user }) => {
     const userRole = user?.data?.role || user?.role;
-    if (userRole === "manager") {
+    if (userRole === "manager")
       throw new Error("Action Denied: Managers cannot wipe the database.");
-    }
-    if (!password || !email) {
+    if (!password || !email)
       throw new Error("Authentication Error: Missing credentials.");
+
+    const today = new Date().toISOString().split("T")[0];
+    let wipeMeta = JSON.parse(
+      localStorage.getItem("maintenance_wipe_meta") || '{"date":"","count":0}',
+    );
+
+    if (wipeMeta.date === today && wipeMeta.count >= 10000) {
+      throw new Error(
+        "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours to prevent backend crashes.",
+      );
     }
+    if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
 
     const currentUser = auth.currentUser;
-    if (!currentUser || currentUser.email !== email) {
+    if (!currentUser || currentUser.email !== email)
       throw new Error("Active session mismatch.");
-    }
 
     try {
       const credential = EmailAuthProvider.credential(
@@ -210,16 +282,40 @@ const maintenanceService = {
       throw new Error("Access Denied: Incorrect Admin Password.");
     }
 
+    let totalDeleted = 0;
+    let hasMore = true;
+    const maxAllowed = 10000 - wipeMeta.count;
+
     try {
-      const snapshot = await getDocs(maintCollection);
-      const deletePromises = [];
-      snapshot.forEach((document) => {
-        deletePromises.push(deleteDoc(doc(db, "maintenances", document.id)));
-      });
-      await Promise.all(deletePromises);
+      while (hasMore && totalDeleted < maxAllowed) {
+        const currentBatchSize = Math.min(500, maxAllowed - totalDeleted);
+        const q = query(maintCollection, limit(currentBatchSize));
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+          hasMore = false;
+          break;
+        }
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        totalDeleted += snapshot.size;
+      }
+
+      wipeMeta.count += totalDeleted;
+      localStorage.setItem("maintenance_wipe_meta", JSON.stringify(wipeMeta));
+      markDirty();
+
+      if (totalDeleted >= maxAllowed && hasMore) {
+        return {
+          warning:
+            "10,000 records deleted. Daily limit reached. Come back tomorrow for the remaining records.",
+        };
+      }
       return { success: true };
     } catch (error) {
-      throw new Error("Failed to clear database. Admin rights required.");
+      throw new Error("Failed to clear database.");
     }
   },
 };
