@@ -21,20 +21,17 @@ import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const fuelCollection = collection(db, "fuels");
 
-// 🚀 GLOBAL CACHE TO PREVENT TAB-CHANGE READ LIMIT OVERLOAD
-let localCache = {
+// 🚀 THE MAGIC BULLET: In-Memory Cache for ZERO Reads on Navigation
+let memoryCache = {
   stats: null,
   logs: null,
-  lastVisible: null,
   filtersKey: "",
-  isDirty: true,
-  lastFetchTime: 0,
+  isDirty: true, // TRUE means it MUST fetch from Firebase
 };
 
-// Call this whenever data is modified to force tabs to fetch fresh data
+// Trigger this when data is added/edited/deleted
 const markDirty = () => {
-  localCache.isDirty = true;
-  localStorage.setItem("fuel_last_update", Date.now().toString());
+  memoryCache.isDirty = true;
 };
 
 const fuelService = {
@@ -46,26 +43,11 @@ const fuelService = {
   startAfter,
   getDocs,
 
-  getLastFetchTime: () => localCache.lastFetchTime,
-
-  // 🚀 SYNCHRONOUS CACHE GETTERS TO ELIMINATE UI LOADER FLICKER
-  getCachedStats: () => (!localCache.isDirty ? localCache.stats : null),
-  getCachedLogs: (filters) => {
-    const key = JSON.stringify(filters);
-    if (
-      !localCache.isDirty &&
-      localCache.filtersKey === key &&
-      localCache.logs
-    ) {
-      return localCache.logs;
-    }
-    return null;
-  },
-
-  // 🚀 ATOMIC AGGREGATION WITH SMART FALLBACK FOR STRINGS/INDEXES
-  getStats: async (force = false) => {
-    if (!force && !localCache.isDirty && localCache.stats) {
-      return localCache.stats; // 0 Reads (Cached)
+  // 🚀 STATS: 0 READS ON NAVIGATION
+  getStats: async (forceRefresh = false) => {
+    // If not forced, not dirty, and exists in memory -> RETURN INSTANTLY (0 Reads)
+    if (!forceRefresh && !memoryCache.isDirty && memoryCache.stats) {
+      return memoryCache.stats;
     }
 
     try {
@@ -80,76 +62,72 @@ const fuelService = {
       let totalCost = snapshot.data().totalCost || 0;
       let refuelCount = snapshot.data().refuelCount || 0;
 
-      // 🔥 If count > 0 but sums are 0, old data was saved as STRINGS. Fallback.
+      // 🔥 Fallback Trigger: Agar count > 0 hai par sum 0 aa raha hai, iska matlab purana data 'string' format mein hai.
+      // Aise mein hum intentionally error throw karenge taaki fallback (catch block) chale.
       if (refuelCount > 0 && totalLiters === 0 && totalCost === 0) {
-        console.warn(
-          "Detected string-based numbers in Firebase. Falling back to client calculation.",
-        );
-        const snap = await getDocs(q);
-        totalLiters = 0;
-        totalCost = 0;
-        snap.forEach((doc) => {
-          totalLiters += Number(doc.data().liters) || 0;
-          totalCost += Number(doc.data().totalCost) || 0;
-        });
+        throw new Error("String data detected, forcing client fallback");
       }
 
       const result = { totalLiters, totalCost, refuelCount };
-      localCache.stats = result;
+      memoryCache.stats = result; // 💾 Save to RAM
       return result;
     } catch (error) {
+      // ⚠️ ULTIMATE FALLBACK: Agar Server Aggregation fail ho jaye (Offline, String Data, ya Rules error)
       console.warn(
-        "Server Aggregation failed. Executing fallback calculation.",
+        "Aggregation failed. Executing fallback manual calculation.",
       );
       try {
         const snap = await getDocs(query(fuelCollection));
         let totalLiters = 0;
         let totalCost = 0;
+
         snap.forEach((doc) => {
           totalLiters += Number(doc.data().liters) || 0;
           totalCost += Number(doc.data().totalCost) || 0;
         });
 
         const result = { totalLiters, totalCost, refuelCount: snap.size };
-        localCache.stats = result;
+        memoryCache.stats = result; // 💾 Save to RAM
         return result;
       } catch (fallbackError) {
+        console.error("Fallback calculation also failed:", fallbackError);
         return { totalLiters: 0, totalCost: 0, refuelCount: 0 };
       }
     }
   },
 
-  // 🚀 PAGINATED & CACHED SEARCH
+  // 🚀 LOGS: 0 READS ON NAVIGATION
   getLogs: async (
     filters = {},
     lastVisibleDoc = null,
     limitCount = 50,
-    force = false,
+    forceRefresh = false,
   ) => {
     const filterKey = JSON.stringify(filters);
     const isLoadMore = !!lastVisibleDoc;
 
+    // If not forced, not dirty, not loading more, and filters match -> RETURN INSTANTLY (0 Reads)
     if (
-      !force &&
-      !localCache.isDirty &&
+      !forceRefresh &&
+      !memoryCache.isDirty &&
       !isLoadMore &&
-      localCache.filtersKey === filterKey &&
-      localCache.logs
+      memoryCache.logs &&
+      memoryCache.filtersKey === filterKey
     ) {
-      return { data: localCache.logs, lastVisible: localCache.lastVisible };
+      return { data: memoryCache.logs, lastVisible: null };
     }
 
     let constraints = [];
     let hasInequality = false;
 
-    if (filters.exactDate) {
+    if (filters.exactDate)
       constraints.push(where("date", "==", filters.exactDate));
-    }
-
     if (filters.search) {
-      constraints.push(where("vehicleNo", ">=", filters.search));
-      constraints.push(where("vehicleNo", "<=", filters.search + "\uf8ff"));
-      constraints.push(orderBy("vehicleNo"));
+      constraints.push(
+        where("vehicleNo", ">=", filters.search),
+        where("vehicleNo", "<=", filters.search + "\uf8ff"),
+        orderBy("vehicleNo"),
+      );
       hasInequality = true;
     } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
       if (filters.amountFilter === "Under ₹5k")
@@ -174,18 +152,15 @@ const fuelService = {
       else if (filters.dateFilter === "Last7Days")
         pastDate.setDate(today.getDate() - 7);
       else if (filters.dateFilter === "ThisMonth") pastDate.setDate(1);
-
       constraints.push(
         where("date", ">=", pastDate.toISOString().split("T")[0]),
+        orderBy("date", "desc"),
       );
-      constraints.push(orderBy("date", "desc"));
       hasInequality = true;
     }
 
-    if (!hasInequality && !filters.exactDate) {
+    if (!hasInequality && !filters.exactDate)
       constraints.push(orderBy("date", "desc"));
-    }
-
     constraints.push(limit(limitCount));
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
@@ -196,16 +171,13 @@ const fuelService = {
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
       if (!isLoadMore) {
-        localCache.logs = data;
-        localCache.filtersKey = filterKey;
-        localCache.isDirty = false;
-        localCache.lastFetchTime = Date.now();
+        memoryCache.logs = data; // 💾 Save to RAM
+        memoryCache.filtersKey = filterKey;
+        memoryCache.isDirty = false; // System is now clean and up-to-date
       }
-      localCache.lastVisible = newLastVisible;
 
       return { data, lastVisible: newLastVisible };
     } catch (error) {
-      console.error("Firebase Query Error:", error);
       throw error;
     }
   },
@@ -222,7 +194,7 @@ const fuelService = {
       editHistory: [],
     };
     const docRef = await addDoc(fuelCollection, dataToSave);
-    markDirty();
+    markDirty(); // Database changed, invalidate RAM cache
     return { data: { _id: docRef.id, ...dataToSave } };
   },
 
@@ -239,11 +211,8 @@ const fuelService = {
       role: user?.role || "Admin",
       at: new Date().toISOString(),
     });
-
-    // 🚀 STRICT MAX 2 EDITS LIMIT TO PRESERVE PAYLOAD SIZE
-    if (currentHistory.length > 2) {
+    if (currentHistory.length > 2)
       currentHistory = currentHistory.slice(currentHistory.length - 2);
-    }
 
     await updateDoc(docRef, {
       ...payload,
@@ -254,7 +223,8 @@ const fuelService = {
       lastEditedAt: currentHistory[currentHistory.length - 1].at,
       editHistory: currentHistory,
     });
-    markDirty();
+
+    markDirty(); // Database changed, invalidate RAM cache
     return { message: "Updated" };
   },
 
@@ -262,25 +232,19 @@ const fuelService = {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Action Denied.");
     await deleteDoc(doc(db, "fuels", id));
-    markDirty();
+    markDirty(); // Database changed, invalidate RAM cache
     return { message: "Deleted" };
   },
 
-  // 🚀 BATCH WIPE DATABASE (CHUNK LIMIT: 10,000/DAY)
   deleteAllLogs: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Action Denied.");
-
     const today = new Date().toISOString().split("T")[0];
     let wipeMeta = JSON.parse(
       localStorage.getItem("fuel_wipe_meta") || '{"date":"","count":0}',
     );
-
-    if (wipeMeta.date === today && wipeMeta.count >= 10000) {
-      throw new Error(
-        "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours to prevent backend crashes.",
-      );
-    }
+    if (wipeMeta.date === today && wipeMeta.count >= 10000)
+      throw new Error("Daily Wipe Limit Reached.");
     if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
 
     const currentUser = auth.currentUser;
@@ -294,20 +258,17 @@ const fuelService = {
       throw new Error("Incorrect Admin Password.");
     }
 
-    let totalDeleted = 0;
-    let hasMore = true;
+    let totalDeleted = 0,
+      hasMore = true;
     const maxAllowed = 10000 - wipeMeta.count;
 
     while (hasMore && totalDeleted < maxAllowed) {
-      const currentBatchSize = Math.min(500, maxAllowed - totalDeleted);
-      const q = query(fuelCollection, limit(currentBatchSize));
+      const q = query(
+        fuelCollection,
+        limit(Math.min(500, maxAllowed - totalDeleted)),
+      );
       const snapshot = await getDocs(q);
-
-      if (snapshot.empty) {
-        hasMore = false;
-        break;
-      }
-
+      if (snapshot.empty) break;
       const batch = writeBatch(db);
       snapshot.docs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
@@ -316,14 +277,10 @@ const fuelService = {
 
     wipeMeta.count += totalDeleted;
     localStorage.setItem("fuel_wipe_meta", JSON.stringify(wipeMeta));
-    markDirty();
+    markDirty(); // Database wiped, invalidate RAM cache
 
-    if (totalDeleted >= maxAllowed && hasMore) {
-      return {
-        warning:
-          "10,000 records deleted. Daily limit reached. Come back tomorrow for the remaining records.",
-      };
-    }
+    if (totalDeleted >= maxAllowed && hasMore)
+      return { warning: "10,000 records deleted. Come back tomorrow." };
     return { success: true };
   },
 };
