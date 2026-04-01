@@ -15,6 +15,7 @@ import {
   Edit2,
   CheckCircle2,
   RefreshCcw,
+  AlertOctagon,
   X,
 } from "lucide-react";
 import Button from "../../components/common/Button";
@@ -68,28 +69,17 @@ const FuelTracker = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [stats, setStats] = useState(
-    () =>
-      fuelService.getCachedStats() || {
-        totalLiters: 0,
-        totalCost: 0,
-        refuelCount: 0,
-      },
-  );
-  const [logs, setLogs] = useState(() => {
-    const cached = fuelService.getCachedLogs(defaultFilters);
-    return cached ? cached.slice(0, 10) : [];
+  const [stats, setStats] = useState({
+    totalLiters: 0,
+    totalCost: 0,
+    refuelCount: 0,
   });
-
-  const [loading, setLoading] = useState(() => {
-    return !(
-      fuelService.getCachedStats() && fuelService.getCachedLogs(defaultFilters)
-    );
-  });
-
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [isSynced, setIsSynced] = useState(true);
+  const [oldLogData, setOldLogData] = useState(null);
+  const [syncStatus, setSyncStatus] = useState("syncing");
 
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
@@ -125,20 +115,9 @@ const FuelTracker = () => {
     (parseFloat(formData.liters) || 0) *
     (parseFloat(formData.pricePerLiter) || 0);
 
-  useEffect(() => {
-    const checkSync = () => {
-      const globalLastUpdate = parseInt(
-        localStorage.getItem("fuel_last_update") || "0",
-        10,
-      );
-      if (globalLastUpdate > fuelService.getLastFetchTime()) setIsSynced(false);
-    };
-    const interval = setInterval(checkSync, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
+  // 🚀 Pass 'force' parameter to bypass RAM cache on manual click
   const fetchData = async (force = false) => {
-    if (force) setLoading(true);
+    setSyncStatus("syncing");
     try {
       const [statsRes, logsRes] = await Promise.all([
         fuelService.getStats(force),
@@ -146,14 +125,16 @@ const FuelTracker = () => {
       ]);
       setStats(statsRes);
       setLogs(logsRes.data ? logsRes.data.slice(0, 10) : []);
-      setIsSynced(true);
+      setSyncStatus("synced");
     } catch (err) {
       toast.error("Failed to load tracking data.");
+      setSyncStatus("error");
     } finally {
       setLoading(false);
     }
   };
 
+  // On Navigation Sidebar click, it calls fetchData(false) -> 0 Reads!
   useEffect(() => {
     fetchData();
   }, []);
@@ -162,6 +143,7 @@ const FuelTracker = () => {
     if (location.state && location.state.editLog) {
       const log = location.state.editLog;
       setEditId(log._id);
+      setOldLogData(log);
       setFormData({
         date: log.date
           ? new Date(log.date).toISOString().split("T")[0]
@@ -215,13 +197,37 @@ const FuelTracker = () => {
 
       if (editId) {
         await fuelService.updateLog(editId, payload, currentUser);
+        // 🚀 Optimistic Math (0 Reads for Stats)
+        const diffLiters =
+          Number(payload.liters) - Number(oldLogData?.liters || 0);
+        const diffCost = calculatedTotal - Number(oldLogData?.totalCost || 0);
+        setStats((prev) => ({
+          totalLiters: prev.totalLiters + diffLiters,
+          totalCost: prev.totalCost + diffCost,
+          refuelCount: prev.refuelCount,
+        }));
         toast.success("Fuel log updated!");
       } else {
         await fuelService.addLog(payload, currentUser);
+        // 🚀 Optimistic Math (0 Reads for Stats)
+        setStats((prev) => ({
+          totalLiters: prev.totalLiters + Number(payload.liters),
+          totalCost: prev.totalCost + calculatedTotal,
+          refuelCount: prev.refuelCount + 1,
+        }));
         toast.success("Fuel logged successfully!");
       }
+
       resetForm();
-      fetchData(true);
+      // Fetch only the logs list to show the new record (this will hit Firebase because isDirty was set to true)
+      const logsRes = await fuelService.getLogs(
+        defaultFilters,
+        null,
+        10,
+        false,
+      );
+      setLogs(logsRes.data ? logsRes.data.slice(0, 10) : []);
+      setSyncStatus("synced");
     } catch (err) {
       toast.error("Failed to save log.");
     } finally {
@@ -241,6 +247,7 @@ const FuelTracker = () => {
 
   const resetForm = () => {
     setEditId(null);
+    setOldLogData(null);
     setFormData(initialForm);
   };
 
@@ -254,7 +261,7 @@ const FuelTracker = () => {
     navigate(`${basePath}/fuel/report?highlight=${id}`);
   };
 
-  if (loading)
+  if (loading && logs.length === 0)
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader />
@@ -278,18 +285,23 @@ const FuelTracker = () => {
           </p>
         </div>
 
+        {/* 🚀 Smart Sync Button -> onClick passes TRUE to force bypass RAM cache */}
         <Button
           variant="ghost"
           onClick={() => fetchData(true)}
-          disabled={isSynced || loading}
-          className={`flex items-center gap-2 h-[40px] px-4 rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+          disabled={syncStatus === "synced" || syncStatus === "syncing"}
+          className={`flex items-center gap-2 h-[40px] px-4 rounded-xl font-bold text-xs tracking-wider transition-all duration-700 w-full sm:w-auto justify-center ${syncStatus === "synced" ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : syncStatus === "error" ? "text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 shadow-[0_0_15px_rgba(243,64,84,0.2)] animate-pulse" : "text-zinc-300 bg-zinc-800/40 border border-zinc-700/50"}`}
         >
-          {isSynced ? (
-            <CheckCircle2 size={16} />
-          ) : (
-            <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+          {syncStatus === "synced" && <CheckCircle2 size={16} />}
+          {syncStatus === "syncing" && (
+            <RefreshCcw size={16} className="animate-spin" />
           )}
-          {isSynced ? "Dashboard Up to Date" : "Sync Required"}
+          {syncStatus === "error" && <AlertOctagon size={16} />}
+          {syncStatus === "synced"
+            ? "Up to Date"
+            : syncStatus === "syncing"
+              ? "Syncing..."
+              : "Sync Failed - Retry"}
         </Button>
       </div>
 
@@ -301,14 +313,13 @@ const FuelTracker = () => {
             <div
               className={`absolute top-0 right-0 w-64 h-64 blur-[80px] rounded-full pointer-events-none ${theme.glowOrb}`}
             ></div>
-
             <div className="flex justify-between items-center mb-6 relative z-10">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 {editId ? (
                   <Edit2 size={18} className={theme.primaryText} />
                 ) : (
                   <Save size={18} className={theme.primaryText} />
-                )}
+                )}{" "}
                 {editId ? "Update Fuel Log" : "Log Refuel"}
               </h3>
               {editId && (
@@ -350,7 +361,6 @@ const FuelTracker = () => {
                   className="uppercase"
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <GlassInput
                   theme={theme}
@@ -494,7 +504,6 @@ const FuelTracker = () => {
                     const latestLog = hasEdits
                       ? log.editHistory[log.editHistory.length - 1]
                       : null;
-
                     return (
                       <tr
                         key={log._id}
@@ -509,7 +518,6 @@ const FuelTracker = () => {
                             <Truck size={14} className="text-zinc-600" />{" "}
                             {log.vehicleNo}
                           </p>
-
                           {hasEdits && (
                             <div
                               onClick={(e) => openHistory(e, log)}
@@ -540,7 +548,6 @@ const FuelTracker = () => {
                             </div>
                           )}
                         </td>
-
                         <td className="p-3 align-top">
                           <div
                             className={`text-[11px] text-zinc-300 mb-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2 py-1 rounded font-medium border border-zinc-800 uppercase tracking-wide`}
@@ -558,7 +565,6 @@ const FuelTracker = () => {
                             /L
                           </div>
                         </td>
-
                         <td className="p-3 text-right align-top">
                           <p className="text-lg font-black text-white font-mono drop-shadow-sm mb-2">
                             ₹
@@ -616,7 +622,6 @@ const FuelTracker = () => {
                 <X size={18} />
               </button>
             </div>
-
             <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
               {historyModal.data.map((log, index) => (
                 <div
