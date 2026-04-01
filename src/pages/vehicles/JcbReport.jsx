@@ -22,13 +22,13 @@ import {
   User,
   Phone,
   MapPin,
-  Timer,
   RefreshCcw,
+  CheckCircle2,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import Button from "../../components/common/Button";
-import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
 const getPreviousMonthString = () => {
@@ -38,17 +38,34 @@ const getPreviousMonthString = () => {
   return `${d.getFullYear()}-${m}`;
 };
 
+const defaultFilters = {
+  search: "",
+  vehicleFilter: "All",
+  dateFilter: "All",
+  exactDate: "",
+};
+
 const JcbReport = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  const [filters, setFilters] = useState(defaultFilters);
+
+  const [logs, setLogs] = useState(
+    () => jcbService.getCachedLogs(defaultFilters) || [],
+  );
+  const [loading, setLoading] = useState(
+    () => !jcbService.getCachedLogs(defaultFilters),
+  );
 
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadedCount, setLoadedCount] = useState(0);
+
+  const [isSynced, setIsSynced] = useState(true);
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -67,11 +84,7 @@ const JcbReport = () => {
     primaryFocus: isTransport
       ? "focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
       : "focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50",
-    primaryTabBg: isTransport
-      ? "bg-[#0ea5e9] text-white shadow-lg shadow-[#0ea5e9]/20"
-      : "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20",
     glowOrb: isTransport ? "bg-[#0ea5e9]/5" : "bg-indigo-500/5",
-    iconColor: isTransport ? "text-[#38bdf8]" : "text-indigo-400",
   };
 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
@@ -87,18 +100,24 @@ const JcbReport = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [wiping, setWiping] = useState(false);
 
-  const [filters, setFilters] = useState({
-    search: "",
-    vehicleFilter: "All",
-    dateFilter: "All",
-    exactDate: "",
-  });
-
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
+
+  // 🚀 CHECK SYNC STATUS EVERY 2 SECONDS
+  useEffect(() => {
+    const checkSync = () => {
+      const globalLastUpdate = parseInt(
+        localStorage.getItem("jcb_last_update") || "0",
+        10,
+      );
+      if (globalLastUpdate > jcbService.getLastFetchTime()) setIsSynced(false);
+    };
+    const interval = setInterval(checkSync, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const checkBackupNeeded = async () => {
@@ -106,13 +125,13 @@ const JcbReport = () => {
 
       if (!localStorage.getItem(`backup_jcb_${prevMonth}`)) {
         try {
-          const q = query(
-            collection(db, "jcb_logs"),
-            where("date", ">=", prevMonth),
-            where("date", "<=", prevMonth + "\uf8ff"),
-            limit(1),
+          const q = jcbService.query(
+            jcbService.collection(db, "jcb_logs"),
+            jcbService.where("date", ">=", prevMonth),
+            jcbService.where("date", "<=", prevMonth + "\uf8ff"),
+            jcbService.limit(1),
           );
-          const snap = await getDocs(q);
+          const snap = await jcbService.getDocs(q);
 
           if (!snap.empty) {
             setShowBackupWarning(prevMonth);
@@ -139,18 +158,27 @@ const JcbReport = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 100% BACKEND FETCH LOGIC
-  const fetchLogs = async (isLoadMore = false) => {
+  // 🚀 100% CACHED FETCH LOGIC
+  const fetchLogs = async (isLoadMore = false, force = false) => {
     if (isLoadMore) setLoadingMore(true);
-    else setLoading(true);
+    else if (logs.length === 0 || force) setLoading(true);
 
     try {
       const response = await jcbService.getLogs(
         filters,
         isLoadMore ? lastDoc : null,
+        50,
+        force,
       );
-      if (isLoadMore) setLogs((prev) => [...prev, ...(response.data || [])]);
-      else setLogs(response.data || []);
+
+      if (isLoadMore) {
+        setLogs((prev) => [...prev, ...(response.data || [])]);
+        setLoadedCount((prev) => prev + (response.data?.length || 0));
+      } else {
+        setLogs(response.data || []);
+        setLoadedCount(response.data?.length || 0);
+        setIsSynced(true);
+      }
 
       setLastDoc(response.lastVisible || null);
       setHasMore(response.data && response.data.length === 50);
@@ -184,7 +212,7 @@ const JcbReport = () => {
       const currentUser = admin?.data || admin || {};
       await jcbService.deleteLog(deleteModal.id, currentUser);
       toast.success("JCB record deleted successfully");
-      fetchLogs(false);
+      fetchLogs(false, true);
     } catch (error) {
       toast.error(error.message || "Failed to delete record");
     } finally {
@@ -207,21 +235,52 @@ const JcbReport = () => {
     (filters.exactDate ? 1 : 0) +
     (filters.search ? 1 : 0);
 
+  // 🚀 SMART BACKUP WITH 10,000 CHUNK LIMIT
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
-      toast.info(`Fetching backup for ${monthToFetch}... Please wait.`);
 
-      const q = query(
-        collection(db, "jcb_logs"),
-        where("date", ">=", monthToFetch),
-        where("date", "<=", monthToFetch + "\uf8ff"),
+      const today = new Date().toISOString().split("T")[0];
+      let dlMeta = JSON.parse(
+        localStorage.getItem(`backup_jcb_${monthToFetch}_meta`) ||
+          '{"date":"","count":0,"lastId":null}',
       );
-      const snapshot = await getDocs(q);
-      const allData = snapshot.docs.map((doc) => doc.data());
 
-      if (allData.length === 0)
-        return toast.info(`No records found for ${monthToFetch}.`);
+      if (dlMeta.date === today && dlMeta.count >= 10000)
+        return toast.error(
+          "Daily Download Limit (10,000) reached. Next batch available tomorrow.",
+        );
+      if (dlMeta.date !== today) {
+        dlMeta.date = today;
+        dlMeta.count = 0;
+      }
+
+      const fetchLimit = 10000 - dlMeta.count;
+      toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
+
+      const qConstraints = [
+        jcbService.where("date", ">=", monthToFetch),
+        jcbService.where("date", "<=", monthToFetch + "\uf8ff"),
+        jcbService.orderBy("date"),
+        jcbService.limit(fetchLimit),
+      ];
+
+      if (dlMeta.lastId) {
+        const lastDocRef = await getDoc(doc(db, "jcb_logs", dlMeta.lastId));
+        if (lastDocRef.exists())
+          qConstraints.push(jcbService.startAfter(lastDocRef));
+      }
+
+      const q = jcbService.query(
+        jcbService.collection(db, "jcb_logs"),
+        ...qConstraints,
+      );
+      const snapshot = await jcbService.getDocs(q);
+
+      if (snapshot.empty)
+        return toast.info(
+          `All records for ${monthToFetch} downloaded completely.`,
+        );
 
       const headers = [
         "Date",
@@ -235,68 +294,46 @@ const JcbReport = () => {
         "Total Minutes",
         "Total Mins (Agg)",
       ];
-      const rows = allData.map((log) => {
+
+      const rows = snapshot.docs.map((document) => {
+        const log = document.data();
         let dateStr = log.date
           ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
           : "-";
         return `${dateStr},"${log.vehicleNo}","${log.customerName}","${log.phone}","${log.location}","${log.startTime}","${log.endTime}",${log.totalHours},${log.totalMinutes},${log.totalMins}`;
       });
+
       const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.setAttribute("download", `Full_Backup_JCB_${monthToFetch}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      toast.success(`Backup for ${monthToFetch} downloaded securely!`);
-
-      localStorage.setItem(`backup_jcb_${monthToFetch}`, "true");
-      if (showBackupWarning === monthToFetch) {
-        setShowBackupWarning(null);
-      }
-    } catch (e) {
-      console.error(e);
-      toast.error("Backup failed.");
-    }
-  };
-
-  const handleExport = () => {
-    try {
-      if (logs.length === 0) return toast.info("No records to export");
-      const headers = [
-        "Date",
-        "Vehicle No",
-        "Customer Name",
-        "Phone",
-        "Location",
-        "Start Time",
-        "End Time",
-        "Total Hours",
-        "Total Minutes",
-      ];
-      const rows = logs.map((log) => {
-        let dateStr = log.date
-          ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
-          : "-";
-        return `${dateStr},"${log.vehicleNo}","${log.customerName}","${log.phone}","${log.location}","${log.startTime}","${log.endTime}",${log.totalHours},${log.totalMinutes}`;
-      });
-      const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
       link.setAttribute(
         "download",
-        `JCB_View_Report_${new Date().toISOString().split("T")[0]}.csv`,
+        `Backup_JCB_${monthToFetch}_Part${Math.floor(dlMeta.count / 10000) + 1}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success("Visible records exported to CSV");
-    } catch (error) {
-      toast.error("Export failed");
+
+      dlMeta.count += snapshot.size;
+      dlMeta.lastId = snapshot.docs[snapshot.docs.length - 1].id;
+      localStorage.setItem(
+        `backup_jcb_${monthToFetch}_meta`,
+        JSON.stringify(dlMeta),
+      );
+
+      if (snapshot.size === fetchLimit)
+        toast.warning(
+          "10,000 Limit reached. System remembered the state. Download the next batch tomorrow.",
+        );
+      else {
+        toast.success(`Backup completed (${snapshot.size} records)!`);
+        localStorage.setItem(`backup_jcb_${monthToFetch}`, "true");
+        if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Backup failed.");
     }
   };
 
@@ -306,29 +343,23 @@ const JcbReport = () => {
     setWiping(true);
     try {
       const currentUser = admin?.data || admin || {};
-      await jcbService.deleteAllLogs({
+      const response = await jcbService.deleteAllLogs({
         password: deletePassword,
         email: currentUser.email,
         user: currentUser,
       });
-      toast.success("JCB database cleared successfully.");
+      if (response.warning) toast.warning(response.warning);
+      else toast.success("JCB database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchLogs(false);
+      fetchLogs(false, true);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
       setWiping(false);
     }
   };
-
-  if (loading)
-    return (
-      <div className="flex justify-center items-center h-64">
-        <Loader />
-      </div>
-    );
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
@@ -350,6 +381,20 @@ const JcbReport = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row items-center gap-3">
+          <Button
+            variant="ghost"
+            onClick={() => fetchLogs(false, true)}
+            disabled={isSynced || loading}
+            className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+          >
+            {isSynced ? (
+              <CheckCircle2 size={16} />
+            ) : (
+              <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+            )}
+            {isSynced ? "Database Up to Date" : "Update Detected: Sync Now"}
+          </Button>
+
           <div className="relative w-full sm:w-auto">
             <button
               onClick={() =>
@@ -433,12 +478,7 @@ const JcbReport = () => {
               }
             />
           </div>
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 h-11 px-5 rounded-xl text-xs font-bold tracking-widest uppercase border border-zinc-800 text-zinc-300 bg-transparent hover:text-white hover:bg-zinc-800/50 transition-colors w-full sm:w-auto justify-center"
-          >
-            <Download size={16} /> Export View
-          </button>
+          {/* EXPORT BUTTON COMPLETELY REMOVED FROM HERE */}
         </div>
 
         <div className="p-4 border-b bg-[#09090B] flex flex-wrap items-center gap-4 relative z-20 border-zinc-800/60">
@@ -544,153 +584,202 @@ const JcbReport = () => {
           )}
         </div>
 
-        <div className="overflow-x-auto pb-4 custom-scrollbar">
-          <table className="w-full text-left border-collapse min-w-[800px]">
-            <thead>
-              <tr className="bg-transparent text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800/60">
-                <th className="py-4 px-6 whitespace-nowrap">Date & Vehicle</th>
-                <th className="py-4 px-6 whitespace-nowrap">Customer Info</th>
-                <th className="py-4 px-6 whitespace-nowrap">Time Log</th>
-                <th className="py-4 px-6 text-right whitespace-nowrap">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/60 text-sm">
-              {logs.map((log) => {
-                const hasEdits = log.editHistory && log.editHistory.length > 0;
-                const latestLog = hasEdits
-                  ? log.editHistory[log.editHistory.length - 1]
-                  : null;
-
-                return (
-                  <tr
-                    key={log._id}
-                    id={log._id}
-                    className={`transition-all duration-1000 ease-out group border-l-4 ${
-                      activeHighlight === log._id
-                        ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
-                        : "border-transparent hover:bg-zinc-800/30"
-                    }`}
-                  >
-                    <td className="p-5 px-6 align-top">
-                      <p
-                        className={`text-[11px] font-mono text-zinc-400 mb-1.5`}
-                      >
-                        {new Date(log.date).toLocaleDateString("en-GB")}
-                      </p>
-                      <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
-                        <Truck size={14} className={`text-zinc-500`} />{" "}
-                        {log.vehicleNo}
-                      </p>
-                      {hasEdits && (
-                        <div
-                          onClick={() => openHistory(log)}
-                          className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
-                        >
-                          <History size={10} className="text-zinc-400" />
-                          <span
-                            className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
-                          >
-                            {latestLog.role || "ADMIN"}
-                          </span>
-                          {log.editHistory.length > 1 && (
-                            <span className="bg-zinc-700/50 text-zinc-300 px-1 py-0.5 rounded text-[8px] ml-1">
-                              +{log.editHistory.length - 1} MORE
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-5 px-6 align-top">
-                      <div className="font-bold text-white text-md tracking-wide flex items-center gap-2 mb-1.5">
-                        <User size={14} className="text-zinc-500" />{" "}
-                        {log.customerName}
-                      </div>
-                      <div className="text-[11px] text-zinc-400 font-mono flex items-center gap-1.5 mb-1.5">
-                        <Phone size={10} className="text-zinc-600" />{" "}
-                        {log.phone}
-                      </div>
-                      <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 uppercase tracking-wider">
-                        <MapPin size={10} className="text-zinc-600" />{" "}
-                        {log.location}
-                      </div>
-                    </td>
-                    <td className="p-5 px-6 align-top">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[10px] bg-zinc-800/50 border border-zinc-700/50 px-2.5 py-1 rounded text-zinc-300 font-mono w-max tracking-wider">
-                          {log.startTime} to {log.endTime}
-                        </span>
-                        <span
-                          className={`text-lg font-black ${theme.primaryText} font-mono tracking-wider`}
-                        >
-                          {log.totalHours}h {log.totalMinutes}m
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-5 px-6 text-right align-top">
-                      <div className="flex justify-end gap-2 items-center relative mt-1">
-                        <button
-                          onClick={() =>
-                            navigate("/transportation/jcb", {
-                              state: { editLog: log },
-                            })
-                          }
-                          className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            isManager
-                              ? handleDisabledClick(log._id)
-                              : setDeleteModal({ isOpen: true, id: log._id })
-                          }
-                          className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        {warningTooltip === log._id && (
-                          <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
-                            🚫 Access Denied
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {logs.length === 0 && !loading && (
-                <tr>
-                  <td
-                    colSpan="4"
-                    className="p-12 text-center text-zinc-500 italic"
-                  >
-                    No JCB records found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-
-          {/* 🚀 LOAD MORE BUTTON */}
-          {hasMore && logs.length > 0 && (
-            <div className="flex justify-center p-6 border-t border-zinc-800/60">
-              <Button
-                onClick={() => fetchLogs(true)}
-                disabled={loadingMore}
-                variant="outline"
-                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
-              >
-                {loadingMore ? (
-                  <RefreshCcw size={16} className="animate-spin mr-2" />
-                ) : null}
-                {loadingMore ? "Loading..." : "Load Next 50 Records"}
-              </Button>
+        <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
+          {loading && !loadingMore ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader />
             </div>
+          ) : (
+            <>
+              <table className="w-full text-left border-collapse min-w-[800px]">
+                <thead>
+                  <tr className="bg-transparent text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800/60">
+                    <th className="py-4 px-6 whitespace-nowrap">
+                      Date & Vehicle
+                    </th>
+                    <th className="py-4 px-6 whitespace-nowrap">
+                      Customer Info
+                    </th>
+                    <th className="py-4 px-6 whitespace-nowrap">Time Log</th>
+                    <th className="py-4 px-6 text-right whitespace-nowrap">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60 text-sm">
+                  {logs.map((log) => {
+                    const hasEdits =
+                      log.editHistory && log.editHistory.length > 0;
+                    const latestLog = hasEdits
+                      ? log.editHistory[log.editHistory.length - 1]
+                      : null;
+
+                    return (
+                      <tr
+                        key={log._id}
+                        id={log._id}
+                        // (Keep your onClick here if it's the Tracker file)
+                        className={`transition-all duration-1000 ease-out group ${
+                          activeHighlight === log._id
+                            ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}`
+                            : "hover:bg-zinc-800/30"
+                        }`}
+                      >
+                        <td className="p-5 px-6 align-top">
+                          <p
+                            className={`text-[11px] font-mono text-zinc-400 mb-1.5`}
+                          >
+                            {new Date(log.date).toLocaleDateString("en-GB")}
+                          </p>
+                          <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
+                            <Truck size={14} className={`text-zinc-500`} />{" "}
+                            {log.vehicleNo}
+                          </p>
+                          {hasEdits && (
+                            <div
+                              onClick={() => openHistory(log)}
+                              className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
+                            >
+                              <History size={10} className="text-zinc-400" />
+                              <span
+                                className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
+                              >
+                                {latestLog.role || "ADMIN"}
+                              </span>
+                              {log.editHistory.length > 1 && (
+                                <span className="bg-zinc-700/50 text-zinc-300 px-1 py-0.5 rounded text-[8px] ml-1">
+                                  +{log.editHistory.length - 1} MORE
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-5 px-6 align-top">
+                          <div className="font-bold text-white text-md tracking-wide flex items-center gap-2 mb-1.5">
+                            <User size={14} className="text-zinc-500" />{" "}
+                            {log.customerName}
+                          </div>
+                          <div className="text-[11px] text-zinc-400 font-mono flex items-center gap-1.5 mb-1.5">
+                            <Phone size={10} className="text-zinc-600" />{" "}
+                            {log.phone}
+                          </div>
+                          <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 uppercase tracking-wider">
+                            <MapPin size={10} className="text-zinc-600" />{" "}
+                            {log.location}
+                          </div>
+                        </td>
+                        <td className="p-5 px-6 align-top">
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[10px] bg-zinc-800/50 border border-zinc-700/50 px-2.5 py-1 rounded text-zinc-300 font-mono w-max tracking-wider">
+                              {log.startTime} to {log.endTime}
+                            </span>
+                            <span
+                              className={`text-lg font-black ${theme.primaryText} font-mono tracking-wider`}
+                            >
+                              {log.totalHours}h {log.totalMinutes}m
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-5 px-6 text-right align-top">
+                          <div className="flex justify-end gap-2 items-center relative mt-1">
+                            <button
+                              onClick={() =>
+                                navigate("/transportation/jcb", {
+                                  state: { editLog: log },
+                                })
+                              }
+                              className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() =>
+                                isManager
+                                  ? handleDisabledClick(log._id)
+                                  : setDeleteModal({
+                                      isOpen: true,
+                                      id: log._id,
+                                    })
+                              }
+                              className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                            {warningTooltip === log._id && (
+                              <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
+                                🚫 Access Denied
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {logs.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="4"
+                        className="p-12 text-center text-zinc-500 italic"
+                      >
+                        No JCB records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+
+              {/* 🚀 5000 PAGINATION LOCK */}
+              {hasMore && loadedCount < 5000 && logs.length > 0 && (
+                <div className="flex justify-center p-6 border-t border-zinc-800/60">
+                  <Button
+                    onClick={() => fetchLogs(true)}
+                    disabled={loadingMore}
+                    variant="outline"
+                    className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+                  >
+                    {loadingMore ? (
+                      <RefreshCcw size={16} className="animate-spin mr-2" />
+                    ) : null}
+                    {loadingMore
+                      ? "Loading..."
+                      : `Load Next 50 Records (Loaded: ${loadedCount})`}
+                  </Button>
+                </div>
+              )}
+
+              {loadedCount >= 5000 && (
+                <div className="p-6 border-t border-zinc-800/60 flex justify-center">
+                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md animate-in fade-in slide-in-from-bottom-2 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+                    <AlertOctagon
+                      className="mx-auto mb-2 opacity-80"
+                      size={24}
+                    />
+                    <h4 className="font-bold text-sm mb-1">
+                      Display Limit Reached
+                    </h4>
+                    <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
+                      To preserve system performance and Firebase Read limits,
+                      infinite scrolling stops at 5,000 records. Please utilize
+                      the Search and Filters at the top to precisely locate
+                      older records.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, id: null })}
+        onConfirm={executeDelete}
+        title="Delete Record?"
+        message="Are you sure you want to permanently delete this JCB record?"
+        confirmText="Delete"
+        isDestructive={true}
+      />
 
       {/* 🛑 SECURE WIPE DATA MODAL */}
       {isDeleteAllOpen && !isManager && (
@@ -715,11 +804,15 @@ const JcbReport = () => {
                 />
                 <div className="w-full">
                   <h3 className="text-yellow-500 font-bold text-sm mb-1">
-                    Recommended: Safe Backup
+                    Backup Recommendation
                   </h3>
                   <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
-                    Before wiping the database, we highly recommend downloading
-                    a complete CSV backup for a specific month.
+                    Download backup before wiping.{" "}
+                    <strong className="text-amber-400">
+                      Limit: 10,000 records/day.
+                    </strong>{" "}
+                    If you exceed this, the system will save your progress, and
+                    you can download the rest tomorrow.
                   </p>
                   <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
                     <input
@@ -774,8 +867,12 @@ const JcbReport = () => {
               </button>
               <button
                 onClick={handleWipeAll}
-                disabled={wiping || !deletePassword}
-                className="h-11 px-6 rounded-xl text-sm font-bold border border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-colors flex items-center justify-center gap-2"
+                disabled={wiping || !deletePassword.trim()}
+                className={`h-11 px-6 rounded-xl text-sm font-bold border transition-colors flex items-center justify-center gap-2 ${
+                  wiping || !deletePassword.trim()
+                    ? "border-rose-900/30 text-rose-500/50 bg-rose-950/20 cursor-not-allowed"
+                    : "border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20"
+                }`}
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
