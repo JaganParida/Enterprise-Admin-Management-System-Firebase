@@ -6,6 +6,7 @@ import {
   Factory,
   Truck,
   ChevronRight,
+  ChevronLeft,
   MapPin,
   LifeBuoy,
   X,
@@ -20,6 +21,21 @@ import {
   Construction,
   Tractor,
   ArrowRight,
+  BookOpen,
+  Activity,
+  Package,
+  ShoppingCart,
+  CheckCircle2,
+  Sparkles,
+  Settings,
+  Languages,
+  FileText,
+  Fuel,
+  Wrench,
+  Search,
+  Filter,
+  Download,
+  Trash2,
 } from "lucide-react";
 
 // --- Smooth Framer Motion Variants ---
@@ -27,10 +43,7 @@ const staggerContainer = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.1,
-    },
+    transition: { staggerChildren: 0.1, delayChildren: 0.1 },
   },
 };
 
@@ -77,6 +90,717 @@ const supportDevelopers = [
   },
 ];
 
+// --- ENHANCED TOUR DATA WITH VIEWS ---
+const enterpriseSteps = [
+  {
+    id: 1,
+    title: "Enterprise Hub",
+    icon: Activity,
+    desc: "Your real-time command center. Monitor overall factory health, revenue, stock value, and active workforce instantly.",
+    features: [
+      "View top-level financial metrics.",
+      "Analyze 7-day production trends.",
+    ],
+    anchor: "top-stats",
+    view: "dashboard",
+  },
+  {
+    id: 2,
+    title: "Recent Activity Log",
+    icon: FileText,
+    desc: "A live feed of the latest factory actions. Quickly see recent bricks produced or sales closed.",
+    features: [
+      "Live feed of the last 10 transactions.",
+      "Click items to view full details.",
+    ],
+    anchor: "right-list",
+    view: "dashboard",
+  },
+  {
+    id: 3,
+    title: "Smart Search & Filter",
+    icon: Search,
+    desc: "Instantly locate specific records. Use advanced filters to sort logs by date, status, or transaction amount.",
+    features: [
+      "Real-time search across all columns.",
+      "Multi-parameter status filtering.",
+    ],
+    anchor: "table-search",
+    view: "table",
+  },
+  {
+    id: 4,
+    title: "Export Reports",
+    icon: Download,
+    desc: "Generate compliance-ready reports. Export your filtered data to CSV or PDF for accounting.",
+    features: [
+      "One-click CSV/PDF downloads.",
+      "Exports respect your active filters.",
+    ],
+    anchor: "table-export",
+    view: "table",
+  },
+  {
+    id: 5,
+    title: "Security: Wipe Data",
+    icon: Trash2,
+    desc: "Absolute control over your data. Securely format the database at the end of a financial year.",
+    features: [
+      "Requires Admin Password confirmation.",
+      "Irreversible action for privacy.",
+    ],
+    anchor: "table-wipe",
+    view: "table",
+  },
+  {
+    id: 6,
+    title: "Global Settings",
+    icon: Settings,
+    desc: "Access system-wide controls easily from the bottom of the navigation menu.",
+    features: [
+      "Use 'Translate' to switch languages.",
+      "Manage Security or Sign Out securely.",
+    ],
+    anchor: "sidebar-bottom",
+    view: "table",
+  },
+];
+
+const transportSteps = [
+  {
+    id: 1,
+    title: "Logistics Command",
+    icon: Truck,
+    desc: "Centralized oversight of your entire heavy fleet. Track total distance covered, trip counts, and aggregated fuel expenses.",
+    features: [
+      "Monitor Total Distance and Expenses.",
+      "Identify fleet inefficiencies.",
+    ],
+    anchor: "top-stats",
+    view: "dashboard",
+  },
+  {
+    id: 2,
+    title: "Maintenance Logs",
+    icon: Wrench,
+    desc: "Keep your heavy machinery running smoothly. Track recent repairs and JCB hour-meters.",
+    features: [
+      "Monitor JCB operating hours.",
+      "Log repair costs and maintenance.",
+    ],
+    anchor: "right-list",
+    view: "dashboard",
+  },
+  {
+    id: 3,
+    title: "Search Vehicle Logs",
+    icon: Search,
+    desc: "Instantly find trips for specific vehicles. Filter by date, driver, or fuel station.",
+    features: ["Instant number-plate search.", "Filter by date ranges."],
+    anchor: "table-search",
+    view: "table",
+  },
+  {
+    id: 4,
+    title: "Export Fleet Data",
+    icon: Download,
+    desc: "Generate comprehensive fleet efficiency reports. Perfect for analyzing diesel consumption over time.",
+    features: ["Export to Excel/CSV.", "Shareable PDF summaries."],
+    anchor: "table-export",
+    view: "table",
+  },
+  {
+    id: 5,
+    title: "Format Fleet History",
+    icon: Trash2,
+    desc: "Clear out old trip and fuel logs securely to start a new tracking quarter.",
+    features: ["Strict Admin-only action.", "Completely wipes selected table."],
+    anchor: "table-wipe",
+    view: "table",
+  },
+  {
+    id: 6,
+    title: "Global Actions",
+    icon: Languages,
+    desc: "Control your portal experience. Ensure you log out securely after managing fleet data.",
+    features: [
+      "Use 'Translate' for regional language.",
+      "Securely Sign Out of the hub.",
+    ],
+    anchor: "sidebar-bottom",
+    view: "table",
+  },
+];
+
+// --- Tour Popover Tooltip Component ---
+const TourTooltip = ({
+  step,
+  stepIndex,
+  totalSteps,
+  onNext,
+  onPrev,
+  themeColor,
+  customClasses,
+}) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+      transition={{ type: "spring", stiffness: 350, damping: 25 }}
+      className={`absolute z-[100] w-72 md:w-80 bg-[#121214] border border-${themeColor}-500/30 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] p-5 ${customClasses}`}
+    >
+      <div className="relative z-10">
+        <div className="flex items-center gap-2 mb-2">
+          <div
+            className={`w-2 h-2 rounded-full bg-${themeColor}-400 animate-pulse`}
+          />
+          <h4 className="text-white font-bold text-sm tracking-wide">
+            {step.title}
+          </h4>
+        </div>
+        <p className="text-zinc-400 text-xs leading-relaxed mb-4">
+          {step.desc}
+        </p>
+
+        <div
+          className={`bg-${themeColor}-500/5 rounded-lg p-3 border border-${themeColor}-500/10 mb-4`}
+        >
+          <ul className="space-y-2">
+            {step.features.map((f, i) => (
+              <li
+                key={i}
+                className="text-[11px] text-zinc-300 flex items-start gap-2"
+              >
+                <CheckCircle2
+                  size={12}
+                  className={`text-${themeColor}-400 shrink-0 mt-0.5`}
+                />
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="flex items-center justify-between pt-3 border-t border-white/5">
+          <span className="text-[10px] font-mono text-zinc-500 font-bold uppercase tracking-widest">
+            Step {stepIndex + 1} of {totalSteps}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={onPrev}
+              disabled={stepIndex === 0}
+              className="p-1.5 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-400 transition-colors"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              onClick={onNext}
+              className={`px-3 py-1.5 bg-${themeColor}-500 hover:bg-${themeColor}-400 text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-${themeColor}-500/20 flex items-center gap-1`}
+            >
+              {stepIndex === totalSteps - 1 ? "Finish" : "Next"}{" "}
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+// --- Animated Highlight Ring ---
+const HotspotPulse = ({ color }) => (
+  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
+    <span
+      className={`absolute w-[calc(100%+12px)] h-[calc(100%+12px)] rounded-xl border-2 border-${color}-500 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite] opacity-60`}
+    />
+    <span
+      className={`absolute w-full h-full rounded-lg border-2 border-${color}-400 shadow-[0_0_15px_var(--tw-shadow-color)] shadow-${color}-500/50`}
+    />
+  </div>
+);
+
+// --- Interactive Admin Guide Modal Component ---
+const AdminGuideModal = ({ isOpen, onClose }) => {
+  const [selectedPath, setSelectedPath] = useState(null);
+  const [activeStep, setActiveStep] = useState(0);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+      setSelectedPath(null);
+      setActiveStep(0);
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => (document.body.style.overflow = "unset");
+  }, [isOpen]);
+
+  const steps =
+    selectedPath === "enterprise" ? enterpriseSteps : transportSteps;
+  const themeColor = selectedPath === "enterprise" ? "indigo" : "cyan";
+
+  const handleNext = () => {
+    if (activeStep < steps.length - 1) setActiveStep(activeStep + 1);
+    else onClose();
+  };
+  const handlePrev = () => {
+    if (activeStep > 0) setActiveStep(activeStep - 1);
+  };
+
+  const currentView = steps?.[activeStep]?.view || "dashboard";
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 md:p-12">
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-[#09090B]/90 backdrop-blur-xl cursor-pointer"
+          />
+
+          {/* CROSS BUTTON OUTSIDE POPUP */}
+          <motion.button
+            initial={{ opacity: 0, scale: 0.5, rotate: -90 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
+            transition={{
+              type: "spring",
+              stiffness: 300,
+              damping: 25,
+              delay: 0.1,
+            }}
+            onClick={onClose}
+            className="fixed top-6 right-6 md:top-8 md:right-8 z-[110] p-3 md:p-4 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white rounded-full transition-all backdrop-blur-xl group hover:scale-110 shadow-2xl"
+          >
+            <X size={24} strokeWidth={2} />
+          </motion.button>
+
+          {/* Modal Container */}
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className={`relative w-full max-w-6xl aspect-[4/3] md:aspect-[16/9] max-h-[85vh] bg-[#09090b] border border-white/10 rounded-2xl md:rounded-[2rem] flex flex-col z-10 overflow-hidden shadow-[0_0_80px_rgba(0,0,0,0.5)]`}
+          >
+            {/* BACKGROUND AMBIENT GLOW */}
+            {selectedPath && (
+              <div
+                className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full blur-[150px] pointer-events-none transition-colors duration-1000 opacity-10 ${selectedPath === "enterprise" ? "bg-indigo-600" : "bg-cyan-600"}`}
+              />
+            )}
+
+            {/* SELECTION SCREEN */}
+            {!selectedPath ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 relative z-10">
+                <div className="text-center mb-12">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/5 border border-white/10 mb-6 text-white">
+                    <BookOpen size={32} />
+                  </div>
+                  <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">
+                    Interactive System Guide
+                  </h2>
+                  <p className="text-zinc-400 max-w-md mx-auto">
+                    Select a module to begin the guided walkthrough. Learn how
+                    to navigate your dashboards effectively.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
+                  <button
+                    onClick={() => setSelectedPath("enterprise")}
+                    className="group text-left p-8 rounded-3xl bg-[#121214] border border-white/5 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all duration-300 relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-[50px] rounded-full group-hover:bg-indigo-500/20 transition-colors" />
+                    <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-6 group-hover:scale-110 transition-transform">
+                      <Factory size={28} />
+                    </div>
+                    <h3 className="text-2xl font-black text-white mb-2">
+                      Enterprise Hub
+                    </h3>
+                    <p className="text-sm text-zinc-400 leading-relaxed mb-8">
+                      Production cycles, inventory, invoicing, and workforce
+                      tracking.
+                    </p>
+                    <div className="flex items-center text-xs font-bold uppercase tracking-widest text-indigo-400 gap-2 group-hover:gap-4 transition-all">
+                      Start Tour <ArrowRight size={16} />
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedPath("transport")}
+                    className="group text-left p-8 rounded-3xl bg-[#121214] border border-white/5 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all duration-300 relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 blur-[50px] rounded-full group-hover:bg-cyan-500/20 transition-colors" />
+                    <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-6 group-hover:scale-110 transition-transform">
+                      <Truck size={28} />
+                    </div>
+                    <h3 className="text-2xl font-black text-white mb-2">
+                      Transport Node
+                    </h3>
+                    <p className="text-sm text-zinc-400 leading-relaxed mb-8">
+                      Fleet logistics, fuel analytics, JCB tracking, and
+                      maintenance logs.
+                    </p>
+                    <div className="flex items-center text-xs font-bold uppercase tracking-widest text-cyan-400 gap-2 group-hover:gap-4 transition-all">
+                      Start Tour <ArrowRight size={16} />
+                    </div>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* TOUR SCREEN (WIREFRAME) */
+              <div className="flex-1 flex flex-col h-full relative z-10">
+                {/* Fake Browser Header */}
+                <div className="h-10 md:h-12 bg-[#121214] border-b border-white/5 flex items-center justify-between px-4 shrink-0">
+                  <div className="flex gap-2">
+                    <div className="w-3 h-3 rounded-full bg-rose-500/50" />
+                    <div className="w-3 h-3 rounded-full bg-amber-500/50" />
+                    <div className="w-3 h-3 rounded-full bg-emerald-500/50" />
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-[10px] font-mono text-zinc-500 font-bold uppercase tracking-widest">
+                      {selectedPath === "enterprise"
+                        ? "Enterprise OS Walkthrough"
+                        : "Transport Node Walkthrough"}
+                    </span>
+                  </div>
+                  <div className="w-16" />
+                </div>
+
+                {/* Dashboard Layout Area */}
+                <div className="flex-1 flex overflow-hidden bg-[#09090b]">
+                  <div className="flex-1 flex min-w-[800px] h-full relative p-4 gap-4">
+                    {/* SIDEBAR */}
+                    <div className="w-56 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between p-3 relative shrink-0 hidden md:flex">
+                      {/* Sidebar Top Nav */}
+                      <div className="space-y-1 relative z-10">
+                        <div
+                          className={`h-10 rounded-lg flex items-center px-3 gap-3 ${currentView === "dashboard" ? `bg-${themeColor}-500/10 border border-${themeColor}-500/20` : ""}`}
+                        >
+                          <Activity
+                            size={16}
+                            className={
+                              currentView === "dashboard"
+                                ? `text-${themeColor}-400`
+                                : "text-zinc-500"
+                            }
+                          />
+                          <div
+                            className={`w-20 h-2 rounded ${currentView === "dashboard" ? "bg-white/30" : "bg-white/10"}`}
+                          />
+                        </div>
+                        <div
+                          className={`h-10 rounded-lg flex items-center px-3 gap-3 ${currentView === "table" ? `bg-${themeColor}-500/10 border border-${themeColor}-500/20` : ""}`}
+                        >
+                          <FileText
+                            size={16}
+                            className={
+                              currentView === "table"
+                                ? `text-${themeColor}-400`
+                                : "text-zinc-500"
+                            }
+                          />
+                          <div
+                            className={`w-24 h-2 rounded ${currentView === "table" ? "bg-white/30" : "bg-white/10"}`}
+                          />
+                        </div>
+                        <div className="h-10 rounded-lg flex items-center px-3 gap-3">
+                          <Users size={16} className="text-zinc-500" />
+                          <div className="w-16 h-2 rounded bg-white/10" />
+                        </div>
+                      </div>
+
+                      {/* Sidebar Bottom (Global Actions) */}
+                      <div className="relative pt-4 border-t border-white/5">
+                        {steps[activeStep].anchor === "sidebar-bottom" && (
+                          <HotspotPulse color={themeColor} />
+                        )}
+                        <div className="space-y-1 relative z-10">
+                          <div className="h-10 rounded-lg flex items-center px-3 gap-3">
+                            <Languages size={16} className="text-zinc-500" />
+                            <div className="w-16 h-2 rounded bg-white/10" />
+                          </div>
+                          <div className="h-10 rounded-lg flex items-center px-3 gap-3">
+                            <ShieldCheck size={16} className="text-zinc-500" />
+                            <div className="w-16 h-2 rounded bg-white/10" />
+                          </div>
+                          <div className="h-10 rounded-lg flex items-center px-3 gap-3">
+                            <LogOut size={16} className="text-zinc-500" />
+                            <div className="w-16 h-2 rounded bg-white/10" />
+                          </div>
+                        </div>
+                        {/* Tooltip fixed position upward to prevent cutoff */}
+                        <AnimatePresence>
+                          {steps[activeStep].anchor === "sidebar-bottom" && (
+                            <TourTooltip
+                              step={steps[activeStep]}
+                              stepIndex={activeStep}
+                              totalSteps={steps.length}
+                              onNext={handleNext}
+                              onPrev={handlePrev}
+                              themeColor={themeColor}
+                              customClasses="bottom-4 left-[calc(100%+16px)]"
+                            />
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+
+                    {/* MAIN CONTENT AREA */}
+                    <div className="flex-1 flex flex-col gap-4 relative overflow-hidden">
+                      {/* DYNAMIC VIEWS */}
+                      <AnimatePresence mode="wait">
+                        {/* VIEW 1: DASHBOARD */}
+                        {currentView === "dashboard" && (
+                          <motion.div
+                            key="dashboard"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="flex-1 flex flex-col gap-4 absolute inset-0"
+                          >
+                            <div className="h-14 flex items-center justify-between shrink-0">
+                              <div className="w-48 h-6 bg-white/10 rounded" />
+                              <div className="flex items-center gap-3">
+                                <div className="w-24 h-8 bg-white/5 rounded-lg" />
+                                <div
+                                  className={`w-24 h-8 bg-${themeColor}-500/20 rounded-lg`}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Top Stats Cards */}
+                            <div className="grid grid-cols-4 gap-4 relative shrink-0">
+                              {steps[activeStep].anchor === "top-stats" && (
+                                <HotspotPulse color={themeColor} />
+                              )}
+                              {[1, 2, 3, 4].map((i) => (
+                                <div
+                                  key={i}
+                                  className="h-24 rounded-xl bg-white/[0.02] border border-white/5 p-4 flex flex-col justify-between"
+                                >
+                                  <div className="w-8 h-8 rounded-lg bg-white/5" />
+                                  <div className="w-1/2 h-4 bg-white/10 rounded" />
+                                </div>
+                              ))}
+
+                              <AnimatePresence>
+                                {steps[activeStep].anchor === "top-stats" && (
+                                  <TourTooltip
+                                    step={steps[activeStep]}
+                                    stepIndex={activeStep}
+                                    totalSteps={steps.length}
+                                    onNext={handleNext}
+                                    onPrev={handlePrev}
+                                    themeColor={themeColor}
+                                    customClasses="top-[calc(100%+20px)] left-1/2 -translate-x-1/2"
+                                  />
+                                )}
+                              </AnimatePresence>
+                            </div>
+
+                            {/* Chart & List */}
+                            <div className="flex-1 flex gap-4 min-h-0">
+                              {/* Chart */}
+                              <div className="flex-[2] rounded-xl bg-white/[0.01] border border-white/5 p-4 flex flex-col gap-4">
+                                <div className="w-32 h-4 bg-white/10 rounded" />
+                                <div className="flex-1 flex items-end justify-between gap-2 px-8">
+                                  {[40, 70, 45, 90, 65, 80].map((h, i) => (
+                                    <div
+                                      key={i}
+                                      style={{ height: `${h}%` }}
+                                      className={`w-12 rounded-t-sm bg-${themeColor}-500/20 border-t border-${themeColor}-500/50`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Right List */}
+                              <div className="flex-1 rounded-xl bg-white/[0.02] border border-white/5 p-4 flex flex-col gap-3 relative">
+                                {steps[activeStep].anchor === "right-list" && (
+                                  <HotspotPulse color={themeColor} />
+                                )}
+                                <div className="w-32 h-4 bg-white/10 rounded mb-2" />
+                                {[1, 2, 3].map((i) => (
+                                  <div
+                                    key={i}
+                                    className="h-[60px] rounded-lg bg-white/5 flex items-center px-3 gap-3"
+                                  >
+                                    <div className="w-8 h-8 rounded-md bg-white/10 shrink-0" />
+                                    <div className="flex-1 space-y-2">
+                                      <div className="w-full h-2 bg-white/10 rounded" />
+                                      <div className="w-1/2 h-2 bg-white/5 rounded" />
+                                    </div>
+                                  </div>
+                                ))}
+
+                                {/* Fix: Anchor tooltip to bottom-left of the list pointing left, growing upwards */}
+                                <AnimatePresence>
+                                  {steps[activeStep].anchor ===
+                                    "right-list" && (
+                                    <TourTooltip
+                                      step={steps[activeStep]}
+                                      stepIndex={activeStep}
+                                      totalSteps={steps.length}
+                                      onNext={handleNext}
+                                      onPrev={handlePrev}
+                                      themeColor={themeColor}
+                                      customClasses="bottom-0 right-[calc(100%+20px)]"
+                                    />
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+
+                        {/* VIEW 2: DATA TABLE */}
+                        {currentView === "table" && (
+                          <motion.div
+                            key="table"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="flex-1 flex flex-col gap-4 absolute inset-0"
+                          >
+                            {/* Table Controls */}
+                            <div className="flex items-center justify-between shrink-0">
+                              <div className="relative w-72 h-10 bg-white/5 border border-white/10 rounded-lg flex items-center px-3 z-10">
+                                <Search
+                                  size={16}
+                                  className="text-zinc-500 mr-2"
+                                />
+                                <div className="w-24 h-2 bg-white/20 rounded" />
+                                {steps[activeStep].anchor ===
+                                  "table-search" && (
+                                  <HotspotPulse color={themeColor} />
+                                )}
+
+                                <AnimatePresence>
+                                  {steps[activeStep].anchor ===
+                                    "table-search" && (
+                                    <TourTooltip
+                                      step={steps[activeStep]}
+                                      stepIndex={activeStep}
+                                      totalSteps={steps.length}
+                                      onNext={handleNext}
+                                      onPrev={handlePrev}
+                                      themeColor={themeColor}
+                                      customClasses="top-[calc(100%+16px)] left-0"
+                                    />
+                                  )}
+                                </AnimatePresence>
+                              </div>
+
+                              <div className="flex gap-3">
+                                <div className="relative w-10 h-10 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center">
+                                  <Filter size={16} className="text-zinc-400" />
+                                </div>
+                                <div
+                                  className={`relative px-4 h-10 bg-${themeColor}-500/20 border border-${themeColor}-500/30 rounded-lg flex items-center justify-center z-10`}
+                                >
+                                  <Download
+                                    size={16}
+                                    className={`text-${themeColor}-400 mr-2`}
+                                  />
+                                  <div
+                                    className={`w-12 h-2 bg-${themeColor}-400/50 rounded`}
+                                  />
+                                  {steps[activeStep].anchor ===
+                                    "table-export" && (
+                                    <HotspotPulse color={themeColor} />
+                                  )}
+                                  <AnimatePresence>
+                                    {steps[activeStep].anchor ===
+                                      "table-export" && (
+                                      <TourTooltip
+                                        step={steps[activeStep]}
+                                        stepIndex={activeStep}
+                                        totalSteps={steps.length}
+                                        onNext={handleNext}
+                                        onPrev={handlePrev}
+                                        themeColor={themeColor}
+                                        customClasses="top-[calc(100%+16px)] right-0"
+                                      />
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+                                <div className="relative px-4 h-10 bg-rose-500/20 border border-rose-500/30 rounded-lg flex items-center justify-center z-10">
+                                  <Trash2
+                                    size={16}
+                                    className="text-rose-400 mr-2"
+                                  />
+                                  <div className="w-16 h-2 bg-rose-400/50 rounded" />
+                                  {steps[activeStep].anchor ===
+                                    "table-wipe" && (
+                                    <HotspotPulse color="rose" />
+                                  )}
+                                  <AnimatePresence>
+                                    {steps[activeStep].anchor ===
+                                      "table-wipe" && (
+                                      <TourTooltip
+                                        step={steps[activeStep]}
+                                        stepIndex={activeStep}
+                                        totalSteps={steps.length}
+                                        onNext={handleNext}
+                                        onPrev={handlePrev}
+                                        themeColor="rose"
+                                        customClasses="top-[calc(100%+16px)] right-0"
+                                      />
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Table Body */}
+                            <div className="flex-1 bg-white/[0.02] border border-white/5 rounded-xl flex flex-col overflow-hidden min-h-0">
+                              <div className="h-12 border-b border-white/5 flex items-center px-4 gap-4 bg-white/[0.01] shrink-0">
+                                <div className="w-8 h-3 bg-white/10 rounded" />
+                                <div className="w-32 h-3 bg-white/10 rounded" />
+                                <div className="w-24 h-3 bg-white/10 rounded hidden sm:block" />
+                                <div className="flex-1" />
+                                <div className="w-20 h-3 bg-white/10 rounded" />
+                              </div>
+                              <div className="p-4 space-y-2 overflow-y-auto custom-scrollbar">
+                                {[1, 2, 3, 4, 5, 6].map((i) => (
+                                  <div
+                                    key={i}
+                                    className="h-14 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-lg flex items-center px-4 gap-4"
+                                  >
+                                    <div className="w-8 h-3 bg-white/10 rounded" />
+                                    <div className="w-32 h-3 bg-white/20 rounded" />
+                                    <div className="w-24 h-3 bg-white/10 rounded hidden sm:block" />
+                                    <div className="flex-1" />
+                                    <div
+                                      className={`w-20 h-5 bg-${themeColor}-500/20 rounded-full`}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
 // --- Public Navbar ---
 const PublicNavbar = () => {
   const [showSupport, setShowSupport] = useState(false);
@@ -94,14 +818,9 @@ const PublicNavbar = () => {
 
   return (
     <nav
-      className={`fixed top-0 w-full z-50 transition-all duration-300 ${
-        scrolled
-          ? "bg-[#09090B]/90 backdrop-blur-xl border-b border-white/5 h-16 shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
-          : "bg-transparent h-24 border-b border-transparent"
-      }`}
+      className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrolled ? "bg-[#09090B]/90 backdrop-blur-xl border-b border-white/5 h-16 shadow-[0_10px_30px_rgba(0,0,0,0.5)]" : "bg-transparent h-24 border-b border-transparent"}`}
     >
       <div className="max-w-7xl mx-auto px-4 md:px-6 h-full flex items-center justify-between relative">
-        {/* LOGO SECTION */}
         <div
           className="flex items-center gap-3 cursor-pointer group"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
@@ -122,7 +841,6 @@ const PublicNavbar = () => {
           </span>
         </div>
 
-        {/* MIDDLE NAV LINKS */}
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-300">
           {["Services", "Features"].map((item) => (
             <a
@@ -141,7 +859,6 @@ const PublicNavbar = () => {
           </button>
         </div>
 
-        {/* RIGHT ACTION BUTTONS */}
         <div className="flex items-center gap-4">
           {admin ? (
             <>
@@ -169,7 +886,6 @@ const PublicNavbar = () => {
           )}
         </div>
 
-        {/* Support Modal */}
         <AnimatePresence>
           {showSupport && (
             <>
@@ -205,7 +921,6 @@ const PublicNavbar = () => {
                     <X size={16} />
                   </button>
                 </div>
-
                 <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
                   {supportDevelopers.map((dev) => (
                     <a
@@ -252,7 +967,7 @@ const AnimatedDashboard = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       setActiveTab((prev) => (prev + 1) % 4);
-    }, 4500);
+    }, 2500);
     return () => clearInterval(interval);
   }, []);
 
@@ -455,6 +1170,7 @@ const AnimatedDashboard = () => {
 // --- Main Landing Page ---
 const Landing = () => {
   const { admin } = useAuth();
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.style.scrollBehavior = "smooth";
@@ -523,13 +1239,19 @@ const Landing = () => {
                   Get Started <ArrowRight size={16} />
                 </button>
               </Link>
-              <button className="w-full sm:w-auto px-8 py-3.5 bg-zinc-900/50 hover:bg-zinc-800 border border-white/10 text-white rounded-xl text-sm font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 backdrop-blur-md">
-                <PlayCircle size={18} className="text-zinc-400" /> Book a Demo
+              <button
+                onClick={() => setIsGuideOpen(true)}
+                className="w-full sm:w-auto px-8 py-3.5 bg-zinc-900/50 hover:bg-zinc-800 border border-white/10 text-white rounded-xl text-sm font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 backdrop-blur-md cursor-pointer z-20 group"
+              >
+                <BookOpen
+                  size={18}
+                  className="text-indigo-400 group-hover:scale-110 transition-transform"
+                />{" "}
+                Take a Tour
               </button>
             </motion.div>
           </motion.div>
 
-          {/* ANIMATED DASHBOARD INSERTED HERE */}
           <AnimatedDashboard />
 
           {/* Core Modules Cards */}
@@ -614,9 +1336,7 @@ const Landing = () => {
               </p>
             </motion.div>
 
-            {/* Asymmetrical Bento Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Row 1: Span 2 + Span 1 */}
               <BentoCard
                 className="md:col-span-2"
                 title="Enterprise Security"
@@ -626,7 +1346,6 @@ const Landing = () => {
                 iconColor="text-indigo-400"
                 hoverBorder="group-hover:border-t-indigo-500"
               />
-
               <BentoCard
                 className="md:col-span-1"
                 title="Real-Time Sync"
@@ -636,26 +1355,23 @@ const Landing = () => {
                 iconColor="text-blue-400"
                 hoverBorder="group-hover:border-t-blue-500"
               />
-
-              {/* Row 2: Span 1 + Span 2 */}
               <BentoCard
                 className="md:col-span-1"
                 title="Deep Analytics"
                 desc="Visual throughput charting and efficiency auditing for continuous improvement."
                 icon={BarChart3}
-                glowColor="bg-emerald-500/20"
-                iconColor="text-emerald-400"
-                hoverBorder="group-hover:border-t-emerald-500"
+                glowColor="bg-indigo-500/20"
+                iconColor="text-indigo-400"
+                hoverBorder="group-hover:border-t-indigo-500"
               />
-
               <BentoCard
                 className="md:col-span-2"
                 title="Unified Workforce Matrix"
                 desc="Centralized node for tracking shift attendance, streaming payroll calculations, and managing human resource allocations effortlessly."
                 icon={Users}
-                glowColor="bg-purple-500/20"
-                iconColor="text-purple-400"
-                hoverBorder="group-hover:border-t-purple-500"
+                glowColor="bg-blue-500/20"
+                iconColor="text-blue-400"
+                hoverBorder="group-hover:border-t-blue-500"
               />
             </div>
           </motion.section>
@@ -663,17 +1379,22 @@ const Landing = () => {
       </main>
 
       <PublicFooter />
+
+      {/* RENDER THE INTERACTIVE ADMIN GUIDE MODAL HERE */}
+      <AdminGuideModal
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
+      />
     </div>
   );
 };
 
-// --- Portal Card (Main Hero Modules) ---
+// --- Portal Card ---
 const PortalCard = ({ title, desc, icon: Icon, theme, link }) => {
   const themes = {
     indigo: "hover:border-indigo-500/30 hover:bg-indigo-500/[0.02]",
     blue: "hover:border-blue-500/30 hover:bg-blue-500/[0.02]",
   };
-
   return (
     <motion.div variants={fadeUpVariant} className="h-full relative group">
       <Link to={link} className="block h-full relative z-10">
@@ -710,26 +1431,21 @@ const ServiceCard = ({ icon: Icon, title, desc }) => (
     variants={fadeUpVariant}
     className="group relative p-8 md:p-10 rounded-[2rem] bg-[#0c0c0e] border border-white/5 hover:border-white/10 transition-all duration-500 flex flex-col items-start overflow-hidden shadow-xl"
   >
-    {/* Subtle gradient hover background */}
     <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-
     <div className="w-14 h-14 rounded-2xl bg-[#18181B] border border-white/10 flex items-center justify-center text-zinc-400 mb-8 transition-all duration-500 group-hover:text-white group-hover:border-white/20 group-hover:shadow-[0_0_20px_rgba(255,255,255,0.05)] relative z-10">
       <Icon size={26} strokeWidth={1.5} />
     </div>
-
     <h3 className="text-xl font-bold text-white mb-4 tracking-tight relative z-10">
       {title}
     </h3>
     <p className="text-sm font-medium text-zinc-500 leading-relaxed relative z-10">
       {desc}
     </p>
-
-    {/* Decorative bottom line */}
     <div className="absolute bottom-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
   </motion.div>
 );
 
-// --- New Bento Box Component for Architecture ---
+// --- New Bento Box Component ---
 const BentoCard = ({
   className,
   title,
@@ -743,20 +1459,15 @@ const BentoCard = ({
     variants={fadeUpVariant}
     className={`relative group p-8 md:p-10 rounded-[2rem] bg-[#0c0c0e] border border-white/5 overflow-hidden flex flex-col transition-all duration-500 border-t-2 border-t-transparent ${hoverBorder} ${className}`}
   >
-    {/* Animated glowing top border light */}
     <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-
-    {/* Soft background glow */}
     <div
       className={`absolute top-0 right-0 w-64 h-64 ${glowColor} blur-[100px] rounded-full pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity duration-500`}
     />
-
     <div
       className={`w-12 h-12 mb-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center ${iconColor} relative z-10 shadow-inner group-hover:scale-110 transition-transform duration-500`}
     >
       <Icon size={24} strokeWidth={1.5} />
     </div>
-
     <div className="relative z-10 mt-auto">
       <h4 className="text-xl font-bold text-white mb-3 tracking-tight">
         {title}
@@ -793,7 +1504,6 @@ const PublicFooter = () => {
               </p>
             </div>
           </div>
-
           <div className="flex-1 w-full max-w-lg">
             <div className="w-full h-[300px] rounded-3xl border border-white/10 overflow-hidden relative bg-[#121214]">
               <iframe
@@ -813,7 +1523,6 @@ const PublicFooter = () => {
             </div>
           </div>
         </div>
-
         <div className="border-t border-white/5 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] font-bold uppercase tracking-widest font-mono text-zinc-500">
           <p>Enterprise OS // v2.0</p>
           <div className="flex items-center gap-6">
