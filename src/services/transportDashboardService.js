@@ -10,40 +10,57 @@ import {
   count,
 } from "firebase/firestore";
 
+// 🚀 GLOBAL ZERO-READ CACHE FOR DASHBOARD
+let localCache = {
+  data: null,
+  isDirty: true,
+  lastFetchTime: 0,
+};
+
+export const markDashboardDirty = () => {
+  localCache.isDirty = true;
+};
+
 const transportDashboardService = {
-  getStats: async () => {
+  // 🚀 Added to allow the UI to track sync status
+  getLastFetchTime: () => localCache.lastFetchTime,
+
+  getStats: async (force = false) => {
+    // 🚀 CACHE CHECK: 0 Reads if data hasn't changed
+    if (!force && !localCache.isDirty && localCache.data) {
+      return { data: localCache.data };
+    }
+
     try {
       let totalDistance = 0,
         totalTrips = 0,
         totalFuelCost = 0,
         totalMaintenanceCost = 0;
 
-      // 1. 🚀 SERVER-SIDE AGGREGATION (Golden Rule #1)
-      // This prevents downloading 1 lakh records to the frontend just to count them!
+      // 1. 🚀 SERVER-SIDE AGGREGATION (Atomic)
       try {
         const [tripAgg, fuelAgg, maintAgg] = await Promise.all([
           getAggregateFromServer(query(collection(db, "trips")), {
-            dist: sum("distanceTravelled"),
-            trips: count(),
+            totalDistance: sum("distanceTravelled"),
+            totalTrips: count(),
           }),
           getAggregateFromServer(query(collection(db, "fuels")), {
-            cost: sum("totalCost"),
+            totalCost: sum("totalCost"),
           }),
           getAggregateFromServer(query(collection(db, "maintenances")), {
-            cost: sum("cost"),
+            totalCost: sum("cost"),
           }),
         ]);
 
-        totalDistance = tripAgg.data().dist || 0;
-        totalTrips = tripAgg.data().trips || 0;
-        totalFuelCost = fuelAgg.data().cost || 0;
-        totalMaintenanceCost = maintAgg.data().cost || 0;
+        totalDistance = tripAgg.data().totalDistance || 0;
+        totalTrips = tripAgg.data().totalTrips || 0;
+        totalFuelCost = fuelAgg.data().totalCost || 0;
+        totalMaintenanceCost = maintAgg.data().totalCost || 0;
       } catch (aggError) {
         console.warn(
-          "Aggregation failed (Missing Index or older Firebase). Using fallback.",
+          "Aggregation failed. Falling back to client calculation. WARNING: High Read Cost.",
           aggError,
         );
-        // Fallback execution if Indexes are not fully deployed yet
         const [tripsSnap, fuelSnap, maintSnap] = await Promise.all([
           getDocs(collection(db, "trips")),
           getDocs(collection(db, "fuels")),
@@ -61,8 +78,7 @@ const transportDashboardService = {
         );
       }
 
-      // 2. 🚀 OPTIMIZED RECENT ACTIVITY FETCH (Golden Rule #2)
-      // Instead of downloading the whole DB, we only ask for the TOP 10 latest records from each!
+      // 2. 🚀 OPTIMIZED RECENT ACTIVITY FETCH
       const [tripsRecent, fuelRecent, maintRecent, jcbRecent] =
         await Promise.all([
           getDocs(
@@ -106,28 +122,31 @@ const transportDashboardService = {
         activities.push({ ...doc.data(), activityType: "JCB", _id: doc.id }),
       );
 
-      // 3. Sort the combined top 40 records by EXACT creation time or date (Newest first)
       activities.sort((a, b) => {
         const dateA = new Date(a.createdAt || a.date || 0).getTime();
         const dateB = new Date(b.createdAt || b.date || 0).getTime();
         return dateB - dateA;
       });
 
-      // 4. Slice to exactly Top 10 for the UI
       const recentActivity = activities.slice(0, 10);
 
-      return {
-        data: {
-          cards: {
-            totalDistance,
-            totalTrips,
-            totalFuelCost,
-            totalMaintenanceCost,
-          },
-          chartData: { fuels: [], maintenances: [] },
-          recentActivity,
+      const finalData = {
+        cards: {
+          totalDistance,
+          totalTrips,
+          totalFuelCost,
+          totalMaintenanceCost,
         },
+        chartData: { fuels: [], maintenances: [] },
+        recentActivity,
       };
+
+      // Update Cache
+      localCache.data = finalData;
+      localCache.isDirty = false;
+      localCache.lastFetchTime = Date.now();
+
+      return { data: finalData };
     } catch (error) {
       console.error("Transport Dashboard Error:", error);
       throw error;
