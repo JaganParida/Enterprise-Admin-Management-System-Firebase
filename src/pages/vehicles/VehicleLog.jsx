@@ -22,12 +22,6 @@ import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
 import Loader from "../../components/common/Loader";
 
-export const dashboardCache = {
-  version: "0",
-  logs: null,
-  expenses: null,
-};
-
 const GlassInput = ({
   label,
   icon: Icon,
@@ -69,34 +63,37 @@ const VehicleLog = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [loading, setLoading] = useState(() => {
-    const dbVersion = localStorage.getItem("vehicle_db_version") || "0";
-    return !(
-      dashboardCache.version === dbVersion &&
-      dashboardCache.logs &&
-      dashboardCache.expenses
-    );
-  });
-
-  const [logs, setLogs] = useState(() => {
-    const dbVersion = localStorage.getItem("vehicle_db_version") || "0";
-    return dashboardCache.version === dbVersion && dashboardCache.logs
-      ? dashboardCache.logs
-      : [];
-  });
-
-  const [expenses, setExpenses] = useState(() => {
-    const dbVersion = localStorage.getItem("vehicle_db_version") || "0";
-    return dashboardCache.version === dbVersion && dashboardCache.expenses
-      ? dashboardCache.expenses
-      : [];
-  });
-
   const [activeTab, setActiveTab] = useState("trips");
-  const [syncStatus, setSyncStatus] = useState("up-to-date");
-  const [localVersion, setLocalVersion] = useState(
-    localStorage.getItem("vehicle_db_version") || "0",
+
+  const [logs, setLogs] = useState(
+    () =>
+      vehicleService.getCachedLogs("trips", {
+        search: "",
+        amountFilter: "Any Amount",
+        dateFilter: "All",
+        exactDate: "",
+      }) || [],
   );
+  const [expenses, setExpenses] = useState(
+    () =>
+      vehicleService.getCachedLogs("expenses", {
+        search: "",
+        amountFilter: "Any Amount",
+        dateFilter: "All",
+        exactDate: "",
+      }) || [],
+  );
+  const [loading, setLoading] = useState(
+    () =>
+      !vehicleService.getCachedLogs("trips", {
+        search: "",
+        amountFilter: "Any Amount",
+        dateFilter: "All",
+        exactDate: "",
+      }),
+  );
+
+  const [syncStatus, setSyncStatus] = useState("up-to-date");
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -159,54 +156,30 @@ const VehicleLog = () => {
   const [expenseData, setExpenseData] = useState(initialExpenseForm);
 
   useEffect(() => {
-    const handleStorageChange = () => {
-      const currentDbVersion = localStorage.getItem("vehicle_db_version");
-      if (currentDbVersion && currentDbVersion !== localVersion)
+    const checkSync = () => {
+      const globalLastUpdate = parseInt(
+        localStorage.getItem("vehicle_last_update") || "0",
+        10,
+      );
+      if (globalLastUpdate > vehicleService.getLastFetchTime())
         setSyncStatus("required");
     };
-    window.addEventListener("storage", handleStorageChange);
-    window.addEventListener("focus", handleStorageChange);
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("focus", handleStorageChange);
-    };
-  }, [localVersion]);
+    const interval = setInterval(checkSync, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchData = useCallback(
     async (force = false) => {
-      const dbVersion = localStorage.getItem("vehicle_db_version") || "0";
-
-      if (dashboardCache.version !== dbVersion) {
-        dashboardCache.logs = null;
-        dashboardCache.expenses = null;
-        dashboardCache.version = dbVersion;
-      }
-
-      if (!force && dashboardCache.logs && dashboardCache.expenses) {
-        setSyncStatus("up-to-date");
-        setLoading(false);
-        return;
-      }
-
       if (force) setSyncStatus("syncing");
       else setLoading(true);
 
       try {
         const [tripRes, expRes] = await Promise.all([
-          vehicleService.getLogs({}, null, 10),
-          vehicleService.getExpenses({}, null, 10),
+          vehicleService.getLogs({}, null, 10, force),
+          vehicleService.getExpenses({}, null, 10, force),
         ]);
-
-        const newLogs = tripRes.data || [];
-        const newExpenses = expRes.data || [];
-
-        setLogs(newLogs);
-        setExpenses(newExpenses);
-
-        dashboardCache.logs = newLogs;
-        dashboardCache.expenses = newExpenses;
-
-        setLocalVersion(dbVersion);
+        setLogs(tripRes.data || []);
+        setExpenses(expRes.data || []);
         setSyncStatus("up-to-date");
       } catch (err) {
         setSyncStatus("error");
@@ -221,13 +194,6 @@ const VehicleLog = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  const triggerDataUpdate = () => {
-    const newVersion = Date.now().toString();
-    localStorage.setItem("vehicle_db_version", newVersion);
-    setLocalVersion(newVersion);
-    fetchData(true);
-  };
 
   useEffect(() => {
     if (urlHighlightId && !loading) {
@@ -304,7 +270,7 @@ const VehicleLog = () => {
       }
       setFormData(initialTripForm);
       setEditId(null);
-      triggerDataUpdate();
+      fetchData(true);
     } catch (err) {
       toast.error("Failed to save trip.");
     } finally {
@@ -326,7 +292,7 @@ const VehicleLog = () => {
       }
       setExpenseData(initialExpenseForm);
       setEditId(null);
-      triggerDataUpdate();
+      fetchData(true);
     } catch (err) {
       toast.error("Failed to save expense.");
     } finally {
@@ -363,7 +329,7 @@ const VehicleLog = () => {
   const openHistory = (e, item, type) => {
     e.stopPropagation();
     const sortedHistory = item.editHistory
-      ? [...item.editHistory].reverse().slice(0, 2)
+      ? [...item.editHistory].reverse()
       : [];
     setHistoryModal({
       isOpen: true,
@@ -372,7 +338,7 @@ const VehicleLog = () => {
     });
   };
 
-  const handleRowClick = (e, id, type) => {
+  const handleRowClick = (e, id) => {
     if (
       e.target.closest("button") ||
       e.target.closest("a") ||
@@ -384,7 +350,6 @@ const VehicleLog = () => {
 
   return (
     <div className="space-y-6 pb-10 px-2 sm:px-4">
-      {/* HEADER SECTION (Smooth slide down) */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
         <div className="flex items-center gap-4">
           <div
@@ -406,15 +371,7 @@ const VehicleLog = () => {
           <button
             onClick={() => fetchData(true)}
             disabled={syncStatus === "up-to-date" || syncStatus === "syncing"}
-            className={`flex items-center gap-2 px-4 h-[44px] text-xs font-bold rounded-xl transition-all border ${
-              syncStatus === "up-to-date"
-                ? "bg-zinc-800/30 text-zinc-500 border-zinc-800/50 cursor-not-allowed opacity-50"
-                : syncStatus === "syncing"
-                  ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
-                  : syncStatus === "error"
-                    ? "bg-red-500/20 text-red-400 border-red-500/40"
-                    : "bg-blue-500/20 text-blue-400 border-blue-500/40 animate-pulse hover:bg-blue-500/30"
-            }`}
+            className={`flex items-center gap-2 px-4 h-[44px] text-xs font-bold rounded-xl transition-all border ${syncStatus === "up-to-date" ? "bg-zinc-800/30 text-zinc-500 border-zinc-800/50 cursor-not-allowed opacity-50" : syncStatus === "syncing" ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : syncStatus === "error" ? "bg-red-500/20 text-red-400 border-red-500/40" : "bg-blue-500/20 text-blue-400 border-blue-500/40 animate-pulse hover:bg-blue-500/30"}`}
           >
             {syncStatus === "up-to-date" && <CheckCircle2 size={14} />}
             {syncStatus === "syncing" && (
@@ -460,7 +417,6 @@ const VehicleLog = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-          {/* FORMS (Smooth pop-up) */}
           <div className="xl:col-span-5 animate-in fade-in zoom-in-[0.98] duration-500 ease-out">
             <div
               className={`bg-[#09090B] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? (activeTab === "trips" ? (isTransport ? "border-[#0ea5e9]/50 ring-1 ring-[#0ea5e9]/20" : "border-indigo-500/50 ring-1 ring-indigo-500/20") : "border-rose-500/50 ring-1 ring-rose-500/20") : "border-zinc-800/60"}`}
@@ -490,7 +446,6 @@ const VehicleLog = () => {
                 )}
               </div>
 
-              {/* TRIP FORM */}
               {activeTab === "trips" && (
                 <form
                   onSubmit={handleTripSubmit}
@@ -674,7 +629,7 @@ const VehicleLog = () => {
                   >
                     {submitting ? (
                       <RefreshCcw className="animate-spin" size={18} />
-                    ) : null}
+                    ) : null}{" "}
                     {submitting
                       ? "Processing..."
                       : editId
@@ -684,7 +639,6 @@ const VehicleLog = () => {
                 </form>
               )}
 
-              {/* EXPENSE FORM */}
               {activeTab === "expenses" && (
                 <form
                   onSubmit={handleExpenseSubmit}
@@ -744,7 +698,7 @@ const VehicleLog = () => {
                   >
                     {submitting ? (
                       <RefreshCcw className="animate-spin" size={18} />
-                    ) : null}
+                    ) : null}{" "}
                     {submitting
                       ? "Processing..."
                       : editId
@@ -756,7 +710,6 @@ const VehicleLog = () => {
             </div>
           </div>
 
-          {/* TABLE SECTION (Smooth Slide UP) */}
           <div className="xl:col-span-7 animate-in fade-in slide-in-from-bottom-6 duration-500 ease-out">
             <div
               className={`bg-[#09090B] border rounded-3xl overflow-hidden shadow-2xl transition-colors duration-300 ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/30"}`}
@@ -811,8 +764,8 @@ const VehicleLog = () => {
                           <tr
                             key={log._id}
                             id={log._id}
-                            onClick={(e) => handleRowClick(e, log._id, "trips")}
-                            className={`transition-all duration-500 ease-out group cursor-pointer border-l-4 animate-in fade-in slide-in-from-bottom-2 ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
+                            onClick={(e) => handleRowClick(e, log._id)}
+                            className={`transition-all duration-500 ease-out group cursor-pointer animate-in fade-in slide-in-from-bottom-2 ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}` : "hover:bg-zinc-800/30"}`}
                           >
                             <td className="p-4 align-top">
                               <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
@@ -826,19 +779,10 @@ const VehicleLog = () => {
                                 <User size={12} className="text-zinc-600" />{" "}
                                 {log.driverName}
                               </p>
-                              <div className="text-[11px] text-zinc-300 mt-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2.5 py-1 rounded-md font-medium border border-zinc-800/60">
-                                <Package
-                                  size={12}
-                                  className={theme.iconColor}
-                                />{" "}
-                                {log.items}{" "}
-                                <span className="text-zinc-600">|</span>{" "}
-                                {log.quantity} Qty
-                              </div>
                               {hasEdits && (
                                 <div
                                   onClick={(e) => openHistory(e, log, "trips")}
-                                  className="history-btn mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                                  className="mt-3 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                                 >
                                   <div className="flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg">
                                     <History
@@ -848,11 +792,6 @@ const VehicleLog = () => {
                                     <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">
                                       {latestLog.role || "ADMIN"}
                                     </span>
-                                    {log.editHistory.length > 1 && (
-                                      <span className="bg-zinc-700/50 text-zinc-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
-                                        +{log.editHistory.length - 1} MORE
-                                      </span>
-                                    )}
                                   </div>
                                 </div>
                               )}
@@ -888,11 +827,6 @@ const VehicleLog = () => {
                                   <span className="text-xs font-semibold text-zinc-300">
                                     {log.unloadingSite}
                                   </span>
-                                  {log.distanceTravelled && (
-                                    <span className="text-[10px] text-zinc-500 font-mono ml-1">
-                                      ({log.distanceTravelled} km)
-                                    </span>
-                                  )}
                                 </div>
                               </div>
                             </td>
@@ -900,22 +834,6 @@ const VehicleLog = () => {
                               <p className="text-lg font-black text-white font-mono drop-shadow-sm">
                                 ₹{log.totalAmount?.toLocaleString("en-IN")}
                               </p>
-                              <div className="flex flex-col items-end gap-1.5 mt-2">
-                                <span
-                                  className={`text-[10px] font-bold ${theme.primaryText} uppercase tracking-widest`}
-                                >
-                                  Paid: ₹
-                                  {Number(log.amountPaid || 0).toLocaleString(
-                                    "en-IN",
-                                  )}
-                                </span>
-                                {log.amountDue > 0 && (
-                                  <span className="text-[10px] font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 mt-0.5">
-                                    Due: ₹
-                                    {log.amountDue?.toLocaleString("en-IN")}
-                                  </span>
-                                )}
-                              </div>
                             </td>
                           </tr>
                         );
@@ -952,10 +870,8 @@ const VehicleLog = () => {
                           <tr
                             key={exp._id}
                             id={exp._id}
-                            onClick={(e) =>
-                              handleRowClick(e, exp._id, "expenses")
-                            }
-                            className={`transition-all duration-500 ease-out group cursor-pointer border-l-4 animate-in fade-in slide-in-from-bottom-2 ${activeHighlight === exp._id ? `bg-rose-500/[0.08] shadow-[inset_0_0_20px_rgba(244,63,94,0.05)] border-rose-500` : "border-transparent hover:bg-rose-900/10"}`}
+                            onClick={(e) => handleRowClick(e, exp._id)}
+                            className={`transition-all duration-500 ease-out group cursor-pointer animate-in fade-in slide-in-from-bottom-2 ${activeHighlight === exp._id ? `bg-rose-500/[0.08] shadow-[inset_0_0_20px_rgba(244,63,94,0.05)]` : "hover:bg-rose-900/10"}`}
                           >
                             <td className="p-4 align-top">
                               <div className="text-[11px] font-mono text-rose-400 mb-1.5">
@@ -966,7 +882,7 @@ const VehicleLog = () => {
                                   onClick={(e) =>
                                     openHistory(e, exp, "expenses")
                                   }
-                                  className="history-btn mt-2 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
+                                  className="mt-2 flex flex-col items-start w-max cursor-pointer hover:opacity-80 transition-opacity"
                                 >
                                   <div className="flex items-center gap-1.5 bg-rose-950/30 border border-rose-900/50 px-2 py-1 rounded-lg">
                                     <History
@@ -976,11 +892,6 @@ const VehicleLog = () => {
                                     <span className="text-[9px] font-bold text-rose-400 uppercase tracking-widest">
                                       {latestLog.role || "ADMIN"}
                                     </span>
-                                    {exp.editHistory.length > 1 && (
-                                      <span className="bg-rose-900/80 text-rose-300 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
-                                        +{exp.editHistory.length - 1} MORE
-                                      </span>
-                                    )}
                                   </div>
                                 </div>
                               )}
@@ -1015,7 +926,6 @@ const VehicleLog = () => {
         </div>
       )}
 
-      {/* HISTORY MODAL (Smooth Pop-up) */}
       {historyModal.isOpen && historyModal.data && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
@@ -1078,18 +988,6 @@ const VehicleLog = () => {
                       </h4>
                       <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
                         {log.by || "admin@system.com"}
-                      </p>
-                      <p
-                        className={`text-[10px] font-mono mt-1 ${index === 0 ? (activeTab === "trips" ? theme.primaryText : "text-rose-400") : "text-zinc-600"}`}
-                      >
-                        {new Date(log.at).toLocaleString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
                       </p>
                     </div>
                   </div>
