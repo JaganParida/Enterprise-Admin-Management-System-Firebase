@@ -13,14 +13,14 @@ import {
   Calendar,
   ChevronRight,
   Timer,
+  RefreshCcw,
+  CheckCircle2,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 
-// LAZY LOAD HEAVY CHART COMPONENTS
 const BarChart = lazy(() => import("../../components/charts/BarChart"));
 
-// SKELETON LOADER FOR CHARTS
 const ChartSkeleton = () => (
   <div className="w-full h-full bg-blue-900/10 animate-pulse rounded-xl border border-blue-900/20"></div>
 );
@@ -29,10 +29,14 @@ const TransportationDashboard = () => {
   const { toast } = useUI();
   const location = useLocation();
   const navigate = useNavigate();
+
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [showQuickMenu, setShowQuickMenu] = useState(false);
 
-  // 🔥 THEME HOOK
+  // 🚀 SYNC STATE TRACKER
+  const [isSynced, setIsSynced] = useState(true);
+
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -41,7 +45,7 @@ const TransportationDashboard = () => {
   const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
-    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryText: isTransport ? "text-[#38bdf8]" : "text-indigo-400",
     primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
     primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
     primaryHoverBorder: isTransport
@@ -64,23 +68,59 @@ const TransportationDashboard = () => {
     recentActivity: [],
   });
 
+  // 🚀 SMART POLLING: Checks if ANY module was updated
   useEffect(() => {
-    const loadDashboard = async () => {
-      try {
-        const response = await transportDashboardService.getStats();
-        setData(response.data);
-      } catch (error) {
-        toast.error("Failed to load transport metrics.");
-      } finally {
-        setLoading(false);
+    const checkSync = () => {
+      const vUpdate = parseInt(
+        localStorage.getItem("vehicle_last_update") || "0",
+        10,
+      );
+      const fUpdate = parseInt(
+        localStorage.getItem("fuel_last_update") || "0",
+        10,
+      );
+      const mUpdate = parseInt(
+        localStorage.getItem("maintenance_last_update") || "0",
+        10,
+      );
+      const jUpdate = parseInt(
+        localStorage.getItem("jcb_last_update") || "0",
+        10,
+      );
+
+      const maxUpdate = Math.max(vUpdate, fUpdate, mUpdate, jUpdate);
+
+      if (maxUpdate > transportDashboardService.getLastFetchTime()) {
+        setIsSynced(false);
       }
     };
+    const interval = setInterval(checkSync, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadDashboard = async (forceSync = false) => {
+    if (forceSync) setIsSyncing(true);
+    try {
+      const response = await transportDashboardService.getStats(forceSync);
+      setData(response.data);
+      setIsSynced(true);
+      if (forceSync) toast.success("Dashboard metrics synced!");
+    } catch (error) {
+      toast.error("Failed to load transport metrics.");
+    } finally {
+      setLoading(false);
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
     loadDashboard();
-  }, [toast]);
+  }, []);
 
   const handleExport = () => {
     try {
-      if (!data) return toast.info("No data to export");
+      if (!data || data.cards.totalTrips === 0)
+        return toast.info("No data to export");
 
       const today = new Date().toLocaleDateString("en-GB");
       let csvContent = "\uFEFF";
@@ -213,6 +253,24 @@ const TransportationDashboard = () => {
         </div>
 
         <div className="flex gap-3 relative">
+          {/* 🚀 DIMMED & LOCKED SYNC BUTTON */}
+          <Button
+            variant="ghost"
+            onClick={() => loadDashboard(true)}
+            disabled={isSynced || isSyncing}
+            className={`flex items-center gap-2 h-[44px] px-4 rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+          >
+            {isSynced ? (
+              <CheckCircle2 size={16} />
+            ) : (
+              <RefreshCcw
+                size={16}
+                className={isSyncing ? "animate-spin" : ""}
+              />
+            )}
+            {isSynced ? "Dashboard Up to Date" : "Sync Required"}
+          </Button>
+
           <Button
             variant="outline"
             className="text-xs h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white transition-colors"
@@ -346,26 +404,29 @@ const TransportationDashboard = () => {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:auto-rows-fr h-auto">
+      {/* 🚀 FIXED HEIGHT CONTAINER (Adjusted to 400px for perfect Graph visibility) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[500px]">
+        {/* CHART SECTION */}
         <div
-          className={`lg:col-span-2 p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col h-full min-h-[400px] group ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md`}
+          className={`lg:col-span-2 p-6 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col h-[350px] lg:h-full group ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md`}
         >
           <div
             className={`absolute -left-10 -top-10 w-40 h-40 blur-[80px] rounded-full transition-colors duration-700 pointer-events-none ${theme.glowOrb} ${theme.glowOrbHover}`}
           />
 
-          <div className="flex justify-between items-center mb-6 shrink-0 relative z-10">
-            <h3 className="text-xl font-bold text-white flex items-center gap-3">
+          <div className="flex justify-between items-center mb-4 shrink-0 relative z-10">
+            <h3 className="text-lg font-bold text-white flex items-center gap-3">
               <div
                 className={`p-2 rounded-lg border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
               >
-                <Activity size={18} />
+                <Activity size={16} />
               </div>
               Expense Overview
             </h3>
           </div>
 
-          <div className="relative flex-1 min-h-[300px] w-full z-10">
+          {/* 🚀 min-h-0 prevents the chart from pushing past the bottom border, pb-2 gives X-axis space */}
+          <div className="relative flex-1 w-full z-10 min-h-0 pb-2">
             <div className="absolute inset-0">
               <Suspense fallback={<ChartSkeleton />}>
                 <BarChart data={expenseChartData} options={chartOptions} />
@@ -374,22 +435,23 @@ const TransportationDashboard = () => {
           </div>
         </div>
 
+        {/* RECENT ACTIVITY SECTION */}
         <div
-          className={`p-6 md:p-8 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl flex flex-col w-full h-full min-h-[400px] overflow-hidden ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md hover:border-white/10`}
+          className={`p-6 rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl flex flex-col w-full h-[400px] lg:h-full overflow-hidden ${theme.primaryHoverBorder} transition-all duration-500 backdrop-blur-md hover:border-white/10`}
         >
-          <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-3 shrink-0">
+          <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-3 shrink-0">
             <div
               className={`p-2 rounded-lg border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
             >
-              <Activity size={18} />
+              <Activity size={16} />
             </div>
-            Recent Fleet Activity
-            <span className="text-xs font-normal text-zinc-500 ml-auto">
+            Recent Activity
+            <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-400 ml-auto bg-zinc-800/50 px-2 py-1 rounded-md border border-zinc-700/50">
               Top 10
             </span>
           </h3>
 
-          <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
             {data.recentActivity.length > 0 ? (
               data.recentActivity.map((activity, index) => (
                 <ActivityItem
@@ -412,7 +474,6 @@ const TransportationDashboard = () => {
   );
 };
 
-// 🚀 ENHANCED: StatCard with click navigation
 const StatCard = ({ title, value, icon: Icon, color, isTransport, linkTo }) => {
   const navigate = useNavigate();
   const colors = isTransport
