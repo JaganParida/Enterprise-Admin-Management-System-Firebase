@@ -16,6 +16,8 @@ import {
   Clock,
   Timer,
   CalendarDays,
+  CheckCircle2,
+  RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -94,11 +96,31 @@ const JcbTracker = () => {
   const { admin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // 🚀 CACHED LOGS INITIALIZATION
+  const [logs, setLogs] = useState(() => {
+    const cached = jcbService.getCachedLogs({
+      search: "",
+      vehicleFilter: "All",
+      dateFilter: "All",
+      exactDate: "",
+    });
+    return cached ? cached : [];
+  });
+
+  const [loading, setLoading] = useState(() => {
+    return !jcbService.getCachedLogs({
+      search: "",
+      vehicleFilter: "All",
+      dateFilter: "All",
+      exactDate: "",
+    });
+  });
+
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
   const [activeTab, setActiveTab] = useState("logs");
+  const [isSynced, setIsSynced] = useState(true);
 
   // 🚀 Highlight Animation State
   const searchParams = new URLSearchParams(location.search);
@@ -144,6 +166,19 @@ const JcbTracker = () => {
 
   const [formData, setFormData] = useState(initialForm);
 
+  // 🚀 CHECK SYNC STATUS
+  useEffect(() => {
+    const checkSync = () => {
+      const globalLastUpdate = parseInt(
+        localStorage.getItem("jcb_last_update") || "0",
+        10,
+      );
+      if (globalLastUpdate > jcbService.getLastFetchTime()) setIsSynced(false);
+    };
+    const interval = setInterval(checkSync, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
   // 🚀 Scroll & Highlight Effect
   useEffect(() => {
     if (urlHighlightId && !loading) {
@@ -158,11 +193,13 @@ const JcbTracker = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 Fetching Top 50 logs for Dashboard & Summary
-  const fetchLogs = async () => {
+  // 🚀 Caching Fetch Logic
+  const fetchLogs = async (force = false) => {
+    if (force) setLoading(true);
     try {
-      const { data } = await jcbService.getLogs({}, null, 50);
+      const { data } = await jcbService.getLogs({}, null, 50, force);
       setLogs(Array.isArray(data) ? data : []);
+      setIsSynced(true);
     } catch (err) {
       toast.error("Failed to load records.");
     } finally {
@@ -252,7 +289,7 @@ const JcbTracker = () => {
         toast.success("Logged successfully!");
       }
       resetForm();
-      fetchLogs();
+      fetchLogs(true);
     } catch (err) {
       toast.error("Failed to save record.");
     } finally {
@@ -277,7 +314,6 @@ const JcbTracker = () => {
     setFormData(initialForm);
   };
 
-  // 🚀 REDIRECT TO REPORT HANDLER
   const handleRowClick = (e, id) => {
     if (
       e.target.closest("button") ||
@@ -311,25 +347,42 @@ const JcbTracker = () => {
             Track heavy machinery working hours & locations.
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-[#09090B] p-1.5 rounded-2xl border border-zinc-800/60 w-full sm:w-auto h-[48px] shadow-inner">
-          <button
-            onClick={() => {
-              setActiveTab("logs");
-              resetForm();
-            }}
-            className={`px-5 h-full text-xs font-bold transition-all rounded-xl flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "logs" ? theme.tabActive : "text-zinc-500 hover:text-zinc-300"}`}
+
+        <div className="flex flex-col sm:flex-row items-center gap-4 w-full xl:w-auto">
+          <Button
+            variant="ghost"
+            onClick={() => fetchLogs(true)}
+            disabled={isSynced || loading}
+            className={`flex items-center gap-2 h-[48px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
           >
-            <Clock size={14} /> Active Logs
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab("daywise");
-              resetForm();
-            }}
-            className={`px-5 h-full text-xs font-bold transition-all rounded-xl flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "daywise" ? theme.tabActive : "text-zinc-500 hover:text-zinc-300"}`}
-          >
-            <CalendarDays size={14} /> Day-wise Summary
-          </button>
+            {isSynced ? (
+              <CheckCircle2 size={16} />
+            ) : (
+              <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+            )}
+            {isSynced ? "Dashboard Up to Date" : "Sync Required"}
+          </Button>
+
+          <div className="flex items-center gap-2 bg-[#09090B] p-1.5 rounded-2xl border border-zinc-800/60 w-full sm:w-auto h-[48px] shadow-inner">
+            <button
+              onClick={() => {
+                setActiveTab("logs");
+                resetForm();
+              }}
+              className={`px-5 h-full text-xs font-bold transition-all rounded-xl flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "logs" ? theme.tabActive : "text-zinc-500 hover:text-zinc-300"}`}
+            >
+              <Clock size={14} /> Active Logs
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("daywise");
+                resetForm();
+              }}
+              className={`px-5 h-full text-xs font-bold transition-all rounded-xl flex items-center justify-center gap-2 whitespace-nowrap ${activeTab === "daywise" ? theme.tabActive : "text-zinc-500 hover:text-zinc-300"}`}
+            >
+              <CalendarDays size={14} /> Day-wise Summary
+            </button>
+          </div>
         </div>
       </div>
 
@@ -546,10 +599,10 @@ const JcbTracker = () => {
                           key={log._id}
                           id={log._id}
                           onClick={(e) => handleRowClick(e, log._id)}
-                          className={`transition-all duration-1000 ease-out group cursor-pointer border-l-4 ${
+                          className={`transition-all duration-1000 ease-out group ${
                             activeHighlight === log._id
-                              ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}`
-                              : "border-transparent hover:bg-zinc-800/30"
+                              ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}`
+                              : "hover:bg-zinc-800/30"
                           }`}
                         >
                           <td className="p-4 align-top">
