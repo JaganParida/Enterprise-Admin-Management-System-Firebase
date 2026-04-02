@@ -28,15 +28,13 @@ import {
 import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
 const getPreviousMonthString = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${d.getFullYear()}-${m}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
 
 const MaintenanceReport = () => {
@@ -52,19 +50,40 @@ const MaintenanceReport = () => {
     exactDate: "",
   });
 
+  // 🚀 INITIALIZE FROM CACHE TO PREVENT LOADER FLICKER
   const [logs, setLogs] = useState(
-    () => maintenanceService.getCachedLogs(filters) || [],
+    () =>
+      maintenanceService.getCachedLogs({
+        search: "",
+        amountFilter: "Any Amount",
+        dateFilter: "All",
+        exactDate: "",
+      }) || [],
   );
   const [loading, setLoading] = useState(
-    () => !maintenanceService.getCachedLogs(filters),
+    () =>
+      !maintenanceService.getCachedLogs({
+        search: "",
+        amountFilter: "Any Amount",
+        dateFilter: "All",
+        exactDate: "",
+      }),
+  );
+  const [syncStatus, setSyncStatus] = useState(() =>
+    maintenanceService.getCachedLogs({
+      search: "",
+      amountFilter: "Any Amount",
+      dateFilter: "All",
+      exactDate: "",
+    })
+      ? "synced"
+      : "syncing",
   );
 
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadedCount, setLoadedCount] = useState(0);
-
-  const [isSynced, setIsSynced] = useState(true);
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -104,32 +123,18 @@ const MaintenanceReport = () => {
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  // 🚀 CHECK SYNC STATUS EVERY 2 SECONDS
-  useEffect(() => {
-    const checkSync = () => {
-      const globalLastUpdate = parseInt(
-        localStorage.getItem("maintenance_last_update") || "0",
-        10,
-      );
-      if (globalLastUpdate > maintenanceService.getLastFetchTime())
-        setIsSynced(false);
-    };
-    const interval = setInterval(checkSync, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
       if (!localStorage.getItem(`backup_maintenance_${prevMonth}`)) {
         try {
-          const q = query(
-            collection(db, "maintenances"),
-            where("date", ">=", prevMonth),
-            where("date", "<=", prevMonth + "\uf8ff"),
-            limit(1),
+          const q = maintenanceService.query(
+            maintenanceService.collection(db, "maintenances"),
+            maintenanceService.where("date", ">=", prevMonth),
+            maintenanceService.where("date", "<=", prevMonth + "\uf8ff"),
+            maintenanceService.limit(1),
           );
-          const snap = await getDocs(q);
+          const snap = await maintenanceService.getDocs(q);
           if (!snap.empty) setShowBackupWarning(prevMonth);
         } catch (error) {
           console.error("Failed to check backup status:", error);
@@ -140,22 +145,20 @@ const MaintenanceReport = () => {
   }, []);
 
   useEffect(() => {
-    if (urlHighlightId && !loading) {
+    if (urlHighlightId && logs.length > 0) {
       setActiveHighlight(urlHighlightId);
       setTimeout(() => {
-        const element = document.getElementById(urlHighlightId);
-        if (element)
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        const el = document.getElementById(urlHighlightId);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
       }, 500);
       const timer = setTimeout(() => setActiveHighlight(null), 3500);
       return () => clearTimeout(timer);
     }
-  }, [urlHighlightId, loading]);
+  }, [urlHighlightId, logs.length]);
 
-  // 🚀 100% CACHED FETCH LOGIC
   const fetchLogs = async (isLoadMore = false, force = false) => {
     if (isLoadMore) setLoadingMore(true);
-    else if (logs.length === 0 || force) setLoading(true);
+    else if (logs.length === 0 || force) setSyncStatus("syncing");
 
     try {
       const response = await maintenanceService.getLogs(
@@ -171,16 +174,17 @@ const MaintenanceReport = () => {
       } else {
         setLogs(response.data || []);
         setLoadedCount(response.data?.length || 0);
-        setIsSynced(true);
+        setSyncStatus("synced");
       }
 
       setLastDoc(response.lastVisible || null);
       setHasMore(response.data && response.data.length === 50);
     } catch (error) {
+      if (!isLoadMore) setSyncStatus("error");
       toast.error("Failed to load report data.");
     } finally {
-      setLoading(false);
       setLoadingMore(false);
+      setLoading(false);
     }
   };
 
@@ -202,7 +206,7 @@ const MaintenanceReport = () => {
       const currentUser = admin?.data || admin || {};
       await maintenanceService.deleteLog(deleteModal.id, currentUser);
       toast.success("Maintenance record deleted successfully");
-      fetchLogs(false, true);
+      fetchLogs(false);
     } catch (error) {
       toast.error(error.message || "Failed to delete record");
     } finally {
@@ -226,7 +230,6 @@ const MaintenanceReport = () => {
     (filters.exactDate ? 1 : 0) +
     (filters.search ? 1 : 0);
 
-  // 🚀 SMART BACKUP WITH 10,000 CHUNK LIMIT
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
@@ -249,20 +252,24 @@ const MaintenanceReport = () => {
       const fetchLimit = 10000 - dlMeta.count;
       toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
 
-      let q = query(
-        collection(db, "maintenances"),
-        where("date", ">=", monthToFetch),
-        where("date", "<=", monthToFetch + "\uf8ff"),
-        orderBy("date"),
-        limit(fetchLimit),
-      );
+      let qConstraints = [
+        maintenanceService.where("date", ">=", monthToFetch),
+        maintenanceService.where("date", "<=", monthToFetch + "\uf8ff"),
+        maintenanceService.orderBy("date"),
+        maintenanceService.limit(fetchLimit),
+      ];
 
       if (dlMeta.lastId) {
         const lastDocRef = await getDoc(doc(db, "maintenances", dlMeta.lastId));
-        if (lastDocRef.exists()) q = query(q, startAfter(lastDocRef));
+        if (lastDocRef.exists())
+          qConstraints.push(maintenanceService.startAfter(lastDocRef));
       }
 
-      const snapshot = await getDocs(q);
+      const q = maintenanceService.query(
+        maintenanceService.collection(db, "maintenances"),
+        ...qConstraints,
+      );
+      const snapshot = await maintenanceService.getDocs(q);
 
       if (snapshot.empty)
         return toast.info(
@@ -314,7 +321,6 @@ const MaintenanceReport = () => {
         if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
       }
     } catch (e) {
-      console.error(e);
       toast.error("Backup failed.");
     }
   };
@@ -335,20 +341,13 @@ const MaintenanceReport = () => {
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      fetchLogs(false, true);
+      fetchLogs(false);
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
       setWiping(false);
     }
   };
-
-  if (loading)
-    return (
-      <div className="flex justify-center items-center h-64">
-        <Loader />
-      </div>
-    );
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
@@ -370,18 +369,23 @@ const MaintenanceReport = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
+          {/* 🚀 Smart Sync Button -> onClick passes TRUE to force bypass RAM cache */}
           <Button
             variant="ghost"
             onClick={() => fetchLogs(false, true)}
-            disabled={isSynced || loading}
-            className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+            disabled={syncStatus === "synced" || syncStatus === "syncing"}
+            className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-700 ${syncStatus === "synced" ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : syncStatus === "error" ? "text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 shadow-[0_0_15px_rgba(243,64,84,0.2)] animate-pulse" : "text-zinc-300 bg-zinc-800/40 border border-zinc-700/50"}`}
           >
-            {isSynced ? (
-              <CheckCircle2 size={16} />
-            ) : (
-              <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+            {syncStatus === "synced" && <CheckCircle2 size={16} />}
+            {syncStatus === "syncing" && (
+              <RefreshCcw size={16} className="animate-spin" />
             )}
-            {isSynced ? "Database Up to Date" : "Update Detected: Sync Now"}
+            {syncStatus === "error" && <AlertOctagon size={16} />}
+            {syncStatus === "synced"
+              ? "Up to Date"
+              : syncStatus === "syncing"
+                ? "Syncing..."
+                : "Sync Failed - Retry"}
           </Button>
 
           <div className="relative h-[44px] w-full sm:w-auto">
@@ -491,7 +495,7 @@ const MaintenanceReport = () => {
           <div
             className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest px-3 py-1 border-r border-zinc-800 mr-1 text-zinc-400`}
           >
-            <Filter size={16} /> Filters
+            <Filter size={16} /> Filters{" "}
             {activeFiltersCount > 0 && (
               <span
                 className={`ml-1 px-1.5 rounded ${theme.primaryBg} ${theme.primaryText}`}
@@ -500,7 +504,6 @@ const MaintenanceReport = () => {
               </span>
             )}
           </div>
-
           <div className="relative group">
             <select
               value={filters.amountFilter}
@@ -524,7 +527,6 @@ const MaintenanceReport = () => {
               className={`absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:${theme.primaryText}`}
             />
           </div>
-
           <div className="relative group">
             <select
               value={filters.dateFilter}
@@ -549,7 +551,6 @@ const MaintenanceReport = () => {
               className={`absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:${theme.primaryText}`}
             />
           </div>
-
           <div className="relative group flex items-center">
             <div
               className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filters.exactDate ? theme.primaryText : "text-zinc-500"}`}
@@ -572,7 +573,6 @@ const MaintenanceReport = () => {
               className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
-
           {activeFiltersCount > 0 && (
             <Button
               variant="ghost"
@@ -592,163 +592,183 @@ const MaintenanceReport = () => {
         </div>
 
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
-          <table className="w-full text-left min-w-[750px] animate-in fade-in duration-300">
-            <thead
-              className={`bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800`}
-            >
-              <tr>
-                <th className="py-5 px-6 whitespace-nowrap">Vehicle Details</th>
-                <th className="py-5 px-6 whitespace-nowrap">Service Info</th>
-                <th className="py-5 px-6 text-right whitespace-nowrap">Cost</th>
-                <th className="py-5 px-6 text-right whitespace-nowrap">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
-              {logs.map((log) => {
-                const hasEdits = log.editHistory && log.editHistory.length > 0;
-                const latestLog = hasEdits
-                  ? log.editHistory[log.editHistory.length - 1]
-                  : null;
-
-                return (
-                  <tr
-                    key={log._id}
-                    id={log._id}
-                    className={`transition-all duration-1000 ease-out group ${
-                      activeHighlight === log._id
-                        ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}`
-                        : "hover:bg-zinc-800/30"
-                    }`}
-                  >
-                    <td className="p-5 px-6 align-top">
-                      <p className={`text-[11px] font-mono text-zinc-400 mb-1`}>
-                        {new Date(log.date).toLocaleDateString("en-GB")}
-                      </p>
-                      <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
-                        <Truck size={14} className={`text-zinc-500`} />{" "}
-                        {log.vehicleNo || "N/A"}
-                      </p>
-                      {log.meterKm && (
-                        <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-widest font-semibold flex items-center gap-1.5">
-                          <Map size={10} className="text-zinc-500" />{" "}
-                          {log.meterKm} KM
-                        </p>
-                      )}
-                      {hasEdits && (
-                        <div
-                          onClick={() => openHistory(log)}
-                          className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
-                        >
-                          <History size={10} className="text-zinc-400" />
-                          <span
-                            className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
-                          >
-                            {latestLog.role || "ADMIN"}
-                          </span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-5 px-6 align-top">
-                      <div
-                        className={`text-xs text-zinc-200 mb-2 flex items-center gap-1.5 ${theme.primaryBg} w-max px-2.5 py-1 rounded-md font-medium border ${theme.primaryBorder} uppercase tracking-wide`}
-                      >
-                        <Wrench size={12} className={theme.primaryText} />{" "}
-                        {log.serviceType || "Routine"}
-                      </div>
-                      {log.description && (
-                        <div className="text-[10px] text-zinc-400 font-mono mt-1.5 line-clamp-2 pr-4">
-                          {log.description}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-5 px-6 align-top text-right">
-                      <p className="text-lg font-black text-white font-mono drop-shadow-sm mb-2">
-                        ₹{(Number(log.cost) || 0).toLocaleString("en-IN")}
-                      </p>
-                    </td>
-                    <td className="p-5 px-6 text-right align-top">
-                      <div className="flex justify-end gap-2 items-center relative mt-1">
-                        <button
-                          onClick={() =>
-                            navigate(
-                              `${isTransport ? "/transportation/maintenance" : "/enterprise/maintenance"}`,
-                              { state: { editLog: log } },
-                            )
-                          }
-                          className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            isManager
-                              ? handleDisabledClick(log._id)
-                              : setDeleteModal({ isOpen: true, id: log._id })
-                          }
-                          className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        {warningTooltip === log._id && (
-                          <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
-                            🚫 Access Denied
-                          </div>
-                        )}
-                      </div>
-                    </td>
+          {syncStatus === "syncing" && logs.length === 0 ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader />
+            </div>
+          ) : (
+            <>
+              <table className="w-full text-left min-w-[750px] animate-in fade-in duration-300">
+                <thead
+                  className={`bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800`}
+                >
+                  <tr>
+                    <th className="py-5 px-6 whitespace-nowrap">
+                      Vehicle Details
+                    </th>
+                    <th className="py-5 px-6 whitespace-nowrap">
+                      Service Info
+                    </th>
+                    <th className="py-5 px-6 text-right whitespace-nowrap">
+                      Cost
+                    </th>
+                    <th className="py-5 px-6 text-right whitespace-nowrap">
+                      Actions
+                    </th>
                   </tr>
-                );
-              })}
-              {logs.length === 0 && !loading && (
-                <tr>
-                  <td
-                    colSpan="4"
-                    className="p-10 text-center text-zinc-500 italic"
+                </thead>
+                <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
+                  {logs.map((log) => {
+                    const hasEdits =
+                      log.editHistory && log.editHistory.length > 0;
+                    const latestLog = hasEdits
+                      ? log.editHistory[log.editHistory.length - 1]
+                      : null;
+
+                    return (
+                      <tr
+                        key={log._id}
+                        id={log._id}
+                        onClick={(e) => handleRowClick(e, log._id)}
+                        className={`transition-all duration-1000 ease-out group cursor-pointer ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}` : "hover:bg-zinc-800/30"}`}
+                      >
+                        <td className="p-5 px-6 align-top">
+                          <p
+                            className={`text-[11px] font-mono text-zinc-400 mb-1`}
+                          >
+                            {new Date(log.date).toLocaleDateString("en-GB")}
+                          </p>
+                          <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
+                            <Truck size={14} className={`text-zinc-500`} />{" "}
+                            {log.vehicleNo || "N/A"}
+                          </p>
+                          {log.meterKm && (
+                            <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                              <Map size={10} className="text-zinc-500" />{" "}
+                              {log.meterKm} KM
+                            </p>
+                          )}
+                          {hasEdits && (
+                            <div
+                              onClick={(e) => openHistory(e, log)}
+                              className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
+                            >
+                              <History size={10} className="text-zinc-400" />
+                              <span
+                                className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
+                              >
+                                {latestLog.role || "ADMIN"}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-5 px-6 align-top">
+                          <div
+                            className={`text-xs text-zinc-200 mb-2 flex items-center gap-1.5 ${theme.primaryBg} w-max px-2.5 py-1 rounded-md font-medium border ${theme.primaryBorder} uppercase tracking-wide`}
+                          >
+                            <Wrench size={12} className={theme.primaryText} />{" "}
+                            {log.serviceType || "Routine"}
+                          </div>
+                          {log.description && (
+                            <div className="text-[10px] text-zinc-400 font-mono mt-1.5 line-clamp-2 pr-4">
+                              {log.description}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-5 px-6 align-top text-right">
+                          <p className="text-lg font-black text-white font-mono drop-shadow-sm mb-2">
+                            ₹{(Number(log.cost) || 0).toLocaleString("en-IN")}
+                          </p>
+                        </td>
+                        <td className="p-5 px-6 text-right align-top">
+                          <div className="flex justify-end gap-2 items-center relative mt-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(
+                                  `${isTransport ? "/transportation/maintenance" : "/enterprise/maintenance"}`,
+                                  { state: { editLog: log } },
+                                );
+                              }}
+                              className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                isManager
+                                  ? handleDisabledClick(log._id)
+                                  : setDeleteModal({
+                                      isOpen: true,
+                                      id: log._id,
+                                    });
+                              }}
+                              className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                            {warningTooltip === log._id && (
+                              <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
+                                🚫 Access Denied
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {logs.length === 0 && !loading && (
+                    <tr>
+                      <td
+                        colSpan="4"
+                        className="p-10 text-center text-zinc-500 italic"
+                      >
+                        No maintenance records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+
+              {hasMore && loadedCount < 5000 && logs.length > 0 && (
+                <div className="flex justify-center p-6 border-t border-zinc-800/60">
+                  <Button
+                    onClick={() => fetchLogs(true)}
+                    disabled={loadingMore}
+                    variant="outline"
+                    className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
                   >
-                    No maintenance records found.
-                  </td>
-                </tr>
+                    {loadingMore ? (
+                      <RefreshCcw size={16} className="animate-spin mr-2" />
+                    ) : null}{" "}
+                    {loadingMore
+                      ? "Loading..."
+                      : `Load Next 50 Records (Loaded: ${loadedCount})`}
+                  </Button>
+                </div>
               )}
-            </tbody>
-          </table>
 
-          {/* 🚀 LOAD MORE 5000 LIMIT */}
-          {hasMore && loadedCount < 5000 && logs.length > 0 && (
-            <div className="flex justify-center p-6 border-t border-zinc-800/60">
-              <Button
-                onClick={() => fetchLogs(true)}
-                disabled={loadingMore}
-                variant="outline"
-                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
-              >
-                {loadingMore ? (
-                  <RefreshCcw size={16} className="animate-spin mr-2" />
-                ) : null}
-                {loadingMore
-                  ? "Loading..."
-                  : `Load Next 50 Records (Loaded: ${loadedCount})`}
-              </Button>
-            </div>
-          )}
-
-          {/* 🚀 5000 WARNING BANNER */}
-          {loadedCount >= 5000 && (
-            <div className="p-6 border-t border-zinc-800/60 flex justify-center">
-              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md animate-in fade-in slide-in-from-bottom-2 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
-                <AlertOctagon className="mx-auto mb-2 opacity-80" size={24} />
-                <h4 className="font-bold text-sm mb-1">
-                  Display Limit Reached
-                </h4>
-                <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
-                  To preserve system performance and Firebase Read limits,
-                  infinite scrolling stops at 5,000 records. Please utilize the
-                  Search and Filters at the top to precisely locate older
-                  records.
-                </p>
-              </div>
-            </div>
+              {loadedCount >= 5000 && (
+                <div className="p-6 border-t border-zinc-800/60 flex justify-center">
+                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md animate-in fade-in slide-in-from-bottom-2 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+                    <AlertOctagon
+                      className="mx-auto mb-2 opacity-80"
+                      size={24}
+                    />
+                    <h4 className="font-bold text-sm mb-1">
+                      Display Limit Reached
+                    </h4>
+                    <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
+                      To preserve system performance and Firebase Read limits,
+                      infinite scrolling stops at 5,000 records. Please utilize
+                      the Search and Filters at the top to precisely locate
+                      older records.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -763,7 +783,6 @@ const MaintenanceReport = () => {
         isDestructive={true}
       />
 
-      {/* 🛑 SECURE WIPE DATA MODAL */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
@@ -775,7 +794,6 @@ const MaintenanceReport = () => {
               <AlertOctagon size={24} />
               <h2 className="text-xl font-bold tracking-wide">Wipe Database</h2>
             </div>
-
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -790,7 +808,9 @@ const MaintenanceReport = () => {
                     Download backup before wiping.{" "}
                     <strong className="text-amber-400">
                       Limit: 10,000 records/day.
-                    </strong>
+                    </strong>{" "}
+                    If you exceed this, the system will save your progress, and
+                    you can download the rest tomorrow.
                   </p>
                   <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
                     <input
@@ -810,7 +830,6 @@ const MaintenanceReport = () => {
                 </div>
               </div>
             </div>
-
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
@@ -843,15 +862,10 @@ const MaintenanceReport = () => {
               >
                 Cancel
               </button>
-              {/* 🚀 DYNAMIC BUTTON STYLING FOR WIPE LOCK */}
               <button
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword.trim()}
-                className={`h-11 px-6 rounded-xl text-sm font-bold border transition-colors flex items-center justify-center gap-2 ${
-                  wiping || !deletePassword.trim()
-                    ? "border-rose-900/30 text-rose-500/50 bg-rose-950/20 cursor-not-allowed"
-                    : "border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20"
-                }`}
+                className={`h-11 px-6 rounded-xl text-sm font-bold border transition-colors flex items-center justify-center gap-2 ${wiping || !deletePassword.trim() ? "border-rose-900/30 text-rose-500/50 bg-rose-950/20 cursor-not-allowed" : "border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20"}`}
               >
                 {wiping ? (
                   <RefreshCcw size={16} className="animate-spin" />
@@ -915,7 +929,7 @@ const MaintenanceReport = () => {
                       >
                         {log.role || "ADMIN"}
                       </h4>
-                      <p className="text-zinc-500 text-[10px] font-mono mt-0.5">
+                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
                         {log.by || "admin@system.com"}
                       </p>
                       <p
