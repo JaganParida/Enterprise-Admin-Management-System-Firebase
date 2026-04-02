@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import vehicleService from "../../services/vehicleService";
 import { useUI } from "../../context/UIProvider";
@@ -41,13 +41,19 @@ import {
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
-// 🚀 FIXED: Added the missing constant for the 5,000 pagination lock
 const MAX_RECORDS_LIMIT = 5000;
 
 const getPreviousMonthString = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const defaultFilters = {
+  search: "",
+  amountFilter: "Any Amount",
+  dateFilter: "All",
+  exactDate: "",
 };
 
 const VehicleReport = () => {
@@ -57,22 +63,28 @@ const VehicleReport = () => {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState("trips");
 
-  const [filters, setFilters] = useState({
-    search: "",
-    amountFilter: "Any Amount",
-    dateFilter: "All",
-    exactDate: "",
-  });
+  const [filters, setFilters] = useState(defaultFilters);
 
+  // 🚀 SYNCHRONOUS CACHE INITIALIZATION
   const [logs, setLogs] = useState(
-    () => vehicleService.getCachedLogs("trips", filters) || [],
+    () => vehicleService.getCachedLogs("trips", defaultFilters) || [],
   );
   const [expenses, setExpenses] = useState(
-    () => vehicleService.getCachedLogs("expenses", filters) || [],
+    () => vehicleService.getCachedLogs("expenses", defaultFilters) || [],
   );
 
   const [loading, setLoading] = useState(
-    () => !vehicleService.getCachedLogs("trips", filters),
+    () =>
+      !(
+        vehicleService.getCachedLogs("trips", defaultFilters) &&
+        vehicleService.getCachedLogs("expenses", defaultFilters)
+      ),
+  );
+  const [syncStatus, setSyncStatus] = useState(() =>
+    vehicleService.getCachedLogs("trips", defaultFilters) &&
+    vehicleService.getCachedLogs("expenses", defaultFilters)
+      ? "up-to-date"
+      : "syncing",
   );
 
   const [lastDocTrip, setLastDocTrip] = useState(null);
@@ -81,11 +93,8 @@ const VehicleReport = () => {
   const [hasMoreExp, setHasMoreExp] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // 🚀 5000 Limit Trackers
   const [loadedCountTrip, setLoadedCountTrip] = useState(logs.length);
   const [loadedCountExp, setLoadedCountExp] = useState(expenses.length);
-
-  const [syncStatus, setSyncStatus] = useState("up-to-date");
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -134,7 +143,6 @@ const VehicleReport = () => {
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  // 🚀 CHECK SYNC STATUS EVERY 2 SECONDS
   useEffect(() => {
     const checkSync = () => {
       const globalLastUpdate = parseInt(
@@ -148,7 +156,6 @@ const VehicleReport = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 CHECK IF MONTHLY BACKUP IS NEEDED
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
@@ -170,57 +177,65 @@ const VehicleReport = () => {
     checkBackupNeeded();
   }, []);
 
-  // 🚀 100% CACHED FETCH LOGIC
-  const fetchLogs = useCallback(
-    async (isLoadMore = false, forceSync = false) => {
-      if (isLoadMore) setLoadingMore(true);
-      else if (forceSync) setSyncStatus("syncing");
-      else setLoading(true);
+  // 🚀 OPTIMIZED FETCH: 0 Reads, NO Unconditional Loaders!
+  const fetchLogs = async (isLoadMore = false, forceSync = false) => {
+    if (isLoadMore) setLoadingMore(true);
+    else if (
+      (activeTab === "trips" ? logs.length === 0 : expenses.length === 0) ||
+      forceSync
+    )
+      setSyncStatus("syncing");
 
-      try {
-        if (activeTab === "trips") {
-          const res = await vehicleService.getLogs(
-            filters,
-            isLoadMore ? lastDocTrip : null,
-            50,
-            forceSync,
-          );
-          if (isLoadMore) {
-            setLogs((prev) => [...prev, ...(res.data || [])]);
-            setLoadedCountTrip((prev) => prev + (res.data?.length || 0));
-          } else {
-            setLogs(res.data || []);
-            setLoadedCountTrip(res.data?.length || 0);
-          }
-          setLastDocTrip(res.lastVisible || null);
-          setHasMoreTrip(res.data && res.data.length === 50);
+    if (
+      !isLoadMore &&
+      !forceSync &&
+      (activeTab === "trips" ? logs.length === 0 : expenses.length === 0)
+    )
+      setLoading(true);
+
+    try {
+      if (activeTab === "trips") {
+        const res = await vehicleService.getLogs(
+          filters,
+          isLoadMore ? lastDocTrip : null,
+          50,
+          forceSync,
+        );
+        if (isLoadMore) {
+          setLogs((prev) => [...prev, ...(res.data || [])]);
+          setLoadedCountTrip((prev) => prev + (res.data?.length || 0));
         } else {
-          const res = await vehicleService.getExpenses(
-            filters,
-            isLoadMore ? lastDocExp : null,
-            50,
-            forceSync,
-          );
-          if (isLoadMore) {
-            setExpenses((prev) => [...prev, ...(res.data || [])]);
-            setLoadedCountExp((prev) => prev + (res.data?.length || 0));
-          } else {
-            setExpenses(res.data || []);
-            setLoadedCountExp(res.data?.length || 0);
-          }
-          setLastDocExp(res.lastVisible || null);
-          setHasMoreExp(res.data && res.data.length === 50);
+          setLogs(res.data || []);
+          setLoadedCountTrip(res.data?.length || 0);
         }
-        setSyncStatus("up-to-date");
-      } catch (error) {
-        toast.error("Failed to load report data.");
-      } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        setLastDocTrip(res.lastVisible || null);
+        setHasMoreTrip(res.data && res.data.length === 50);
+      } else {
+        const res = await vehicleService.getExpenses(
+          filters,
+          isLoadMore ? lastDocExp : null,
+          50,
+          forceSync,
+        );
+        if (isLoadMore) {
+          setExpenses((prev) => [...prev, ...(res.data || [])]);
+          setLoadedCountExp((prev) => prev + (res.data?.length || 0));
+        } else {
+          setExpenses(res.data || []);
+          setLoadedCountExp(res.data?.length || 0);
+        }
+        setLastDocExp(res.lastVisible || null);
+        setHasMoreExp(res.data && res.data.length === 50);
       }
-    },
-    [activeTab, filters, lastDocTrip, lastDocExp, logs, expenses, toast],
-  );
+      setSyncStatus("up-to-date");
+    } catch (error) {
+      toast.error("Failed to load report data.");
+      setSyncStatus("error");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -275,18 +290,15 @@ const VehicleReport = () => {
   const currentLoadedCount =
     activeTab === "trips" ? loadedCountTrip : loadedCountExp;
 
-  // 🚀 SMART 10,000 CHUNKER FOR BACKUPS
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
-
       const monthlyKey = `backup_count_${monthToFetch}_${activeTab}`;
       const downloadedCount = Number(localStorage.getItem(monthlyKey) || 0);
-      if (downloadedCount >= 10000) {
+      if (downloadedCount >= 10000)
         return toast.error(
           "10,000 daily download limit reached. Try again tomorrow.",
         );
-      }
 
       toast.info(`Fetching secure backup chunk...`);
       const res = await vehicleService.getBackupChunk(
@@ -294,7 +306,6 @@ const VehicleReport = () => {
         activeTab,
         10000 - downloadedCount,
       );
-
       if (res.data.length === 0)
         return toast.info(`No more records found for ${monthToFetch}.`);
 
@@ -343,11 +354,11 @@ const VehicleReport = () => {
         res.lastDocId,
       );
 
-      if (res.data.length === 10000 - downloadedCount) {
+      if (res.data.length === 10000 - downloadedCount)
         toast.warning(
           "10,000 Limit reached. Download the next batch tomorrow.",
         );
-      } else {
+      else {
         toast.success(`Securely downloaded ${res.data.length} records!`);
         localStorage.setItem(`backup_vehicle_${monthToFetch}`, "true");
         if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
@@ -357,7 +368,6 @@ const VehicleReport = () => {
     }
   };
 
-  // 🚀 SECURE WIPE DATABASE WITH 10,000 CHUNK LIMIT
   const handleWipeAll = async () => {
     if (isManager || !deletePassword.trim())
       return toast.error("Verification failed.");
@@ -369,13 +379,11 @@ const VehicleReport = () => {
         email: currentUser.email,
         type: activeTab,
       });
-
       if (res.warning) toast.warning(res.warning);
       else
         toast.success(
           `Safely cleared ${res.deletedCount} ${activeTab === "trips" ? "Trip" : "Expense"} records.`,
         );
-
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
@@ -437,12 +445,7 @@ const VehicleReport = () => {
             <button
               onClick={() => {
                 setActiveTab("trips");
-                setFilters({
-                  search: "",
-                  amountFilter: "Any Amount",
-                  dateFilter: "All",
-                  exactDate: "",
-                });
+                setFilters(defaultFilters);
               }}
               className={`px-5 h-full flex items-center text-xs font-bold rounded-xl transition-all ${activeTab === "trips" ? theme.primaryTabBg : "text-zinc-400 hover:text-white"}`}
             >
@@ -451,12 +454,7 @@ const VehicleReport = () => {
             <button
               onClick={() => {
                 setActiveTab("expenses");
-                setFilters({
-                  search: "",
-                  amountFilter: "Any Amount",
-                  dateFilter: "All",
-                  exactDate: "",
-                });
+                setFilters(defaultFilters);
               }}
               className={`px-5 h-full flex items-center text-xs font-bold rounded-xl transition-all ${activeTab === "expenses" ? "bg-rose-600 text-white shadow-lg shadow-rose-900/20" : "text-zinc-400 hover:text-white"}`}
             >
@@ -906,7 +904,7 @@ const VehicleReport = () => {
                   <tr>
                     <td
                       colSpan="4"
-                      className="p-12 text-center text-rose-100/30 italic"
+                      className="p-12 text-center text-rose-100/30 italic animate-in fade-in"
                     >
                       No expenses recorded yet.
                     </td>
@@ -933,7 +931,7 @@ const VehicleReport = () => {
                 >
                   {loadingMore ? (
                     <RefreshCcw size={16} className="animate-spin mr-2" />
-                  ) : null}
+                  ) : null}{" "}
                   {loadingMore
                     ? "Loading..."
                     : `Load Next 50 Records (Loaded: ${currentLoadedCount})`}
@@ -1055,7 +1053,6 @@ const VehicleReport = () => {
         </div>
       )}
 
-      {/* HISTORY MODAL */}
       {historyModal.isOpen && historyModal.data && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
