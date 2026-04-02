@@ -26,12 +26,14 @@ let memoryCache = {
   stats: null,
   logs: null,
   filtersKey: "",
-  isDirty: true, // TRUE means it MUST fetch from Firebase
+  isDirty: true,
+  lastFetchTime: 0,
 };
 
 // Trigger this when data is added/edited/deleted
 const markDirty = () => {
   memoryCache.isDirty = true;
+  localStorage.setItem("fuel_last_update", Date.now().toString());
 };
 
 const fuelService = {
@@ -43,9 +45,23 @@ const fuelService = {
   startAfter,
   getDocs,
 
+  // 🚀 SYNCHRONOUS GETTERS TO KILL UI FLICKER
+  getLastFetchTime: () => memoryCache.lastFetchTime,
+  getCachedStats: () => (!memoryCache.isDirty ? memoryCache.stats : null),
+  getCachedLogs: (filters) => {
+    const key = JSON.stringify(filters);
+    if (
+      !memoryCache.isDirty &&
+      memoryCache.filtersKey === key &&
+      memoryCache.logs
+    ) {
+      return memoryCache.logs;
+    }
+    return null;
+  },
+
   // 🚀 STATS: 0 READS ON NAVIGATION
   getStats: async (forceRefresh = false) => {
-    // If not forced, not dirty, and exists in memory -> RETURN INSTANTLY (0 Reads)
     if (!forceRefresh && !memoryCache.isDirty && memoryCache.stats) {
       return memoryCache.stats;
     }
@@ -62,17 +78,14 @@ const fuelService = {
       let totalCost = snapshot.data().totalCost || 0;
       let refuelCount = snapshot.data().refuelCount || 0;
 
-      // 🔥 Fallback Trigger: Agar count > 0 hai par sum 0 aa raha hai, iska matlab purana data 'string' format mein hai.
-      // Aise mein hum intentionally error throw karenge taaki fallback (catch block) chale.
       if (refuelCount > 0 && totalLiters === 0 && totalCost === 0) {
         throw new Error("String data detected, forcing client fallback");
       }
 
       const result = { totalLiters, totalCost, refuelCount };
-      memoryCache.stats = result; // 💾 Save to RAM
+      memoryCache.stats = result;
       return result;
     } catch (error) {
-      // ⚠️ ULTIMATE FALLBACK: Agar Server Aggregation fail ho jaye (Offline, String Data, ya Rules error)
       console.warn(
         "Aggregation failed. Executing fallback manual calculation.",
       );
@@ -87,10 +100,10 @@ const fuelService = {
         });
 
         const result = { totalLiters, totalCost, refuelCount: snap.size };
-        memoryCache.stats = result; // 💾 Save to RAM
+        memoryCache.stats = result;
         return result;
       } catch (fallbackError) {
-        console.error("Fallback calculation also failed:", fallbackError);
+        console.error("Fallback calculation failed:", fallbackError);
         return { totalLiters: 0, totalCost: 0, refuelCount: 0 };
       }
     }
@@ -106,7 +119,6 @@ const fuelService = {
     const filterKey = JSON.stringify(filters);
     const isLoadMore = !!lastVisibleDoc;
 
-    // If not forced, not dirty, not loading more, and filters match -> RETURN INSTANTLY (0 Reads)
     if (
       !forceRefresh &&
       !memoryCache.isDirty &&
@@ -171,9 +183,10 @@ const fuelService = {
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
       if (!isLoadMore) {
-        memoryCache.logs = data; // 💾 Save to RAM
+        memoryCache.logs = data;
         memoryCache.filtersKey = filterKey;
-        memoryCache.isDirty = false; // System is now clean and up-to-date
+        memoryCache.isDirty = false;
+        memoryCache.lastFetchTime = Date.now();
       }
 
       return { data, lastVisible: newLastVisible };
@@ -194,7 +207,7 @@ const fuelService = {
       editHistory: [],
     };
     const docRef = await addDoc(fuelCollection, dataToSave);
-    markDirty(); // Database changed, invalidate RAM cache
+    markDirty();
     return { data: { _id: docRef.id, ...dataToSave } };
   },
 
@@ -202,7 +215,7 @@ const fuelService = {
     const docRef = doc(db, "fuels", id);
     const snapshot = await getDoc(docRef);
     let currentHistory =
-      snapshot.exists() && snapshot.data().editHistory
+      snapshot.exists() && Array.isArray(snapshot.data().editHistory)
         ? snapshot.data().editHistory
         : [];
 
@@ -212,7 +225,7 @@ const fuelService = {
       at: new Date().toISOString(),
     });
     if (currentHistory.length > 2)
-      currentHistory = currentHistory.slice(currentHistory.length - 2);
+      currentHistory = currentHistory.slice(currentHistory.length - 2); // Top 2 constraint
 
     await updateDoc(docRef, {
       ...payload,
@@ -224,7 +237,7 @@ const fuelService = {
       editHistory: currentHistory,
     });
 
-    markDirty(); // Database changed, invalidate RAM cache
+    markDirty();
     return { message: "Updated" };
   },
 
@@ -232,7 +245,7 @@ const fuelService = {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Action Denied.");
     await deleteDoc(doc(db, "fuels", id));
-    markDirty(); // Database changed, invalidate RAM cache
+    markDirty();
     return { message: "Deleted" };
   },
 
@@ -277,7 +290,7 @@ const fuelService = {
 
     wipeMeta.count += totalDeleted;
     localStorage.setItem("fuel_wipe_meta", JSON.stringify(wipeMeta));
-    markDirty(); // Database wiped, invalidate RAM cache
+    markDirty();
 
     if (totalDeleted >= maxAllowed && hasMore)
       return { warning: "10,000 records deleted. Come back tomorrow." };
