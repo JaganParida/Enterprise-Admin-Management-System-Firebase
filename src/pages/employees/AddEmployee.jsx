@@ -14,7 +14,6 @@ const AddEmployee = () => {
   const { admin } = useAuth();
   const [loading, setLoading] = useState(false);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -37,7 +36,7 @@ const AddEmployee = () => {
     phone: "",
     address: "",
     initialSalary: "",
-    salaryTaken: "", // Strictly Optional
+    salaryTaken: "",
     idType: "Aadhar",
     idNumber: "",
     joinDate: new Date().toISOString().split("T")[0],
@@ -46,26 +45,21 @@ const AddEmployee = () => {
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  // SMART ID VALIDATION & AUTO-STOP LOGIC
   const handleIdChange = (e) => {
     let val = e.target.value.toUpperCase();
-    if (formData.idType === "Aadhar") {
-      val = val.replace(/\D/g, "").slice(0, 12); // Only 12 digits
-    } else if (formData.idType === "PAN") {
-      val = val.replace(/[^A-Z0-9]/g, "").slice(0, 10); // Only 10 Alphanumeric
-    } else if (formData.idType === "Voter ID") {
-      val = val.replace(/[^A-Z0-9]/g, "").slice(0, 10); // 10 Alphanumeric
-    } else if (formData.idType === "Driving License") {
-      val = val.replace(/[^A-Z0-9-]/g, "").slice(0, 16); // 16 Alphanumeric with hyphens
-    }
+    if (formData.idType === "Aadhar") val = val.replace(/\D/g, "").slice(0, 12);
+    else if (formData.idType === "PAN")
+      val = val.replace(/[^A-Z0-9]/g, "").slice(0, 10);
+    else if (formData.idType === "Voter ID")
+      val = val.replace(/[^A-Z0-9]/g, "").slice(0, 10);
+    else if (formData.idType === "Driving License")
+      val = val.replace(/[^A-Z0-9-]/g, "").slice(0, 16);
     setFormData({ ...formData, idNumber: val });
   };
 
-  const handleIdTypeChange = (e) => {
+  const handleIdTypeChange = (e) =>
     setFormData({ ...formData, idType: e.target.value, idNumber: "" });
-  };
 
-  // SMART PLACEHOLDER LOGIC
   const getIdPlaceholder = () => {
     switch (formData.idType) {
       case "Aadhar":
@@ -83,17 +77,12 @@ const AddEmployee = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    // Validations
-    if (formData.phone.length !== 10) {
+    if (formData.phone.length !== 10)
       return toast.error("Phone number must be exactly 10 digits");
-    }
-    if (formData.idType === "Aadhar" && formData.idNumber.length !== 12) {
+    if (formData.idType === "Aadhar" && formData.idNumber.length !== 12)
       return toast.error("Aadhar Card must be exactly 12 digits");
-    }
-    if (formData.idType === "PAN" && formData.idNumber.length !== 10) {
+    if (formData.idType === "PAN" && formData.idNumber.length !== 10)
       return toast.error("PAN Card must be exactly 10 characters");
-    }
 
     setLoading(true);
     try {
@@ -101,10 +90,9 @@ const AddEmployee = () => {
         admin || { email: "Unknown", role: "admin" };
       await employeeService.addEmployee(formData, currentUser);
       toast.success("Employee added successfully!");
-      navigate(-1); // Changed back to previous route logically
+      navigate(-1);
     } catch (error) {
-      console.error("Error adding employee:", error);
-      toast.error(error.response?.data?.message || "Failed to add employee");
+      toast.error(error.message || "Failed to add employee");
     } finally {
       setLoading(false);
     }
@@ -123,7 +111,6 @@ const AddEmployee = () => {
         <div
           className={`absolute top-0 right-0 w-64 h-64 blur-3xl rounded-full pointer-events-none ${theme.glowOrb}`}
         ></div>
-
         <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6 relative z-10">
           <div
             className={`p-3 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
@@ -164,14 +151,13 @@ const AddEmployee = () => {
               name="phone"
               placeholder="e.g. 9876543210"
               value={formData.phone}
+              required
               onChange={(e) => {
                 let val = e.target.value.replace(/\D/g, "");
-                if (val.length > 0 && !["6", "7", "8", "9"].includes(val[0])) {
+                if (val.length > 0 && !["6", "7", "8", "9"].includes(val[0]))
                   val = "";
-                }
                 if (val.length <= 10) setFormData({ ...formData, phone: val });
               }}
-              required
             />
             <Input
               label="Joining Date"
