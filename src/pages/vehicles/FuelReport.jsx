@@ -50,15 +50,22 @@ const FuelReport = () => {
   const navigate = useNavigate();
 
   const [filters, setFilters] = useState(defaultFilters);
-  const [logs, setLogs] = useState([]);
+
+  // 🚀 INITIALIZE FROM CACHE TO PREVENT LOADER FLICKER
+  const [logs, setLogs] = useState(
+    () => fuelService.getCachedLogs(defaultFilters) || [],
+  );
+  const [loading, setLoading] = useState(
+    () => !fuelService.getCachedLogs(defaultFilters),
+  );
+  const [syncStatus, setSyncStatus] = useState(() =>
+    fuelService.getCachedLogs(defaultFilters) ? "synced" : "syncing",
+  );
 
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadedCount, setLoadedCount] = useState(0);
-
-  // 🚀 Smart Sync State
-  const [syncStatus, setSyncStatus] = useState("syncing");
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -94,24 +101,45 @@ const FuelReport = () => {
   });
   const [warningTooltip, setWarningTooltip] = useState(null);
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
+
+  useEffect(() => {
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonthString();
+      if (!localStorage.getItem(`backup_${prevMonth}_meta`)) {
+        try {
+          const q = fuelService.query(
+            fuelService.collection(db, "fuels"),
+            fuelService.where("date", ">=", prevMonth),
+            fuelService.where("date", "<=", prevMonth + "\uf8ff"),
+            fuelService.limit(1),
+          );
+          const snap = await fuelService.getDocs(q);
+          if (!snap.empty) setShowBackupWarning(prevMonth);
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
+      }
+    };
+    checkBackupNeeded();
+  }, []);
 
   useEffect(() => {
     if (urlHighlightId && logs.length > 0) {
       setActiveHighlight(urlHighlightId);
       setTimeout(() => {
-        const element = document.getElementById(urlHighlightId);
-        if (element)
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        const el = document.getElementById(urlHighlightId);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
       }, 500);
       const timer = setTimeout(() => setActiveHighlight(null), 3500);
       return () => clearTimeout(timer);
     }
   }, [urlHighlightId, logs.length]);
 
-  // 🚀 Pass 'force' parameter to bypass RAM cache
   const fetchLogs = async (isLoadMore = false, force = false) => {
     if (isLoadMore) setLoadingMore(true);
-    else setSyncStatus("syncing");
+    else if (logs.length === 0 || force) setSyncStatus("syncing");
+    if (logs.length === 0 && !isLoadMore) setLoading(true);
 
     try {
       const response = await fuelService.getLogs(
@@ -120,16 +148,14 @@ const FuelReport = () => {
         50,
         force,
       );
-
       if (isLoadMore) {
         setLogs((prev) => [...prev, ...(response.data || [])]);
         setLoadedCount((prev) => prev + (response.data?.length || 0));
       } else {
         setLogs(response.data || []);
         setLoadedCount(response.data?.length || 0);
-        setSyncStatus("synced"); // All Good
+        setSyncStatus("synced");
       }
-
       setLastDoc(response.lastVisible || null);
       setHasMore(response.data && response.data.length === 50);
     } catch (error) {
@@ -137,6 +163,7 @@ const FuelReport = () => {
       toast.error("Failed to load report data.");
     } finally {
       setLoadingMore(false);
+      setLoading(false);
     }
   };
 
@@ -181,7 +208,6 @@ const FuelReport = () => {
     (filters.search ? 1 : 0);
 
   const handleFullBackup = async (monthToFetch = backupMonth) => {
-    // ... exactly the same backup logic as before ...
     try {
       if (!monthToFetch) return toast.error("Select a month");
       const today = new Date().toISOString().split("T")[0];
@@ -197,6 +223,7 @@ const FuelReport = () => {
         dlMeta.date = today;
         dlMeta.count = 0;
       }
+
       const fetchLimit = 10000 - dlMeta.count;
       toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
 
@@ -206,7 +233,6 @@ const FuelReport = () => {
         fuelService.orderBy("date"),
         fuelService.limit(fetchLimit),
       ];
-
       if (dlMeta.lastId) {
         const lastDocRef = await getDoc(doc(db, "fuels", dlMeta.lastId));
         if (lastDocRef.exists())
@@ -256,11 +282,14 @@ const FuelReport = () => {
         JSON.stringify(dlMeta),
       );
 
-      if (snapshot.size === fetchLimit)
+      if (snapshot.size === fetchLimit) {
         toast.warning(
           "10,000 Limit reached. Download the next batch tomorrow.",
         );
-      else toast.success(`Backup completed (${snapshot.size} records)!`);
+      } else {
+        toast.success(`Backup completed (${snapshot.size} records)!`);
+        if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
+      }
     } catch (e) {
       toast.error("Backup failed.");
     }
@@ -308,7 +337,7 @@ const FuelReport = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 items-center">
-          {/* 🚀 Smart Sync Button -> onClick passes TRUE to force fetch */}
+          {/* 🚀 Smart Sync Button */}
           <Button
             variant="ghost"
             onClick={() => fetchLogs(false, true)}
@@ -350,7 +379,6 @@ const FuelReport = () => {
               </div>
             )}
           </div>
-
           <Link
             to={`${isTransport ? "/transportation/fuel" : "/enterprise/fuel"}`}
             className="w-full sm:w-auto"
@@ -364,6 +392,38 @@ const FuelReport = () => {
           </Link>
         </div>
       </div>
+
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the fuel backup for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
 
       <div
         className={`bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl border-zinc-800/60`}
@@ -409,7 +469,6 @@ const FuelReport = () => {
               </span>
             )}
           </div>
-
           <div className="relative group">
             <select
               value={filters.amountFilter}
@@ -434,7 +493,6 @@ const FuelReport = () => {
               className={`absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:${theme.primaryText}`}
             />
           </div>
-
           <div className="relative group">
             <select
               value={filters.dateFilter}
@@ -459,7 +517,6 @@ const FuelReport = () => {
               className={`absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:${theme.primaryText}`}
             />
           </div>
-
           <div className="relative group flex items-center">
             <div
               className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filters.exactDate ? theme.primaryText : "text-zinc-500"}`}
@@ -482,7 +539,6 @@ const FuelReport = () => {
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
-
           {activeFiltersCount > 0 && (
             <Button
               variant="ghost"
@@ -532,7 +588,6 @@ const FuelReport = () => {
                     const latestLog = hasEdits
                       ? log.editHistory[log.editHistory.length - 1]
                       : null;
-
                     return (
                       <tr
                         key={log._id}
@@ -649,7 +704,7 @@ const FuelReport = () => {
                   >
                     {loadingMore ? (
                       <RefreshCcw size={16} className="animate-spin mr-2" />
-                    ) : null}
+                    ) : null}{" "}
                     {loadingMore
                       ? "Loading..."
                       : `Load Next 50 Records (Loaded: ${loadedCount})`}
@@ -830,7 +885,7 @@ const FuelReport = () => {
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? "bg-indigo-500/10 text-indigo-400" : "bg-zinc-800 text-zinc-500"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
@@ -852,15 +907,12 @@ const FuelReport = () => {
                           year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
-                          second: "2-digit",
                         })}
                       </p>
                     </div>
                   </div>
                   {index === 0 && (
-                    <div
-                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
-                    >
+                    <div className="bg-indigo-500/10 border-indigo-500/20 text-indigo-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
                       LATEST
                     </div>
                   )}
