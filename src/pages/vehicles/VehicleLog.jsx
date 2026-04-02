@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import vehicleService from "../../services/vehicleService";
 import {
@@ -57,6 +57,13 @@ const GlassInput = ({
   </div>
 );
 
+const defaultFilters = {
+  search: "",
+  amountFilter: "Any Amount",
+  dateFilter: "All",
+  exactDate: "",
+};
+
 const VehicleLog = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
@@ -65,35 +72,28 @@ const VehicleLog = () => {
 
   const [activeTab, setActiveTab] = useState("trips");
 
-  const [logs, setLogs] = useState(
-    () =>
-      vehicleService.getCachedLogs("trips", {
-        search: "",
-        amountFilter: "Any Amount",
-        dateFilter: "All",
-        exactDate: "",
-      }) || [],
-  );
-  const [expenses, setExpenses] = useState(
-    () =>
-      vehicleService.getCachedLogs("expenses", {
-        search: "",
-        amountFilter: "Any Amount",
-        dateFilter: "All",
-        exactDate: "",
-      }) || [],
-  );
+  // 🚀 SYNCHRONOUS CACHE INITIALIZATION (No Loader Flicker)
+  const [logs, setLogs] = useState(() => {
+    const cached = vehicleService.getCachedLogs("trips", defaultFilters);
+    return cached ? cached.slice(0, 10) : [];
+  });
+  const [expenses, setExpenses] = useState(() => {
+    const cached = vehicleService.getCachedLogs("expenses", defaultFilters);
+    return cached ? cached.slice(0, 10) : [];
+  });
   const [loading, setLoading] = useState(
     () =>
-      !vehicleService.getCachedLogs("trips", {
-        search: "",
-        amountFilter: "Any Amount",
-        dateFilter: "All",
-        exactDate: "",
-      }),
+      !(
+        vehicleService.getCachedLogs("trips", defaultFilters) &&
+        vehicleService.getCachedLogs("expenses", defaultFilters)
+      ),
   );
-
-  const [syncStatus, setSyncStatus] = useState("up-to-date");
+  const [syncStatus, setSyncStatus] = useState(() =>
+    vehicleService.getCachedLogs("trips", defaultFilters) &&
+    vehicleService.getCachedLogs("expenses", defaultFilters)
+      ? "up-to-date"
+      : "syncing",
+  );
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -168,32 +168,32 @@ const VehicleLog = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const fetchData = useCallback(
-    async (force = false) => {
-      if (force) setSyncStatus("syncing");
-      else setLoading(true);
+  // 🚀 OPTIMIZED FETCH: 0 Reads, NO Unconditional Loaders!
+  const fetchData = async (force = false) => {
+    if (force || logs.length === 0 || expenses.length === 0)
+      setSyncStatus("syncing");
+    if ((logs.length === 0 || expenses.length === 0) && !force)
+      setLoading(true);
 
-      try {
-        const [tripRes, expRes] = await Promise.all([
-          vehicleService.getLogs({}, null, 10, force),
-          vehicleService.getExpenses({}, null, 10, force),
-        ]);
-        setLogs(tripRes.data || []);
-        setExpenses(expRes.data || []);
-        setSyncStatus("up-to-date");
-      } catch (err) {
-        setSyncStatus("error");
-        toast.error("Error loading data.");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [toast],
-  );
+    try {
+      const [tripRes, expRes] = await Promise.all([
+        vehicleService.getLogs(defaultFilters, null, 10, force),
+        vehicleService.getExpenses(defaultFilters, null, 10, force),
+      ]);
+      setLogs(tripRes.data ? tripRes.data.slice(0, 10) : []);
+      setExpenses(expRes.data ? expRes.data.slice(0, 10) : []);
+      setSyncStatus("up-to-date");
+    } catch (err) {
+      setSyncStatus("error");
+      toast.error("Error loading data.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, []);
 
   useEffect(() => {
     if (urlHighlightId && !loading) {
@@ -257,7 +257,6 @@ const VehicleLog = () => {
       )
     )
       return toast.error("Invalid Vehicle Number format.");
-
     setSubmitting(true);
     try {
       const currentUser = admin?.data || admin || {};
@@ -270,7 +269,7 @@ const VehicleLog = () => {
       }
       setFormData(initialTripForm);
       setEditId(null);
-      fetchData(true);
+      fetchData(false);
     } catch (err) {
       toast.error("Failed to save trip.");
     } finally {
@@ -292,7 +291,7 @@ const VehicleLog = () => {
       }
       setExpenseData(initialExpenseForm);
       setEditId(null);
-      fetchData(true);
+      fetchData(false);
     } catch (err) {
       toast.error("Failed to save expense.");
     } finally {
@@ -302,21 +301,20 @@ const VehicleLog = () => {
 
   const handleEdit = (item, type) => {
     setEditId(item._id);
-    if (type === "trips") {
+    if (type === "trips")
       setFormData({
         ...item,
         date: item.date
           ? new Date(item.date).toISOString().split("T")[0]
           : new Date().toISOString().split("T")[0],
       });
-    } else {
+    else
       setExpenseData({
         ...item,
         date: item.date
           ? new Date(item.date).toISOString().split("T")[0]
           : new Date().toISOString().split("T")[0],
       });
-    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -350,7 +348,7 @@ const VehicleLog = () => {
 
   return (
     <div className="space-y-6 pb-10 px-2 sm:px-4">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 animate-in fade-in slide-in-from-top-4 duration-500 ease-out">
         <div className="flex items-center gap-4">
           <div
             className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
@@ -417,7 +415,7 @@ const VehicleLog = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-          <div className="xl:col-span-5 animate-in fade-in zoom-in-[0.98] duration-500 ease-out">
+          <div className="xl:col-span-5 animate-in fade-in slide-in-from-left-4 duration-500 ease-out">
             <div
               className={`bg-[#09090B] border p-6 md:p-8 rounded-3xl shadow-2xl transition-all duration-300 relative overflow-hidden ${editId ? (activeTab === "trips" ? (isTransport ? "border-[#0ea5e9]/50 ring-1 ring-[#0ea5e9]/20" : "border-indigo-500/50 ring-1 ring-indigo-500/20") : "border-rose-500/50 ring-1 ring-rose-500/20") : "border-zinc-800/60"}`}
             >
@@ -431,7 +429,7 @@ const VehicleLog = () => {
                     <Truck size={18} className={theme.iconColor} />
                   ) : (
                     <Receipt size={18} className="text-rose-400" />
-                  )}
+                  )}{" "}
                   {editId
                     ? `Edit ${activeTab === "trips" ? "Trip Log" : "Expense"}`
                     : `Log ${activeTab === "trips" ? "New Trip" : "Expense"}`}
@@ -449,7 +447,7 @@ const VehicleLog = () => {
               {activeTab === "trips" && (
                 <form
                   onSubmit={handleTripSubmit}
-                  className="space-y-5 relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500"
+                  className="space-y-5 relative z-10 animate-in fade-in zoom-in-[0.98] duration-500"
                 >
                   <div className="grid grid-cols-2 gap-4">
                     <GlassInput
@@ -642,7 +640,7 @@ const VehicleLog = () => {
               {activeTab === "expenses" && (
                 <form
                   onSubmit={handleExpenseSubmit}
-                  className="space-y-5 relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500"
+                  className="space-y-5 relative z-10 animate-in fade-in zoom-in-[0.98] duration-500"
                 >
                   <GlassInput
                     theme={{
@@ -710,7 +708,7 @@ const VehicleLog = () => {
             </div>
           </div>
 
-          <div className="xl:col-span-7 animate-in fade-in slide-in-from-bottom-6 duration-500 ease-out">
+          <div className="xl:col-span-7 animate-in fade-in slide-in-from-right-4 duration-500 ease-out">
             <div
               className={`bg-[#09090B] border rounded-3xl overflow-hidden shadow-2xl transition-colors duration-300 ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/30"}`}
             >
@@ -744,7 +742,7 @@ const VehicleLog = () => {
               <div className="overflow-x-auto max-h-[700px] custom-scrollbar p-2">
                 {activeTab === "trips" ? (
                   <table className="w-full text-left min-w-[550px] animate-in fade-in duration-300">
-                    <thead className="sticky top-0 bg-transparent text-[10px] uppercase font-bold text-zinc-500 tracking-[0.15em] z-10 border-b border-zinc-800/60">
+                    <thead className="sticky top-0 bg-[#09090B] text-[10px] uppercase font-bold text-zinc-500 tracking-[0.15em] z-10 border-b border-zinc-800/60">
                       <tr>
                         <th className="py-4 px-4 w-[40%]">Shipment Details</th>
                         <th className="py-4 px-4 w-[35%]">Route & Site</th>
@@ -765,7 +763,7 @@ const VehicleLog = () => {
                             key={log._id}
                             id={log._id}
                             onClick={(e) => handleRowClick(e, log._id)}
-                            className={`transition-all duration-500 ease-out group cursor-pointer animate-in fade-in slide-in-from-bottom-2 ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}` : "hover:bg-zinc-800/30"}`}
+                            className={`transition-all duration-500 ease-out group cursor-pointer animate-in fade-in zoom-in-95 ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}` : "hover:bg-zinc-800/30"}`}
                           >
                             <td className="p-4 align-top">
                               <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
@@ -852,7 +850,7 @@ const VehicleLog = () => {
                   </table>
                 ) : (
                   <table className="w-full text-left min-w-[500px] animate-in fade-in duration-300">
-                    <thead className="sticky top-0 bg-transparent text-[10px] uppercase font-bold text-rose-100/40 tracking-[0.15em] z-10 border-b border-rose-900/20">
+                    <thead className="sticky top-0 bg-[#09090B] text-[10px] uppercase font-bold text-rose-100/40 tracking-[0.15em] z-10 border-b border-rose-900/20">
                       <tr>
                         <th className="py-4 px-4 w-[30%]">Date</th>
                         <th className="py-4 px-4 w-[45%]">Reason</th>
@@ -871,7 +869,7 @@ const VehicleLog = () => {
                             key={exp._id}
                             id={exp._id}
                             onClick={(e) => handleRowClick(e, exp._id)}
-                            className={`transition-all duration-500 ease-out group cursor-pointer animate-in fade-in slide-in-from-bottom-2 ${activeHighlight === exp._id ? `bg-rose-500/[0.08] shadow-[inset_0_0_20px_rgba(244,63,94,0.05)]` : "hover:bg-rose-900/10"}`}
+                            className={`transition-all duration-500 ease-out group cursor-pointer animate-in fade-in zoom-in-95 ${activeHighlight === exp._id ? `bg-rose-500/[0.08] shadow-[inset_0_0_20px_rgba(244,63,94,0.05)]` : "hover:bg-rose-900/10"}`}
                           >
                             <td className="p-4 align-top">
                               <div className="text-[11px] font-mono text-rose-400 mb-1.5">
