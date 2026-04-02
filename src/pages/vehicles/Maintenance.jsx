@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import maintenanceService from "../../services/maintenanceService";
 import { useUI } from "../../context/UIProvider";
@@ -17,6 +17,7 @@ import {
   Edit2,
   CheckCircle2,
   RefreshCcw,
+  AlertOctagon,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -56,44 +57,42 @@ const GlassInput = ({
   </div>
 );
 
+const defaultFilters = {
+  search: "",
+  amountFilter: "Any Amount",
+  dateFilter: "All",
+  exactDate: "",
+};
+
 const Maintenance = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
-  // 🚀 INITIALIZE FROM CACHE TO PREVENT LOADER FLICKER AND READS
+  // 🚀 INITIALIZE FROM CACHE TO PREVENT LOADER FLICKER
   const [logs, setLogs] = useState(() => {
-    const cached = maintenanceService.getCachedLogs({
-      search: "",
-      amountFilter: "Any Amount",
-      dateFilter: "All",
-      exactDate: "",
-    });
+    const cached = maintenanceService.getCachedLogs(defaultFilters);
     return cached ? cached.slice(0, 10) : [];
   });
-
-  const [loading, setLoading] = useState(() => {
-    return !(
-      maintenanceService.getCachedStats() &&
-      maintenanceService.getCachedLogs({
-        search: "",
-        amountFilter: "Any Amount",
-        dateFilter: "All",
-        exactDate: "",
-      })
-    );
-  });
-
-  const [submitting, setSubmitting] = useState(false);
-  const [editId, setEditId] = useState(null);
-  const [isSynced, setIsSynced] = useState(true);
-
-  // 🚀 SERVER-SIDE STATS STATE
   const [stats, setStats] = useState(
     () =>
       maintenanceService.getCachedStats() || { totalCost: 0, serviceCount: 0 },
   );
+  const [loading, setLoading] = useState(
+    () =>
+      !(
+        maintenanceService.getCachedStats() &&
+        maintenanceService.getCachedLogs(defaultFilters)
+      ),
+  );
+  const [syncStatus, setSyncStatus] = useState(() =>
+    maintenanceService.getCachedLogs(defaultFilters) ? "synced" : "syncing",
+  );
+
+  const [submitting, setSubmitting] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [oldLogData, setOldLogData] = useState(null);
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -121,7 +120,6 @@ const Maintenance = () => {
     data: [],
     itemName: "",
   });
-
   const initialForm = {
     date: new Date().toISOString().split("T")[0],
     vehicleNo: "",
@@ -132,47 +130,20 @@ const Maintenance = () => {
   };
   const [formData, setFormData] = useState(initialForm);
 
-  // 🚀 CHECK SYNC STATUS
-  useEffect(() => {
-    const checkSync = () => {
-      const globalLastUpdate = parseInt(
-        localStorage.getItem("maintenance_last_update") || "0",
-        10,
-      );
-      if (globalLastUpdate > maintenanceService.getLastFetchTime())
-        setIsSynced(false);
-    };
-    const interval = setInterval(checkSync, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // 🚀 Auto-Scroll Animation Logic
-  useEffect(() => {
-    if (urlHighlightId && !loading) {
-      setActiveHighlight(urlHighlightId);
-      setTimeout(() => {
-        const element = document.getElementById(urlHighlightId);
-        if (element)
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 500);
-      const timer = setTimeout(() => setActiveHighlight(null), 3500);
-      return () => clearTimeout(timer);
-    }
-  }, [urlHighlightId, loading]);
-
-  // 🚀 FETCH OPTIMIZED WITH CACHING
   const fetchData = async (force = false) => {
-    if (force) setLoading(true);
+    if (logs.length === 0 || force) setSyncStatus("syncing");
+    if (logs.length === 0) setLoading(true);
     try {
       const [statsRes, logsRes] = await Promise.all([
         maintenanceService.getStats(force),
-        maintenanceService.getLogs({}, null, 50, force), // Fetch max 50, display top 10
+        maintenanceService.getLogs(defaultFilters, null, 50, force),
       ]);
       setStats(statsRes);
       setLogs(logsRes.data ? logsRes.data.slice(0, 10) : []);
-      setIsSynced(true);
+      setSyncStatus("synced");
     } catch (err) {
       toast.error("Failed to load tracking data.");
+      setSyncStatus("error");
     } finally {
       setLoading(false);
     }
@@ -183,9 +154,22 @@ const Maintenance = () => {
   }, []);
 
   useEffect(() => {
+    if (urlHighlightId && !loading) {
+      setActiveHighlight(urlHighlightId);
+      setTimeout(() => {
+        const el = document.getElementById(urlHighlightId);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 500);
+      const timer = setTimeout(() => setActiveHighlight(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [urlHighlightId, loading]);
+
+  useEffect(() => {
     if (location.state && location.state.editLog) {
       const log = location.state.editLog;
       setEditId(log._id);
+      setOldLogData(log);
       setFormData({
         date: log.date
           ? new Date(log.date).toISOString().split("T")[0]
@@ -208,7 +192,6 @@ const Maintenance = () => {
     let remainder = rawValue.slice(4);
     let middleChars = remainder.replace(/[^A-Z]/g, "").slice(0, 2);
     let lastDigits = remainder.replace(/[^0-9]/g, "").slice(0, 4);
-
     let formatted = state;
     if (state.length === 2 && rawValue.length > 2) {
       formatted += "-" + rto;
@@ -225,11 +208,9 @@ const Maintenance = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const vehicleRegex = /^[A-Z]{2}-[0-9]{2}-([A-Z]{1,2}-)?[0-9]{4}$/;
-    if (!vehicleRegex.test(formData.vehicleNo))
-      return toast.error("Invalid Vehicle No. Format (e.g., OD-02-AX-1234)");
-    if (Number(formData.cost) <= 0)
-      return toast.error("Cost must be greater than 0");
+    if (!/^[A-Z]{2}-[0-9]{2}-([A-Z]{1,2}-)?[0-9]{4}$/.test(formData.vehicleNo))
+      return toast.error("Invalid Vehicle No.");
+    if (Number(formData.cost) <= 0) return toast.error("Cost must be > 0");
 
     setSubmitting(true);
     try {
@@ -238,13 +219,26 @@ const Maintenance = () => {
 
       if (editId) {
         await maintenanceService.updateLog(editId, payload, currentUser);
+        const diffCost = payload.cost - Number(oldLogData?.cost || 0);
+        setStats((prev) => ({ ...prev, totalCost: prev.totalCost + diffCost }));
         toast.success("Updated successfully!");
       } else {
         await maintenanceService.addLog(payload, currentUser);
+        setStats((prev) => ({
+          totalCost: prev.totalCost + payload.cost,
+          serviceCount: prev.serviceCount + 1,
+        }));
         toast.success("Logged successfully!");
       }
       resetForm();
-      fetchData(true);
+      const logsRes = await maintenanceService.getLogs(
+        defaultFilters,
+        null,
+        10,
+        false,
+      );
+      setLogs(logsRes.data ? logsRes.data.slice(0, 10) : []);
+      setSyncStatus("synced");
     } catch (err) {
       toast.error("Failed to save record.");
     } finally {
@@ -263,12 +257,11 @@ const Maintenance = () => {
       itemName: `Maintenance for ${log?.vehicleNo || "Unknown"}`,
     });
   };
-
   const resetForm = () => {
     setEditId(null);
+    setOldLogData(null);
     setFormData(initialForm);
   };
-
   const handleRowClick = (e, id) => {
     if (
       e.target.closest("button") ||
@@ -279,7 +272,7 @@ const Maintenance = () => {
     navigate(`${basePath}/maintenance/report?highlight=${id}`);
   };
 
-  if (loading)
+  if (loading && logs.length === 0)
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader />
@@ -295,7 +288,7 @@ const Maintenance = () => {
               className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryBorder}`}
             >
               <Wrench className={theme.primaryText} size={24} />
-            </div>
+            </div>{" "}
             Maintenance Logs
           </h1>
           <p className="text-zinc-400 text-sm mt-1 ml-1">
@@ -303,19 +296,23 @@ const Maintenance = () => {
           </p>
         </div>
 
-        {/* 🚀 SYNC STATUS BUTTON */}
+        {/* 🚀 Smart Sync Button */}
         <Button
           variant="ghost"
           onClick={() => fetchData(true)}
-          disabled={isSynced || loading}
-          className={`flex items-center gap-2 h-[40px] px-4 rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${isSynced ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse"}`}
+          disabled={syncStatus === "synced" || syncStatus === "syncing"}
+          className={`flex items-center gap-2 h-[40px] px-4 rounded-xl font-bold text-xs tracking-wider transition-all duration-700 w-full sm:w-auto justify-center ${syncStatus === "synced" ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : syncStatus === "error" ? "text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 shadow-[0_0_15px_rgba(243,64,84,0.2)] animate-pulse" : "text-zinc-300 bg-zinc-800/40 border border-zinc-700/50"}`}
         >
-          {isSynced ? (
-            <CheckCircle2 size={16} />
-          ) : (
-            <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
+          {syncStatus === "synced" && <CheckCircle2 size={16} />}
+          {syncStatus === "syncing" && (
+            <RefreshCcw size={16} className="animate-spin" />
           )}
-          {isSynced ? "Dashboard Up to Date" : "Sync Required"}
+          {syncStatus === "error" && <AlertOctagon size={16} />}
+          {syncStatus === "synced"
+            ? "Up to Date"
+            : syncStatus === "syncing"
+              ? "Syncing..."
+              : "Sync Failed - Retry"}
         </Button>
       </div>
 
@@ -327,14 +324,13 @@ const Maintenance = () => {
             <div
               className={`absolute top-0 right-0 w-64 h-64 blur-[80px] rounded-full pointer-events-none ${theme.glowOrb}`}
             ></div>
-
             <div className="flex justify-between items-center mb-6 relative z-10">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 {editId ? (
                   <Edit2 size={18} className={theme.primaryText} />
                 ) : (
                   <Settings size={18} className={theme.primaryText} />
-                )}
+                )}{" "}
                 {editId ? "Update Entry" : "Log Service"}
               </h3>
               {editId && (
@@ -376,7 +372,6 @@ const Maintenance = () => {
                   className="uppercase"
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <GlassInput
                   theme={theme}
@@ -405,7 +400,6 @@ const Maintenance = () => {
                   className={`${theme.primaryText} font-bold text-lg`}
                 />
               </div>
-
               <div className="flex flex-col gap-1.5 w-full">
                 <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-400 ml-1">
                   Description (Optional)
@@ -419,7 +413,6 @@ const Maintenance = () => {
                   className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 outline-none ${theme.primaryFocus} transition-all placeholder:text-zinc-600 resize-none h-24 custom-scrollbar`}
                 />
               </div>
-
               <Button
                 type="submit"
                 variant="primary"
@@ -509,11 +502,7 @@ const Maintenance = () => {
                         key={log._id}
                         id={log._id}
                         onClick={(e) => handleRowClick(e, log._id)}
-                        className={`transition-all duration-1000 ease-out group cursor-pointer ${
-                          activeHighlight === log._id
-                            ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}`
-                            : "hover:bg-zinc-800/30"
-                        }`}
+                        className={`transition-all duration-1000 ease-out group cursor-pointer ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}` : "hover:bg-zinc-800/30"}`}
                       >
                         <td className="p-3 align-top">
                           <p className="text-[11px] font-mono text-zinc-400 mb-1">
@@ -587,7 +576,7 @@ const Maintenance = () => {
       </div>
 
       {historyModal.isOpen && historyModal.data && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
             className="absolute inset-0 cursor-pointer"
             onClick={() =>
@@ -602,7 +591,7 @@ const Maintenance = () => {
             >
               <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
                 <History size={16} className={theme.primaryText} /> Log History:{" "}
-                <span className="text-zinc-400 font-normal">
+                <span className={`${theme.primaryText} font-normal`}>
                   {historyModal.itemName}
                 </span>
               </div>
@@ -610,7 +599,7 @@ const Maintenance = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-zinc-500 hover:text-white transition-colors"
+                className="text-zinc-400 hover:text-white transition-colors"
               >
                 <X size={18} />
               </button>
@@ -619,7 +608,7 @@ const Maintenance = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-zinc-900/30 border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
+                  className={`bg-[#09090B] border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
                 >
                   {index === 0 && (
                     <div
@@ -628,13 +617,13 @@ const Maintenance = () => {
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-400"}`}
+                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-500"}`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
@@ -650,15 +639,12 @@ const Maintenance = () => {
                           year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
-                          second: "2-digit",
                         })}
                       </p>
                     </div>
                   </div>
                   {index === 0 && (
-                    <div
-                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
-                    >
+                    <div className="bg-indigo-500/10 border-indigo-500/20 text-indigo-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
                       LATEST
                     </div>
                   )}
