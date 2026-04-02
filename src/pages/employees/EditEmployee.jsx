@@ -27,7 +27,6 @@ const EditEmployee = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [auditInfo, setAuditInfo] = useState(null);
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -83,7 +82,6 @@ const EditEmployee = () => {
           });
         }
       } catch (err) {
-        console.error("Fetch Error:", err);
         toast.error("Could not retrieve employee details.");
       } finally {
         setLoading(false);
@@ -97,21 +95,18 @@ const EditEmployee = () => {
 
   const handleIdChange = (e) => {
     let val = e.target.value.toUpperCase();
-    if (formData.idType === "Aadhar") {
-      val = val.replace(/\D/g, "").slice(0, 12);
-    } else if (formData.idType === "PAN") {
+    if (formData.idType === "Aadhar") val = val.replace(/\D/g, "").slice(0, 12);
+    else if (formData.idType === "PAN")
       val = val.replace(/[^A-Z0-9]/g, "").slice(0, 10);
-    } else if (formData.idType === "Voter ID") {
+    else if (formData.idType === "Voter ID")
       val = val.replace(/[^A-Z0-9]/g, "").slice(0, 10);
-    } else if (formData.idType === "Driving License") {
+    else if (formData.idType === "Driving License")
       val = val.replace(/[^A-Z0-9-]/g, "").slice(0, 16);
-    }
     setFormData({ ...formData, idNumber: val });
   };
 
-  const handleIdTypeChange = (e) => {
+  const handleIdTypeChange = (e) =>
     setFormData({ ...formData, idType: e.target.value, idNumber: "" });
-  };
 
   const getIdPlaceholder = () => {
     switch (formData.idType) {
@@ -130,15 +125,12 @@ const EditEmployee = () => {
 
   const handleFormSubmitClick = (e) => {
     e.preventDefault();
-    if (formData.phone.length !== 10) {
+    if (formData.phone.length !== 10)
       return toast.error("Phone number must be exactly 10 digits");
-    }
-    if (formData.idType === "Aadhar" && formData.idNumber.length !== 12) {
+    if (formData.idType === "Aadhar" && formData.idNumber.length !== 12)
       return toast.error("Aadhar Card must be exactly 12 digits");
-    }
-    if (formData.idType === "PAN" && formData.idNumber.length !== 10) {
+    if (formData.idType === "PAN" && formData.idNumber.length !== 10)
       return toast.error("PAN Card must be exactly 10 characters");
-    }
     setIsDialogOpen(true);
   };
 
@@ -151,7 +143,6 @@ const EditEmployee = () => {
       toast.success("Employee profile updated successfully.");
       navigate(-1);
     } catch (err) {
-      console.error("Update Error:", err);
       toast.error("Failed to update employee.");
     } finally {
       setSaving(false);
@@ -159,7 +150,6 @@ const EditEmployee = () => {
     }
   };
 
-  // 🚀 100% NO-LAG EARLY RETURN LOADER
   if (loading) {
     return (
       <div className="w-full h-full min-h-[80vh] flex flex-col items-center justify-center animate-in fade-in duration-500">
@@ -230,13 +220,13 @@ const EditEmployee = () => {
               label="Phone Number"
               name="phone"
               value={formData.phone}
+              required
               onChange={(e) => {
                 let val = e.target.value.replace(/\D/g, "");
                 if (val.length > 0 && !["6", "7", "8", "9"].includes(val[0]))
                   val = "";
                 if (val.length <= 10) setFormData({ ...formData, phone: val });
               }}
-              required
             />
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
