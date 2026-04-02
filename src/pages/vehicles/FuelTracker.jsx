@@ -69,17 +69,33 @@ const FuelTracker = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [stats, setStats] = useState({
-    totalLiters: 0,
-    totalCost: 0,
-    refuelCount: 0,
+  // 🚀 INITIALIZE FROM CACHE TO PREVENT LOADER FLICKER
+  const [logs, setLogs] = useState(() => {
+    const cached = fuelService.getCachedLogs(defaultFilters);
+    return cached ? cached.slice(0, 10) : [];
   });
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState(
+    () =>
+      fuelService.getCachedStats() || {
+        totalLiters: 0,
+        totalCost: 0,
+        refuelCount: 0,
+      },
+  );
+  const [loading, setLoading] = useState(
+    () =>
+      !(
+        fuelService.getCachedStats() &&
+        fuelService.getCachedLogs(defaultFilters)
+      ),
+  );
+  const [syncStatus, setSyncStatus] = useState(() =>
+    fuelService.getCachedLogs(defaultFilters) ? "synced" : "syncing",
+  );
+
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
   const [oldLogData, setOldLogData] = useState(null);
-  const [syncStatus, setSyncStatus] = useState("syncing");
 
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
@@ -115,9 +131,23 @@ const FuelTracker = () => {
     (parseFloat(formData.liters) || 0) *
     (parseFloat(formData.pricePerLiter) || 0);
 
-  // 🚀 Pass 'force' parameter to bypass RAM cache on manual click
+  // 🚀 Background Cross-Tab Sync Checker
+  useEffect(() => {
+    const checkSync = () => {
+      const globalLastUpdate = parseInt(
+        localStorage.getItem("fuel_last_update") || "0",
+        10,
+      );
+      if (globalLastUpdate > fuelService.getLastFetchTime())
+        setSyncStatus("required"); // Custom state to trigger refresh prompt
+    };
+    const interval = setInterval(checkSync, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
   const fetchData = async (force = false) => {
-    setSyncStatus("syncing");
+    if (logs.length === 0 || force) setSyncStatus("syncing");
+    if (logs.length === 0) setLoading(true);
     try {
       const [statsRes, logsRes] = await Promise.all([
         fuelService.getStats(force),
@@ -134,7 +164,6 @@ const FuelTracker = () => {
     }
   };
 
-  // On Navigation Sidebar click, it calls fetchData(false) -> 0 Reads!
   useEffect(() => {
     fetchData();
   }, []);
@@ -164,7 +193,6 @@ const FuelTracker = () => {
     let remainder = rawValue.slice(4);
     let middleChars = remainder.replace(/[^A-Z]/g, "").slice(0, 2);
     let lastDigits = remainder.replace(/[^0-9]/g, "").slice(0, 4);
-
     let formatted = state;
     if (state.length === 2 && rawValue.length > 2) {
       formatted += "-" + rto;
@@ -183,8 +211,7 @@ const FuelTracker = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const vehicleRegex = /^[A-Z]{2}-[0-9]{2}-([A-Z]{1,2}-)?[0-9]{4}$/;
-    if (!vehicleRegex.test(formData.vehicleNo))
+    if (!/^[A-Z]{2}-[0-9]{2}-([A-Z]{1,2}-)?[0-9]{4}$/.test(formData.vehicleNo))
       return toast.error("Invalid Vehicle No. Format");
     if (Number(formData.liters) <= 0) return toast.error("Liters must be > 0");
     if (Number(formData.pricePerLiter) <= 0)
@@ -197,7 +224,6 @@ const FuelTracker = () => {
 
       if (editId) {
         await fuelService.updateLog(editId, payload, currentUser);
-        // 🚀 Optimistic Math (0 Reads for Stats)
         const diffLiters =
           Number(payload.liters) - Number(oldLogData?.liters || 0);
         const diffCost = calculatedTotal - Number(oldLogData?.totalCost || 0);
@@ -209,7 +235,6 @@ const FuelTracker = () => {
         toast.success("Fuel log updated!");
       } else {
         await fuelService.addLog(payload, currentUser);
-        // 🚀 Optimistic Math (0 Reads for Stats)
         setStats((prev) => ({
           totalLiters: prev.totalLiters + Number(payload.liters),
           totalCost: prev.totalCost + calculatedTotal,
@@ -219,7 +244,6 @@ const FuelTracker = () => {
       }
 
       resetForm();
-      // Fetch only the logs list to show the new record (this will hit Firebase because isDirty was set to true)
       const logsRes = await fuelService.getLogs(
         defaultFilters,
         null,
@@ -244,13 +268,11 @@ const FuelTracker = () => {
       itemName: `Fuel for ${log.vehicleNo}`,
     });
   };
-
   const resetForm = () => {
     setEditId(null);
     setOldLogData(null);
     setFormData(initialForm);
   };
-
   const handleRowClick = (e, id) => {
     if (
       e.target.closest("button") ||
@@ -277,7 +299,7 @@ const FuelTracker = () => {
               className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryBorder}`}
             >
               <Droplet className={theme.primaryText} size={24} />
-            </div>
+            </div>{" "}
             Fuel Management
           </h1>
           <p className="text-zinc-400 text-sm mt-1 ml-1">
@@ -285,7 +307,6 @@ const FuelTracker = () => {
           </p>
         </div>
 
-        {/* 🚀 Smart Sync Button -> onClick passes TRUE to force bypass RAM cache */}
         <Button
           variant="ghost"
           onClick={() => fetchData(true)}
@@ -301,7 +322,9 @@ const FuelTracker = () => {
             ? "Up to Date"
             : syncStatus === "syncing"
               ? "Syncing..."
-              : "Sync Failed - Retry"}
+              : syncStatus === "required"
+                ? "Sync Required"
+                : "Sync Failed - Retry"}
         </Button>
       </div>
 
@@ -389,7 +412,6 @@ const FuelTracker = () => {
                   required
                 />
               </div>
-
               <div className="flex items-center gap-4 bg-[#09090B] p-4 rounded-xl border border-zinc-800/60 mt-2">
                 <div className="flex-1 text-right pr-2">
                   <p className="text-zinc-500 uppercase tracking-widest text-[10px] font-bold mb-1">
@@ -406,7 +428,6 @@ const FuelTracker = () => {
                   </p>
                 </div>
               </div>
-
               <div className="flex gap-2">
                 <Button
                   type="submit"
@@ -485,7 +506,6 @@ const FuelTracker = () => {
                 </Button>
               </Link>
             </div>
-
             <div className="overflow-x-auto max-h-[600px] custom-scrollbar p-2">
               <table className="w-full text-left min-w-[500px] animate-in fade-in">
                 <thead className="sticky top-0 bg-[#09090B] text-[10px] uppercase font-bold text-zinc-500 tracking-[0.15em] z-10 shadow-sm border-b border-zinc-800/60">
@@ -532,17 +552,6 @@ const FuelTracker = () => {
                                   <span className="bg-zinc-700/50 text-zinc-400 px-1.5 py-0.5 rounded text-[8px] font-bold ml-1">
                                     +{log.editHistory.length - 1} MORE
                                   </span>
-                                )}
-                              </div>
-                              <div className="text-[9px] text-zinc-500 font-mono mt-1 pl-1">
-                                {new Date(latestLog.at).toLocaleString(
-                                  "en-GB",
-                                  {
-                                    day: "2-digit",
-                                    month: "short",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  },
                                 )}
                               </div>
                             </div>
@@ -657,15 +666,12 @@ const FuelTracker = () => {
                           year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
-                          second: "2-digit",
                         })}
                       </p>
                     </div>
                   </div>
                   {index === 0 && (
-                    <div
-                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
-                    >
+                    <div className="bg-indigo-500/10 border-indigo-500/20 text-indigo-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
                       LATEST
                     </div>
                   )}
