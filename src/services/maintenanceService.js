@@ -21,41 +21,36 @@ import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const maintCollection = collection(db, "maintenances");
 
-// 🚀 GLOBAL CACHE TO PREVENT TAB-CHANGE READ LIMIT OVERLOAD
-let localCache = {
+// 🚀 THE MAGIC BULLET: RAM CACHE
+let memoryCache = {
   stats: null,
   logs: null,
-  lastVisible: null,
   filtersKey: "",
   isDirty: true,
-  lastFetchTime: 0,
 };
 
 const markDirty = () => {
-  localCache.isDirty = true;
-  localStorage.setItem("maintenance_last_update", Date.now().toString());
+  memoryCache.isDirty = true;
 };
 
 const maintenanceService = {
-  getLastFetchTime: () => localCache.lastFetchTime,
-  getCachedStats: () => (!localCache.isDirty ? localCache.stats : null),
+  // 🚀 SYNCHRONOUS GETTERS TO KILL UI FLICKER
+  getCachedStats: () => (!memoryCache.isDirty ? memoryCache.stats : null),
   getCachedLogs: (filters) => {
     const key = JSON.stringify(filters);
     if (
-      !localCache.isDirty &&
-      localCache.filtersKey === key &&
-      localCache.logs
+      !memoryCache.isDirty &&
+      memoryCache.filtersKey === key &&
+      memoryCache.logs
     ) {
-      return localCache.logs;
+      return memoryCache.logs;
     }
     return null;
   },
 
-  // 1. 🚀 SERVER-SIDE STATS CALCULATION WITH CACHING
-  getStats: async (force = false) => {
-    if (!force && !localCache.isDirty && localCache.stats) {
-      return localCache.stats; // 0 Reads!
-    }
+  getStats: async (forceRefresh = false) => {
+    if (!forceRefresh && !memoryCache.isDirty && memoryCache.stats)
+      return memoryCache.stats;
 
     try {
       const q = query(maintCollection);
@@ -63,74 +58,77 @@ const maintenanceService = {
         totalCost: sum("cost"),
         serviceCount: count(),
       });
-      const result = {
-        totalCost: snapshot.data().totalCost || 0,
-        serviceCount: snapshot.data().serviceCount || 0,
-      };
-      localCache.stats = result;
+      let totalCost = snapshot.data().totalCost || 0;
+      let serviceCount = snapshot.data().serviceCount || 0;
+
+      if (serviceCount > 0 && totalCost === 0)
+        throw new Error("String fallback");
+
+      const result = { totalCost, serviceCount };
+      memoryCache.stats = result;
       return result;
     } catch (error) {
-      console.warn("Aggregation failed, falling back to client calc:", error);
-      const snap = await getDocs(query(maintCollection));
-      let totalCost = 0;
-      snap.forEach((doc) => {
-        totalCost += Number(doc.data().cost) || 0;
-      });
-      const result = { totalCost, serviceCount: snap.size };
-      localCache.stats = result;
-      return result;
+      try {
+        const snap = await getDocs(query(maintCollection));
+        let totalCost = 0;
+        snap.forEach((doc) => {
+          totalCost += Number(doc.data().cost) || 0;
+        });
+        const result = { totalCost, serviceCount: snap.size };
+        memoryCache.stats = result;
+        return result;
+      } catch (fallbackError) {
+        return { totalCost: 0, serviceCount: 0 };
+      }
     }
   },
 
-  // 2 & 3. 🚀 PAGINATION & CACHED FETCHING
   getLogs: async (
     filters = {},
     lastVisibleDoc = null,
     pageSize = 50,
-    force = false,
+    forceRefresh = false,
   ) => {
     const filterKey = JSON.stringify(filters);
     const isLoadMore = !!lastVisibleDoc;
 
     if (
-      !force &&
-      !localCache.isDirty &&
+      !forceRefresh &&
+      !memoryCache.isDirty &&
       !isLoadMore &&
-      localCache.filtersKey === filterKey &&
-      localCache.logs
+      memoryCache.logs &&
+      memoryCache.filtersKey === filterKey
     ) {
-      return { data: localCache.logs, lastVisible: localCache.lastVisible };
+      return { data: memoryCache.logs, lastVisible: null };
     }
 
     try {
       let queryConstraints = [];
       let hasInequality = false;
 
-      if (filters.exactDate) {
+      if (filters.exactDate)
         queryConstraints.push(where("date", "==", filters.exactDate));
-      }
 
       if (filters.search) {
-        queryConstraints.push(where("vehicleNo", ">=", filters.search));
         queryConstraints.push(
+          where("vehicleNo", ">=", filters.search),
           where("vehicleNo", "<=", filters.search + "\uf8ff"),
+          orderBy("vehicleNo"),
         );
-        queryConstraints.push(orderBy("vehicleNo"));
         hasInequality = true;
       } else if (
         filters.amountFilter &&
         filters.amountFilter !== "Any Amount"
       ) {
-        if (filters.amountFilter === "Under ₹10k") {
+        if (filters.amountFilter === "Under ₹10k")
           queryConstraints.push(where("cost", "<", 10000));
-        } else if (filters.amountFilter === "₹10k - ₹50k") {
+        else if (filters.amountFilter === "₹10k - ₹50k")
           queryConstraints.push(
             where("cost", ">=", 10000),
             where("cost", "<=", 50000),
           );
-        } else if (filters.amountFilter === "Over ₹50k") {
+        else if (filters.amountFilter === "Over ₹50k")
           queryConstraints.push(where("cost", ">", 50000));
-        }
         queryConstraints.push(orderBy("cost", "desc"));
         hasInequality = true;
       } else if (
@@ -140,24 +138,20 @@ const maintenanceService = {
       ) {
         const today = new Date();
         let targetDate = new Date();
-
         if (filters.dateFilter === "Today")
           targetDate.setDate(today.getDate() - 1);
         if (filters.dateFilter === "Last7Days")
           targetDate.setDate(today.getDate() - 7);
         if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
-
         queryConstraints.push(
           where("date", ">=", targetDate.toISOString().split("T")[0]),
+          orderBy("date", "desc"),
         );
-        queryConstraints.push(orderBy("date", "desc"));
         hasInequality = true;
       }
 
-      if (!hasInequality && !filters.exactDate) {
+      if (!hasInequality && !filters.exactDate)
         queryConstraints.push(orderBy("date", "desc"));
-      }
-
       queryConstraints.push(limit(pageSize));
       if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
 
@@ -168,20 +162,15 @@ const maintenanceService = {
         _id: doc.id,
         ...doc.data(),
       }));
-
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
       if (!isLoadMore) {
-        localCache.logs = fetchedData;
-        localCache.filtersKey = filterKey;
-        localCache.isDirty = false;
-        localCache.lastFetchTime = Date.now();
+        memoryCache.logs = fetchedData;
+        memoryCache.filtersKey = filterKey;
+        memoryCache.isDirty = false;
       }
-      localCache.lastVisible = newLastVisible;
-
       return { data: fetchedData, lastVisible: newLastVisible };
     } catch (error) {
-      console.error("Fetch Error:", error);
       throw error;
     }
   },
@@ -204,24 +193,21 @@ const maintenanceService = {
   updateLog: async (id, payload, user) => {
     const docRef = doc(db, "maintenances", id);
     const snapshot = await getDoc(docRef);
-
-    let currentHistory = [];
-    if (snapshot.exists() && Array.isArray(snapshot.data().editHistory)) {
-      currentHistory = snapshot.data().editHistory;
-    }
+    let currentHistory =
+      snapshot.exists() && Array.isArray(snapshot.data().editHistory)
+        ? snapshot.data().editHistory
+        : [];
 
     const currentEdit = {
       by: user?.email || "Unknown",
       role: user?.role || "Admin",
       at: new Date().toISOString(),
     };
-
     currentHistory.push(currentEdit);
 
-    // 🚀 STRICT MAX 2 EDITS LIMIT TO PRESERVE PAYLOAD SIZE
-    if (currentHistory.length > 2) {
-      currentHistory = currentHistory.slice(-2);
-    }
+    // 🚀 STRICT MAX 2 EDITS LIMIT
+    if (currentHistory.length > 2)
+      currentHistory = currentHistory.slice(currentHistory.length - 2);
 
     const dataToUpdate = {
       ...payload,
@@ -231,47 +217,32 @@ const maintenanceService = {
       lastEditedAt: currentEdit.at,
       editHistory: currentHistory,
     };
-
     await updateDoc(docRef, dataToUpdate);
     markDirty();
     return { message: "Updated" };
   },
 
   deleteLog: async (id, user) => {
-    const userRole = user?.data?.role || user?.role;
-    if (userRole === "manager") {
-      throw new Error("Action Denied: Managers cannot delete records.");
-    }
-    const docRef = doc(db, "maintenances", id);
-    await deleteDoc(docRef);
+    if (user?.role === "manager" || user?.data?.role === "manager")
+      throw new Error("Action Denied.");
+    await deleteDoc(doc(db, "maintenances", id));
     markDirty();
     return { message: "Deleted" };
   },
 
-  // 🚀 BATCH WIPE DATABASE (CHUNK LIMIT: 10,000/DAY)
   deleteAllLogs: async ({ password, email, user }) => {
-    const userRole = user?.data?.role || user?.role;
-    if (userRole === "manager")
-      throw new Error("Action Denied: Managers cannot wipe the database.");
-    if (!password || !email)
-      throw new Error("Authentication Error: Missing credentials.");
+    if (user?.role === "manager" || user?.data?.role === "manager")
+      throw new Error("Action Denied.");
 
     const today = new Date().toISOString().split("T")[0];
     let wipeMeta = JSON.parse(
       localStorage.getItem("maintenance_wipe_meta") || '{"date":"","count":0}',
     );
-
-    if (wipeMeta.date === today && wipeMeta.count >= 10000) {
-      throw new Error(
-        "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours to prevent backend crashes.",
-      );
-    }
+    if (wipeMeta.date === today && wipeMeta.count >= 10000)
+      throw new Error("Daily Wipe Limit Reached.");
     if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
 
     const currentUser = auth.currentUser;
-    if (!currentUser || currentUser.email !== email)
-      throw new Error("Active session mismatch.");
-
     try {
       const credential = EmailAuthProvider.credential(
         currentUser.email,
@@ -279,45 +250,32 @@ const maintenanceService = {
       );
       await reauthenticateWithCredential(currentUser, credential);
     } catch (error) {
-      throw new Error("Access Denied: Incorrect Admin Password.");
+      throw new Error("Incorrect Admin Password.");
     }
 
-    let totalDeleted = 0;
-    let hasMore = true;
+    let totalDeleted = 0,
+      hasMore = true;
     const maxAllowed = 10000 - wipeMeta.count;
 
-    try {
-      while (hasMore && totalDeleted < maxAllowed) {
-        const currentBatchSize = Math.min(500, maxAllowed - totalDeleted);
-        const q = query(maintCollection, limit(currentBatchSize));
-        const snapshot = await getDocs(q);
+    while (hasMore && totalDeleted < maxAllowed) {
+      const currentBatchSize = Math.min(500, maxAllowed - totalDeleted);
+      const q = query(maintCollection, limit(currentBatchSize));
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) break;
 
-        if (snapshot.empty) {
-          hasMore = false;
-          break;
-        }
-
-        const batch = writeBatch(db);
-        snapshot.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-        totalDeleted += snapshot.size;
-      }
-
-      wipeMeta.count += totalDeleted;
-      localStorage.setItem("maintenance_wipe_meta", JSON.stringify(wipeMeta));
-      markDirty();
-
-      if (totalDeleted >= maxAllowed && hasMore) {
-        return {
-          warning:
-            "10,000 records deleted. Daily limit reached. Come back tomorrow for the remaining records.",
-        };
-      }
-      return { success: true };
-    } catch (error) {
-      throw new Error("Failed to clear database.");
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      totalDeleted += snapshot.size;
     }
+
+    wipeMeta.count += totalDeleted;
+    localStorage.setItem("maintenance_wipe_meta", JSON.stringify(wipeMeta));
+    markDirty();
+
+    if (totalDeleted >= maxAllowed && hasMore)
+      return { warning: "10,000 limit reached. Come back tomorrow." };
+    return { success: true };
   },
 };
-
 export default maintenanceService;
