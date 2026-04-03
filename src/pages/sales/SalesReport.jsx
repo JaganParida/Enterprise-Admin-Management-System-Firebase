@@ -33,7 +33,6 @@ import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 
-// 🚀 SAFE DATE FORMATTER
 const formatDate = (dateStr) => {
   if (!dateStr) return "-";
   try {
@@ -46,7 +45,7 @@ const formatDate = (dateStr) => {
   }
 };
 
-// 🚀 GLOBAL MEMORY CACHE
+// 🚀 GLOBAL MEMORY CACHE (CONCEPT 1: ZERO-READ NAVIGATION)
 let globalReportCache = {
   sales: [],
   rawDues: [],
@@ -147,10 +146,10 @@ const SalesReport = () => {
     filters.search !== "" ||
     filters.productFilter !== "All" ||
     filters.paymentMode !== "All Status" ||
-    filters.amountFilter !== "Any Amount" ||
     filters.dateFilter !== "All" ||
     filters.exactDate !== "";
 
+  // 🚀 CONCEPT 6: WIPE MODAL BACKUP LOCK STATE
   useEffect(() => {
     if (isDeleteAllOpen) {
       const getLock = async () => {
@@ -189,6 +188,44 @@ const SalesReport = () => {
     return () => clearInterval(timer);
   }, [serverLockTime]);
 
+  // 🚀 CONCEPT 1: ZERO-READ CACHE NAV & CONCEPT 8: TAB SWITCHING (NO DEBOUNCE)
+  useEffect(() => {
+    const needsRefresh =
+      sessionStorage.getItem("report_needs_refresh") === "true";
+
+    if (needsRefresh) {
+      sessionStorage.removeItem("report_needs_refresh");
+      globalReportCache.fetchedTabs = { sales: false, dues: false };
+      executeFetch(false, globalReportCache.filters);
+    } else {
+      if (activeTab === "all_sales" && !globalReportCache.fetchedTabs.sales) {
+        executeFetch(false, globalReportCache.filters);
+      } else if (activeTab === "dues" && !globalReportCache.fetchedTabs.dues) {
+        executeFetch(false, globalReportCache.filters);
+      }
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (
+      urlHighlightId &&
+      !loading &&
+      processedHighlight.current !== urlHighlightId
+    ) {
+      processedHighlight.current = urlHighlightId;
+      setActiveHighlight(urlHighlightId);
+      setTimeout(() => {
+        const element = document.getElementById(urlHighlightId);
+        if (element)
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 500);
+      setTimeout(() => setActiveHighlight(null), 3500);
+      const params = new URLSearchParams(location.search);
+      params.delete("highlight");
+      navigate({ search: params.toString() }, { replace: true });
+    }
+  }, [urlHighlightId, loading, location.search, navigate]);
+
   const groupedDuesUI = useMemo(() => {
     const map = {};
     const searchLower = filters.search?.toLowerCase() || "";
@@ -196,13 +233,14 @@ const SalesReport = () => {
       const buyer = sale.buyerName || "Unknown Customer";
       if (searchLower && !buyer.toLowerCase().includes(searchLower)) return;
 
-      if (!map[buyer])
+      if (!map[buyer]) {
         map[buyer] = {
           buyerName: buyer,
           totalDue: 0,
           totalBillAmount: 0,
           records: [],
         };
+      }
       map[buyer].totalDue += Number(sale.amountDue) || 0;
       map[buyer].totalBillAmount += Number(sale.amount) || 0;
       map[buyer].records.push(sale);
@@ -210,9 +248,14 @@ const SalesReport = () => {
     return Object.values(map).sort((a, b) => b.totalDue - a.totalDue);
   }, [rawDues, filters.search]);
 
-  const fetchSales = async (isLoadMore = false) => {
+  // 🚀 CORE FETCH FUNCTION
+  const executeFetch = async (
+    isLoadMore = false,
+    overrideFilters = filters,
+  ) => {
     if (isLoadMore) setLoadingMore(true);
     else setLoading(true);
+
     try {
       const s = await salesService.getStats();
       if (!isLoadMore) {
@@ -224,9 +267,9 @@ const SalesReport = () => {
         let response;
         let fetchedDataLength = 0;
 
-        if (filters.search) {
+        if (overrideFilters.search) {
           const searchRes = await salesService.getAllSales(
-            filters,
+            overrideFilters,
             isLoadMore ? globalReportCache.duesLastDoc : null,
           );
           const duesOnly = searchRes.data.filter(
@@ -257,42 +300,55 @@ const SalesReport = () => {
         globalReportCache.duesLastDoc = newDoc;
         setDuesHasMore(newHasMore);
         globalReportCache.duesHasMore = newHasMore;
-        setLoading(false);
-        setLoadingMore(false);
-        return;
+        globalReportCache.fetchedTabs.dues = true;
+      } else {
+        const response = await salesService.getAllSales(
+          overrideFilters,
+          isLoadMore ? globalReportCache.salesLastDoc : null,
+        );
+
+        if (!isLoadMore) {
+          let isSynced = true;
+          const activeSearch =
+            overrideFilters.search ||
+            overrideFilters.productFilter !== "All" ||
+            overrideFilters.paymentMode !== "All Status" ||
+            overrideFilters.dateFilter !== "All";
+
+          if (response.data.length > 0 && s.total === 0 && !activeSearch)
+            isSynced = false;
+          else if (response.data.length === 0 && s.total > 0 && !activeSearch)
+            isSynced = false;
+          else if (
+            s.total < 0 ||
+            s.cash < 0 ||
+            s.online < 0 ||
+            s.pendingDues < 0
+          )
+            isSynced = false;
+
+          setIsStatsSynced(isSynced);
+          globalReportCache.isStatsSynced = isSynced;
+        }
+
+        const newData = isLoadMore
+          ? [...sales, ...response.data]
+          : response.data;
+        const newCount = isLoadMore
+          ? salesLoadedCount + response.data.length
+          : response.data.length;
+        const newDoc = response.lastVisible || null;
+        const newHasMore = response.data.length === 50; // Concept 4 Limit
+
+        setSales(newData);
+        globalReportCache.sales = newData;
+        setSalesLoadedCount(newCount);
+        globalReportCache.salesLoadedCount = newCount;
+        globalReportCache.salesLastDoc = newDoc;
+        setSalesHasMore(newHasMore);
+        globalReportCache.salesHasMore = newHasMore;
+        globalReportCache.fetchedTabs.sales = true;
       }
-
-      const response = await salesService.getAllSales(
-        filters,
-        isLoadMore ? globalReportCache.salesLastDoc : null,
-      );
-
-      if (!isLoadMore) {
-        let isSynced = true;
-        if (response.data.length > 0 && s.total === 0 && !hasActiveFilters)
-          isSynced = false;
-        else if (response.data.length === 0 && s.total > 0 && !hasActiveFilters)
-          isSynced = false;
-        else if (s.total < 0 || s.cash < 0 || s.online < 0 || s.pendingDues < 0)
-          isSynced = false;
-        setIsStatsSynced(isSynced);
-        globalReportCache.isStatsSynced = isSynced;
-      }
-
-      const newData = isLoadMore ? [...sales, ...response.data] : response.data;
-      const newCount = isLoadMore
-        ? salesLoadedCount + response.data.length
-        : response.data.length;
-      const newDoc = response.lastVisible || null;
-      const newHasMore = response.data.length === 50;
-
-      setSales(newData);
-      globalReportCache.sales = newData;
-      setSalesLoadedCount(newCount);
-      globalReportCache.salesLoadedCount = newCount;
-      globalReportCache.salesLastDoc = newDoc;
-      setSalesHasMore(newHasMore);
-      globalReportCache.salesHasMore = newHasMore;
     } catch (e) {
       toast.error("Load failed");
     } finally {
@@ -301,56 +357,30 @@ const SalesReport = () => {
     }
   };
 
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      const filtersChanged =
-        JSON.stringify(globalReportCache.filters) !== JSON.stringify(filters);
-      const needsRefresh =
-        sessionStorage.getItem("report_needs_refresh") === "true";
+  // 🚀 CONCEPT 8: STRICT MANUAL APPLY (REPLACES DEBOUNCE)
+  const handleApplyFilters = (e) => {
+    if (e) e.preventDefault();
+    globalReportCache.filters = filters;
+    globalReportCache.fetchedTabs = { sales: false, dues: false };
+    executeFetch(false, filters);
+  };
 
-      if (needsRefresh) {
-        sessionStorage.removeItem("report_needs_refresh");
-        globalReportCache.fetchedTabs = { sales: false, dues: false };
-        fetchSales(false);
-      } else {
-        if (activeTab === "all_sales") {
-          if (filtersChanged || !globalReportCache.fetchedTabs.sales) {
-            fetchSales(false);
-            globalReportCache.fetchedTabs.sales = true;
-            globalReportCache.filters = filters;
-          }
-        } else if (activeTab === "dues") {
-          if (filtersChanged || !globalReportCache.fetchedTabs.dues) {
-            fetchSales(false);
-            globalReportCache.fetchedTabs.dues = true;
-            globalReportCache.filters = filters;
-          }
-        }
-      }
-    }, 400);
-    return () => clearTimeout(delayDebounceFn);
-  }, [filters, activeTab]);
+  const clearFilters = () => {
+    const reset = {
+      search: "",
+      productFilter: "All",
+      paymentMode: "All Status",
+      amountFilter: "Any Amount",
+      dateFilter: "All",
+      exactDate: "",
+    };
+    setFilters(reset);
+    globalReportCache.filters = reset;
+    globalReportCache.fetchedTabs = { sales: false, dues: false };
+    executeFetch(false, reset);
+  };
 
-  useEffect(() => {
-    if (
-      urlHighlightId &&
-      !loading &&
-      processedHighlight.current !== urlHighlightId
-    ) {
-      processedHighlight.current = urlHighlightId;
-      setActiveHighlight(urlHighlightId);
-      setTimeout(() => {
-        const element = document.getElementById(urlHighlightId);
-        if (element)
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 500);
-      setTimeout(() => setActiveHighlight(null), 3500);
-      const params = new URLSearchParams(location.search);
-      params.delete("highlight");
-      navigate({ search: params.toString() }, { replace: true });
-    }
-  }, [urlHighlightId, loading, location.search, navigate]);
-
+  // 🚀 CONCEPT 5: SMART SYNC BUTTON
   const handleSyncStats = async () => {
     if (isStatsSynced) return;
     setSyncingStats(true);
@@ -369,6 +399,7 @@ const SalesReport = () => {
     }
   };
 
+  // 🚀 CONCEPT 2: OPTIMISTIC UI ON DELETE
   const executeDelete = async () => {
     const idToDelete = deleteModal.id;
     const saleToDelete =
@@ -423,16 +454,15 @@ const SalesReport = () => {
     }
   };
 
+  // 🚀 CONCEPT 6: EXPORT CHUNKING WITH LOCALSTORAGE
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     if (isBackupLocked)
       return toast.error(`Backup is locked. Please wait ${lockTimeRemaining}.`);
 
     try {
       if (!monthToFetch) return toast.error("Please select a month.");
-      const QUOTA_LIMIT = 10000;
 
       const savedState = await salesService.getBackupState(monthToFetch);
-
       let startTimestamp = savedState
         ? savedState.lastCreatedAt
         : `${monthToFetch}-01T00:00:00.000Z`;
@@ -444,32 +474,8 @@ const SalesReport = () => {
           : `Starting Secure Backup...`,
       );
 
-      let allData = [];
-      let hasMoreToFetch = true;
-      let currentLastCreatedAt = null;
-
-      // 🚨 FIX: Replaced direct Firebase query logic with an internal implementation
-      // Ideally you should keep this query isolated to the service file, but it's safe here
-      // as long as you import 'query', 'collection', 'where', 'orderBy', 'limit', 'getDocs' from firestore.
-
-      while (hasMoreToFetch && allData.length < QUOTA_LIMIT) {
-        const q = query(
-          collection(db, "sales"),
-          where("createdAt", ">", startTimestamp),
-          where("createdAt", "<=", `${monthToFetch}-31T23:59:59.999Z`),
-          orderBy("createdAt", "asc"),
-          limit(1000),
-        );
-        const snap = await getDocs(q);
-        if (snap.empty) {
-          hasMoreToFetch = false;
-          break;
-        }
-        allData.push(...snap.docs.map((d) => d.data()));
-        currentLastCreatedAt = snap.docs[snap.docs.length - 1].data().createdAt;
-        startTimestamp = currentLastCreatedAt;
-        if (snap.docs.length < 1000) hasMoreToFetch = false;
-      }
+      const { allData, hasMoreToFetch, currentLastCreatedAt } =
+        await salesService.downloadBackupChunk(monthToFetch, startTimestamp);
 
       if (allData.length === 0) {
         await salesService.setBackupState(monthToFetch, null);
@@ -524,13 +530,12 @@ const SalesReport = () => {
     }
   };
 
-  // 🚀 FIX: Updated WIPE LOGIC WITH CORRECT PASSWORD & ANIMATION HANDLING
+  // 🚀 CONCEPT 3: WIPE DATABASE
   const handleWipeAll = async () => {
     if (isManager || !deletePassword)
       return toast.error("Please enter admin password");
 
-    setWiping(true); // 🟢 ANIMATION START
-
+    setWiping(true);
     try {
       const adminEmail = admin?.email || admin?.data?.email;
       if (!adminEmail) throw new Error("Could not verify admin email.");
@@ -570,13 +575,13 @@ const SalesReport = () => {
       toast.error(e.message || "Incorrect Password.");
       console.error(e);
     } finally {
-      setWiping(false); // 🔴 ANIMATION STOP
+      setWiping(false);
     }
   };
 
   const forceRefresh = () => {
     globalReportCache.fetchedTabs = { sales: false, dues: false };
-    fetchSales(false);
+    executeFetch(false, filters);
   };
 
   const parseProduct = (fullName) => {
@@ -607,7 +612,7 @@ const SalesReport = () => {
 
   return (
     <div className="pb-10 relative space-y-8 overflow-x-hidden">
-      {/* 🚀 SMOOTH HEADER */}
+      {/* 🚀 HEADER & NAVIGATION */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -648,11 +653,9 @@ const SalesReport = () => {
             >
               Dues
             </button>
-
             <div
               className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] sm:w-[100px] md:w-[120px] rounded-xl md:rounded-full bg-indigo-600 transition-all duration-300 ease-out z-0 ${activeTab === "all_sales" ? "left-1.5" : "left-[calc(50%+4px)] sm:left-[110px] md:left-[130px]"}`}
             />
-
             <button
               type="button"
               onClick={forceRefresh}
@@ -727,7 +730,7 @@ const SalesReport = () => {
         </div>
       </motion.div>
 
-      {/* 🚀 SMOOTH STAGGERED STATS */}
+      {/* 🚀 STAGGERED STATS */}
       <motion.div
         variants={containerVariants}
         initial="hidden"
@@ -798,7 +801,7 @@ const SalesReport = () => {
         </motion.div>
       </motion.div>
 
-      {/* 🚀 FILTER & SEARCH */}
+      {/* 🚀 FIXED FILTER & SEARCH UI */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -811,107 +814,101 @@ const SalesReport = () => {
           </div>
         )}
 
-        <div className="p-4 md:p-5 border-b border-zinc-800/60 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 bg-zinc-900/10">
-          <div className="relative w-full sm:max-w-md group">
-            <Search
-              size={16}
-              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${filters.search ? theme.primaryText : "text-zinc-500"}`}
-            />
-            <input
-              type="text"
-              placeholder={
-                activeTab === "all_sales"
-                  ? "Search buyer..."
-                  : "Search pending customers..."
-              }
-              className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none ${theme.primaryFocus}`}
-              value={filters.search}
-              onChange={(e) =>
-                setFilters({
-                  ...filters,
-                  search: e.target.value,
-                  amountFilter: "Any Amount",
-                  dateFilter: "All",
-                })
-              }
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <div className="hidden md:flex items-center gap-2 text-xs font-bold uppercase text-zinc-400 px-3 border-r border-zinc-800">
-              <Filter size={14} /> Filters
+        <div className="p-4 md:p-5 border-b border-zinc-800/60 bg-zinc-900/10">
+          <form
+            onSubmit={handleApplyFilters}
+            className="flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-4"
+          >
+            <div className="relative w-full xl:max-w-md group">
+              <Search
+                size={16}
+                className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${filters.search ? theme.primaryText : "text-zinc-500"}`}
+              />
+              <input
+                type="text"
+                placeholder={
+                  activeTab === "all_sales"
+                    ? "Search buyer..."
+                    : "Search pending customers..."
+                }
+                className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none ${theme.primaryFocus}`}
+                value={filters.search}
+                onChange={(e) =>
+                  setFilters({ ...filters, search: e.target.value })
+                }
+              />
             </div>
 
-            {activeTab === "all_sales" && (
-              <>
-                <select
-                  value={filters.productFilter}
-                  onChange={(e) =>
-                    setFilters({ ...filters, productFilter: e.target.value })
-                  }
-                  className={`flex-1 sm:flex-none bg-zinc-900 border border-zinc-800 rounded-full px-3 py-1.5 text-xs text-zinc-300 outline-none ${theme.primaryFocus}`}
-                >
-                  <option value="All">All Products</option>
-                  <option value="Bricks (10 inch)">Bricks 10"</option>
-                  <option value="Bricks (9 inch)">Bricks 9"</option>
-                  <option value="Zig Zag (60mm)">Zig Zag</option>
-                  <option value="Hexagon">Hexagon</option>
-                </select>
-                <select
-                  value={filters.paymentMode}
-                  onChange={(e) =>
-                    setFilters({ ...filters, paymentMode: e.target.value })
-                  }
-                  className={`flex-1 sm:flex-none bg-zinc-900 border border-zinc-800 rounded-full px-3 py-1.5 text-xs text-zinc-300 outline-none ${theme.primaryFocus}`}
-                >
-                  <option value="All Status">All Modes</option>
-                  <option value="Cash">Cash</option>
-                  <option value="Online">Online</option>
-                </select>
-              </>
-            )}
-            <select
-              value={filters.dateFilter}
-              onChange={(e) =>
-                setFilters({
-                  ...filters,
-                  dateFilter: e.target.value,
-                  exactDate: "",
-                  search: "",
-                })
-              }
-              className={`flex-1 sm:flex-none bg-zinc-900 border border-zinc-800 rounded-full px-3 py-1.5 text-xs text-zinc-300 outline-none ${theme.primaryFocus}`}
-            >
-              <option value="All">All Time</option>
-              <option value="Today">Today</option>
-              <option value="Last7Days">Last 7 Days</option>
-              <option value="ThisMonth">This Month</option>
-            </select>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div className="hidden md:flex items-center gap-2 text-xs font-bold uppercase text-zinc-400 px-3 border-r border-zinc-800">
+                <Filter size={14} /> Filters
+              </div>
 
-            {hasActiveFilters && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setFilters({
-                    search: "",
-                    productFilter: "All",
-                    paymentMode: "All Status",
-                    amountFilter: "Any Amount",
-                    dateFilter: "All",
-                    exactDate: "",
-                  });
-                }}
-                className="!px-3 !py-1.5 !text-xs !rounded-full flex items-center gap-1 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 w-full sm:w-auto mt-2 sm:mt-0 justify-center"
+              {activeTab === "all_sales" && (
+                <>
+                  <select
+                    value={filters.productFilter}
+                    onChange={(e) =>
+                      setFilters({ ...filters, productFilter: e.target.value })
+                    }
+                    className={`flex-1 sm:flex-none bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 outline-none ${theme.primaryFocus}`}
+                  >
+                    <option value="All">All Products</option>
+                    <option value="Bricks (10 inch)">Bricks 10"</option>
+                    <option value="Bricks (9 inch)">Bricks 9"</option>
+                    <option value="Zig Zag (60mm)">Zig Zag</option>
+                    <option value="Hexagon">Hexagon</option>
+                  </select>
+                  <select
+                    value={filters.paymentMode}
+                    onChange={(e) =>
+                      setFilters({ ...filters, paymentMode: e.target.value })
+                    }
+                    className={`flex-1 sm:flex-none bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 outline-none ${theme.primaryFocus}`}
+                  >
+                    <option value="All Status">All Modes</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Online">Online</option>
+                  </select>
+                </>
+              )}
+              <select
+                value={filters.dateFilter}
+                onChange={(e) =>
+                  setFilters({ ...filters, dateFilter: e.target.value })
+                }
+                className={`flex-1 sm:flex-none bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 outline-none ${theme.primaryFocus}`}
               >
-                <X size={12} /> Clear Filters
-              </Button>
-            )}
-          </div>
+                <option value="All">All Time</option>
+                <option value="Today">Today</option>
+                <option value="Last7Days">Last 7 Days</option>
+                <option value="ThisMonth">This Month</option>
+              </select>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="!px-6 !py-2 !text-xs !rounded-lg flex-1 sm:flex-none shadow-lg"
+                >
+                  Apply Search
+                </Button>
+                {hasActiveFilters && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={clearFilters}
+                    className="!px-3 !py-2 !text-xs !rounded-lg flex items-center gap-1 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 flex-1 sm:flex-none justify-center"
+                  >
+                    <X size={12} /> Clear
+                  </Button>
+                )}
+              </div>
+            </div>
+          </form>
         </div>
 
-        {/* 🚀 TABLES */}
+        {/* 🚀 DATA TABLES */}
         {activeTab === "all_sales" && (
           <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
             <table className="w-full text-left min-w-[750px]">
@@ -1015,7 +1012,7 @@ const SalesReport = () => {
                       colSpan="5"
                       className="p-16 text-center text-zinc-500 text-sm italic"
                     >
-                      No sales found.
+                      No sales found matching those filters.
                     </td>
                   </tr>
                 )}
@@ -1169,6 +1166,7 @@ const SalesReport = () => {
           </div>
         )}
 
+        {/* 🚀 PAGINATION / LOAD MORE */}
         {currentHasMore && (
           <div className="flex justify-center p-6 border-t border-zinc-800/60">
             {currentLoadedCount >= 5000 ? (
@@ -1179,7 +1177,7 @@ const SalesReport = () => {
             ) : (
               <Button
                 type="button"
-                onClick={() => fetchSales(true)}
+                onClick={() => executeFetch(true)}
                 disabled={loadingMore}
                 variant="outline"
                 className="text-zinc-400 border-zinc-700 hover:text-white px-8 rounded-xl h-10"
@@ -1227,7 +1225,6 @@ const SalesReport = () => {
               </div>
 
               <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-h-[60vh] overflow-y-auto">
-                {/* Backup Block */}
                 <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 md:p-5 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
                   <div className="flex items-start gap-3">
@@ -1281,7 +1278,6 @@ const SalesReport = () => {
                   </div>
                 </div>
 
-                {/* Wipe Block */}
                 <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 md:p-5 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
                   <h3 className="text-red-500 font-bold text-xs md:text-sm mb-1">
