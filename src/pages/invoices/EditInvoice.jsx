@@ -215,6 +215,9 @@ const EditInvoice = () => {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
       await invoiceService.updateInvoice(id, invoiceData, currentUser);
+
+      // NOTE: Removed `invoiceService.cache.isValid = false`.
+      // The service now handles optimistic cache updates natively.
       toast.success("Invoice updated successfully!");
       navigate(-1);
     } catch (err) {
