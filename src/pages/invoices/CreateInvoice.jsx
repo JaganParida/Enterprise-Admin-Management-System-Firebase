@@ -182,6 +182,8 @@ const CreateInvoice = () => {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
       await invoiceService.createInvoice(invoiceData, currentUser);
+      // NOTE: Removed `invoiceService.cache.isValid = false`.
+      // The service now handles optimistic cache updates natively.
       toast.success("Invoice generated successfully!");
       navigate(-1);
     } catch (error) {
