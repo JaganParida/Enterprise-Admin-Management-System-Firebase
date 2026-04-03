@@ -152,7 +152,10 @@ const ElectricBill = () => {
   const location = useLocation();
 
   const [activeTab, setActiveTab] = useState("All");
+
   const [localSearch, setLocalSearch] = useState("");
+  const [localMonth, setLocalMonth] = useState("");
+
   const [filters, setFilters] = useState({
     search: "",
     amountFilter: "Any Amount",
@@ -251,7 +254,6 @@ const ElectricBill = () => {
   const [backupMonth, setBackupMonth] = useState(getPreviousMonth());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
-  // 🚀 CONCEPT 8: Strict Manual Search Trigger (Replaces Debounce)
   const applySearch = useCallback(() => {
     setFilters((prev) => ({
       ...prev,
@@ -260,6 +262,14 @@ const ElectricBill = () => {
       dateFilter: "All",
     }));
   }, [localSearch]);
+
+  const applyMonthFilter = useCallback(() => {
+    setFilters((prev) => ({
+      ...prev,
+      exactMonth: localMonth,
+      dateFilter: "All",
+    }));
+  }, [localMonth]);
 
   useEffect(() => {
     const checkSync = () => {
@@ -291,11 +301,18 @@ const ElectricBill = () => {
 
   const fetchBills = useCallback(
     async (isLoadMore = false, forceSync = false) => {
-      if (isLoadMore) setLoadingMore(true);
-      else if (forceSync || bills.length === 0) setSyncStatus("syncing");
+      const isCached = !!electricService.getCachedLogs({
+        status: activeTab,
+        ...filters,
+      });
 
-      if (bills.length === 0 && !isLoadMore && !forceSync) setLoading(true);
-      if (!isLoadMore && bills.length > 0 && !forceSync) setIsRefreshing(true);
+      if (isLoadMore) setLoadingMore(true);
+      else if (forceSync) setSyncStatus("syncing");
+
+      if (!isCached && !isLoadMore && !forceSync) {
+        if (bills.length === 0) setLoading(true);
+        else setIsRefreshing(true);
+      }
 
       try {
         const isFiltered =
@@ -1154,29 +1171,53 @@ const ElectricBill = () => {
             </div>
 
             <div className="flex items-center gap-3 w-full xl:w-auto justify-between xl:justify-end">
-              {/* 🚀 CONCEPT 8: Strict Manual Search UI */}
-              <div className="flex items-center gap-2 flex-1 sm:w-96 group">
-                <div className="relative flex-1">
-                  <Search
-                    size={16}
-                    className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${localSearch ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Search CA Number..."
-                    className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-full pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all ${theme.primaryFocus}`}
-                    value={localSearch}
-                    onChange={(e) => setLocalSearch(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && applySearch()}
-                  />
+              <div
+                className={`relative flex-1 sm:w-[350px] group flex items-center bg-[#09090b] border border-zinc-800/80 rounded-full transition-all h-10 overflow-hidden ${theme.primaryFocus}`}
+              >
+                <Search
+                  size={16}
+                  className={`absolute left-4 transition-colors duration-300 ${localSearch ? theme.primaryText : "text-zinc-500"}`}
+                />
+                <input
+                  type="text"
+                  placeholder="Search CA Number (Press Enter)..."
+                  className={`w-full bg-transparent pl-11 ${localSearch ? "pr-[115px]" : "pr-[90px]"} h-full text-sm text-zinc-100 outline-none placeholder:text-zinc-600 transition-all`}
+                  value={localSearch}
+                  onChange={(e) => setLocalSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && applySearch()}
+                />
+                <div className="absolute right-1 flex items-center gap-0.5">
+                  <AnimatePresence>
+                    {localSearch && (
+                      <motion.button
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        onClick={() => {
+                          setLocalSearch("");
+                          if (filters.search) {
+                            setFilters((prev) => ({
+                              ...prev,
+                              search: "",
+                              amountFilter: "Any Amount",
+                              dateFilter: "All",
+                            }));
+                          }
+                        }}
+                        className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-full transition-all"
+                      >
+                        <X size={14} />
+                      </motion.button>
+                    )}
+                  </AnimatePresence>
+                  <button
+                    onClick={applySearch}
+                    disabled={loading || localSearch === filters.search}
+                    className="flex items-center gap-1.5 h-8 px-4 text-[10px] font-bold tracking-widest uppercase rounded-full transition-all text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-50 disabled:hover:bg-transparent"
+                  >
+                    <Search size={12} /> Search
+                  </button>
                 </div>
-                <Button
-                  onClick={applySearch}
-                  disabled={loading || localSearch === filters.search}
-                  className={`h-10 px-4 rounded-full text-xs font-bold tracking-wider ${localSearch !== filters.search ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-500"}`}
-                >
-                  Search
-                </Button>
               </div>
             </div>
           </div>
@@ -1192,30 +1233,46 @@ const ElectricBill = () => {
                 </span>
               )}
             </div>
-            <div className="relative group flex items-center">
-              <div
-                className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filters.exactMonth ? theme.primaryText : "text-zinc-500"}`}
-              >
-                <Calendar size={14} />
+
+            <div className="flex items-center gap-3">
+              <div className="relative group flex items-center">
+                <div
+                  className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${localMonth ? theme.primaryText : "text-zinc-500"}`}
+                >
+                  <Calendar size={14} />
+                </div>
+                <input
+                  type="month"
+                  value={localMonth}
+                  onChange={(e) => setLocalMonth(e.target.value)}
+                  style={{ colorScheme: "dark" }}
+                  className={`appearance-none bg-[#09090B] border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${localMonth ? `text-zinc-100 ${theme.primaryBorder}` : "text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-300"}`}
+                />
               </div>
-              <input
-                type="month"
-                value={filters.exactMonth}
-                onChange={(e) =>
-                  setFilters({
-                    ...filters,
-                    exactMonth: e.target.value,
-                    dateFilter: "All",
-                  })
-                }
-                style={{ colorScheme: "dark" }}
-                className={`appearance-none bg-transparent border rounded-full pl-9 pr-4 py-1.5 text-xs font-medium outline-none cursor-pointer transition-all ${filters.exactMonth ? `text-zinc-100 ${theme.primaryBg} ${theme.primaryBorder}` : "text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-300"}`}
-              />
+
+              <AnimatePresence>
+                {localMonth !== filters.exactMonth && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, x: -10 }}
+                    animate={{ opacity: 1, scale: 1, x: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, x: -10 }}
+                  >
+                    <Button
+                      onClick={applyMonthFilter}
+                      className={`h-8 px-4 rounded-full text-[10px] uppercase tracking-widest font-bold ${theme.primaryBg} ${theme.primaryText}`}
+                    >
+                      Apply
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
+
             {activeFiltersCount > 0 && (
               <button
                 onClick={() => {
                   setLocalSearch("");
+                  setLocalMonth("");
                   setFilters({
                     search: "",
                     amountFilter: "Any Amount",
@@ -1232,9 +1289,7 @@ const ElectricBill = () => {
 
           <AnimatePresence>
             {dynamicFilterStats &&
-              (activeFiltersCount > 0 ||
-                filters.search ||
-                activeTab !== "All") &&
+              (activeFiltersCount > 0 || filters.search) &&
               !loading && (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
