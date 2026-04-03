@@ -1,10 +1,11 @@
 import { db, auth } from "../config/firebase";
 import {
   collection,
-  addDoc,
-  getDocs,
-  getDoc,
   doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  addDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -13,9 +14,7 @@ import {
   where,
   startAfter,
   writeBatch,
-  getAggregateFromServer,
-  sum,
-  count,
+  increment,
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
@@ -27,81 +26,83 @@ const getLocalISTDate = () => {
   return new Date(date.getTime() - offset).toISOString();
 };
 
-const getUpdatedHistory = async (id, user) => {
-  const docRef = doc(db, "invoices", id);
-  const snapshot = await getDoc(docRef);
+const getHistoryFromSnap = (snapshot, user) => {
   let currentHistory = [];
-
   if (snapshot.exists() && snapshot.data().editHistory) {
     currentHistory = snapshot.data().editHistory;
   }
-
   const currentEdit = {
     by: user?.email || "Unknown",
     role: user?.role || "Admin",
     at: getLocalISTDate(),
   };
-
   currentHistory.push(currentEdit);
-  if (currentHistory.length > 10) {
-    currentHistory = currentHistory.slice(currentHistory.length - 10);
+  if (currentHistory.length > 2) {
+    currentHistory = currentHistory.slice(currentHistory.length - 2);
   }
-
-  return { currentEdit, currentHistory, docRef };
+  return { currentEdit, currentHistory };
 };
 
 const invoiceService = {
+  // GLOBAL MEMORY CACHE
   cache: {
     data: [],
     stats: null,
     lastDoc: null,
     hasMore: false,
     filters: null,
-    isValid: false,
+    isDirty: true,
+  },
+
+  markDirty: function () {
+    this.cache.isDirty = true;
   },
 
   clearCache: function () {
-    this.cache.isValid = false;
+    this.markDirty();
   },
 
-  // 🚀 PURE ATOMIC BUNCHER: Exactly 4 document reads total. No frontend calculations.
+  // 🚀 THE 1-READ ATOMIC BUNCHER 🚀
   getInvoiceStats: async () => {
     try {
-      const results = await Promise.allSettled([
-        getAggregateFromServer(query(invCollection), {
-          val: sum("grandTotal"),
-          cnt: count(),
-        }),
-        getAggregateFromServer(
-          query(invCollection, where("status", "==", "Paid")),
-          { val: sum("grandTotal"), cnt: count() },
-        ),
-        getAggregateFromServer(
-          query(invCollection, where("status", "==", "Pending")),
-          { val: sum("grandTotal"), cnt: count() },
-        ),
-        getAggregateFromServer(
-          query(invCollection, where("status", "==", "Cancelled")),
-          { val: sum("grandTotal"), cnt: count() },
-        ),
-      ]);
+      const statsRef = doc(db, "metadata", "invoiceStats");
+      const statsDoc = await getDoc(statsRef);
 
-      const getVals = (res) =>
-        res.status === "fulfilled"
-          ? { amt: res.value.data().val || 0, count: res.value.data().cnt || 0 }
-          : { amt: 0, count: 0 };
+      // If Atomic Document exists, return it instantly (Cost: Exactly 1 Read)
+      if (statsDoc.exists() && statsDoc.data().isSynced) {
+        return statsDoc.data();
+      }
 
-      return {
-        total: getVals(results[0]),
-        paid: getVals(results[1]),
-        pending: getVals(results[2]),
-        cancelled: getVals(results[3]),
+      // --- ONE-TIME SYNC ENGINE ---
+      // If the document is missing (first run), we calculate it once and bundle it natively.
+      console.log("Running One-Time Atomic Sync...");
+      const snapshot = await getDocs(query(invCollection));
+
+      let stats = {
+        total: { amt: 0, count: 0 },
+        paid: { amt: 0, count: 0 },
+        pending: { amt: 0, count: 0 },
+        cancelled: { amt: 0, count: 0 },
+        isSynced: true,
       };
+
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        const amt = Number(data.grandTotal) || 0;
+        const statusKey = (data.status || "Pending").toLowerCase();
+
+        stats.total.amt += amt;
+        stats.total.count += 1;
+        if (stats[statusKey]) {
+          stats[statusKey].amt += amt;
+          stats[statusKey].count += 1;
+        }
+      });
+
+      await setDoc(statsRef, stats);
+      return stats;
     } catch (error) {
-      console.error(
-        "Firebase Aggregation Error. Check your Composite Indexes:",
-        error,
-      );
+      console.error("Atomic Stats read failed", error);
       return {
         total: { amt: 0, count: 0 },
         paid: { amt: 0, count: 0 },
@@ -131,12 +132,29 @@ const invoiceService = {
         constraints.push(where("invoiceNumber", "<=", cleanSearch + "\uf8ff"));
         constraints.push(orderBy("invoiceNumber"));
       } else {
-        constraints.push(where("client.name", ">=", searchStr));
-        constraints.push(where("client.name", "<=", searchStr + "\uf8ff"));
-        constraints.push(orderBy("client.name"));
+        const lowerCase = searchStr.toLowerCase();
+        constraints.push(where("clientNameLower", ">=", lowerCase));
+        constraints.push(where("clientNameLower", "<=", lowerCase + "\uf8ff"));
       }
-      hasInequality = true;
-    } else if (filters.amount && filters.amount !== "All" && !hasInequality) {
+
+      const q = query(invCollection, ...constraints, limit(50));
+      try {
+        const snapshot = await getDocs(q);
+        const data = snapshot.docs.map((doc) => ({
+          _id: doc.id,
+          ...doc.data(),
+        }));
+        invoiceService.cache.isDirty = false;
+        return {
+          data,
+          lastVisible: snapshot.docs[snapshot.docs.length - 1] || null,
+        };
+      } catch (error) {
+        throw error;
+      }
+    }
+
+    if (filters.amount && filters.amount !== "All") {
       if (filters.amount === "Under10k")
         constraints.push(where("grandTotal", "<", 10000));
       else if (filters.amount === "10k-50k")
@@ -148,12 +166,7 @@ const invoiceService = {
         constraints.push(where("grandTotal", ">", 50000));
       constraints.push(orderBy("grandTotal", "desc"));
       hasInequality = true;
-    } else if (
-      filters.date &&
-      filters.date !== "All" &&
-      !filters.exactDate &&
-      !hasInequality
-    ) {
+    } else if (filters.date && filters.date !== "All" && !filters.exactDate) {
       const today = new Date();
       let pastDate = new Date();
       if (filters.date === "Last7Days") pastDate.setDate(today.getDate() - 7);
@@ -169,7 +182,6 @@ const invoiceService = {
 
     if (!hasInequality && !filters.exactDate)
       constraints.push(orderBy("createdAt", "desc"));
-
     constraints.push(limit(50));
     if (lastDoc) constraints.push(startAfter(lastDoc));
 
@@ -178,9 +190,9 @@ const invoiceService = {
       const snapshot = await getDocs(q);
       const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
       const lastVisible = snapshot.docs[snapshot.docs.length - 1];
+      invoiceService.cache.isDirty = false;
       return { data, lastVisible };
     } catch (error) {
-      console.error("Firebase Query Error:", error);
       throw error;
     }
   },
@@ -188,13 +200,49 @@ const invoiceService = {
   createInvoice: async (invoiceData, user) => {
     const payload = {
       ...invoiceData,
+      clientNameLower: invoiceData.client.name.toLowerCase(),
       createdAt: getLocalISTDate(),
       createdBy: user?.email || "Unknown",
       createdRole: user?.role || "Admin",
     };
-    const docRef = await addDoc(invCollection, payload);
-    invoiceService.clearCache();
-    return { data: { _id: docRef.id, ...payload } };
+
+    // ATOMIC BATCH WRITE
+    const batch = writeBatch(db);
+    const newDocRef = doc(invCollection);
+    batch.set(newDocRef, payload);
+
+    const amt = Number(payload.grandTotal) || 0;
+    const statusKey = (payload.status || "Pending").toLowerCase();
+
+    // Auto-update the 1-Read Document
+    batch.set(
+      doc(db, "metadata", "invoiceStats"),
+      {
+        total: { amt: increment(amt), count: increment(1) },
+        [statusKey]: { amt: increment(amt), count: increment(1) },
+      },
+      { merge: true },
+    );
+
+    await batch.commit();
+
+    const newInv = { _id: newDocRef.id, ...payload };
+
+    if (
+      !invoiceService.cache.isDirty &&
+      Array.isArray(invoiceService.cache.data)
+    ) {
+      invoiceService.cache.data.unshift(newInv);
+      if (invoiceService.cache.stats) {
+        invoiceService.cache.stats.total.amt += amt;
+        invoiceService.cache.stats.total.count += 1;
+        if (invoiceService.cache.stats[statusKey]) {
+          invoiceService.cache.stats[statusKey].amt += amt;
+          invoiceService.cache.stats[statusKey].count += 1;
+        }
+      }
+    }
+    return { data: newInv };
   },
 
   getInvoiceById: async (id) => {
@@ -205,42 +253,156 @@ const invoiceService = {
   },
 
   updateInvoice: async (id, invoiceData, user) => {
-    const { currentEdit, currentHistory, docRef } = await getUpdatedHistory(
-      id,
-      user,
-    );
-    await updateDoc(docRef, {
+    const oldSnap = await getDoc(doc(db, "invoices", id));
+    if (!oldSnap.exists()) throw new Error("Invoice not found");
+
+    const oldData = oldSnap.data();
+    const oldAmt = Number(oldData.grandTotal) || 0;
+    const oldStatus = (oldData.status || "Pending").toLowerCase();
+
+    const newAmt = Number(invoiceData.grandTotal) || 0;
+    const newStatus = (invoiceData.status || "Pending").toLowerCase();
+
+    const { currentEdit, currentHistory } = getHistoryFromSnap(oldSnap, user);
+
+    // ATOMIC BATCH WRITE
+    const batch = writeBatch(db);
+    batch.update(doc(db, "invoices", id), {
       ...invoiceData,
+      clientNameLower: invoiceData.client.name.toLowerCase(),
       lastEditedBy: currentEdit.by,
       lastEditedRole: currentEdit.role,
       lastEditedAt: currentEdit.at,
       editHistory: currentHistory,
     });
-    invoiceService.clearCache();
+
+    const statsRef = doc(db, "metadata", "invoiceStats");
+
+    // Recalculate Atomic Adjustments Dynamically
+    if (oldStatus === newStatus) {
+      const diff = newAmt - oldAmt;
+      if (diff !== 0) {
+        batch.set(
+          statsRef,
+          {
+            total: { amt: increment(diff) },
+            [newStatus]: { amt: increment(diff) },
+          },
+          { merge: true },
+        );
+      }
+    } else {
+      batch.set(
+        statsRef,
+        {
+          total: { amt: increment(newAmt - oldAmt) },
+          [oldStatus]: { amt: increment(-oldAmt), count: increment(-1) },
+          [newStatus]: { amt: increment(newAmt), count: increment(1) },
+        },
+        { merge: true },
+      );
+    }
+
+    await batch.commit();
+
+    if (
+      !invoiceService.cache.isDirty &&
+      Array.isArray(invoiceService.cache.data)
+    ) {
+      const idx = invoiceService.cache.data.findIndex((i) => i._id === id);
+      if (idx !== -1) {
+        invoiceService.cache.data[idx] = {
+          ...oldData,
+          ...invoiceData,
+          editHistory: currentHistory,
+          lastEditedAt: currentEdit.at,
+        };
+
+        if (invoiceService.cache.stats) {
+          invoiceService.cache.stats.total.amt = Math.max(
+            0,
+            invoiceService.cache.stats.total.amt - oldAmt + newAmt,
+          );
+          if (invoiceService.cache.stats[oldStatus]) {
+            invoiceService.cache.stats[oldStatus].amt = Math.max(
+              0,
+              invoiceService.cache.stats[oldStatus].amt - oldAmt,
+            );
+            invoiceService.cache.stats[oldStatus].count = Math.max(
+              0,
+              invoiceService.cache.stats[oldStatus].count - 1,
+            );
+          }
+          if (invoiceService.cache.stats[newStatus]) {
+            invoiceService.cache.stats[newStatus].amt += newAmt;
+            invoiceService.cache.stats[newStatus].count += 1;
+          }
+        }
+      }
+    }
     return { message: "Updated" };
   },
 
   updateStatus: async (id, newStatus, user) => {
-    const { currentEdit, currentHistory, docRef } = await getUpdatedHistory(
-      id,
-      user,
-    );
-    await updateDoc(docRef, {
+    const oldSnap = await getDoc(doc(db, "invoices", id));
+    if (!oldSnap.exists()) return;
+
+    const oldData = oldSnap.data();
+    const amt = Number(oldData.grandTotal) || 0;
+    const oldStatus = (oldData.status || "Pending").toLowerCase();
+    const targetStatus = newStatus.toLowerCase();
+
+    if (oldStatus === targetStatus) return { message: "Status unchanged" };
+
+    const { currentEdit, currentHistory } = getHistoryFromSnap(oldSnap, user);
+
+    // ATOMIC BATCH WRITE
+    const batch = writeBatch(db);
+    batch.update(doc(db, "invoices", id), {
       status: newStatus,
       lastEditedBy: currentEdit.by,
       lastEditedRole: currentEdit.role,
       lastEditedAt: currentEdit.at,
       editHistory: currentHistory,
     });
-    invoiceService.clearCache();
+
+    batch.set(
+      doc(db, "metadata", "invoiceStats"),
+      {
+        [oldStatus]: { amt: increment(-amt), count: increment(-1) },
+        [targetStatus]: { amt: increment(amt), count: increment(1) },
+      },
+      { merge: true },
+    );
+
+    await batch.commit();
     return { message: "Status updated" };
   },
 
   deleteInvoice: async (id, user) => {
     const userRole = user?.data?.role || user?.role;
     if (userRole === "manager") throw new Error("Action Denied.");
-    await deleteDoc(doc(db, "invoices", id));
-    invoiceService.clearCache();
+
+    const oldSnap = await getDoc(doc(db, "invoices", id));
+    if (!oldSnap.exists()) return;
+
+    const amt = Number(oldSnap.data().grandTotal) || 0;
+    const statusKey = (oldSnap.data().status || "Pending").toLowerCase();
+
+    // ATOMIC BATCH WRITE
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "invoices", id));
+
+    batch.set(
+      doc(db, "metadata", "invoiceStats"),
+      {
+        total: { amt: increment(-amt), count: increment(-1) },
+        [statusKey]: { amt: increment(-amt), count: increment(-1) },
+      },
+      { merge: true },
+    );
+
+    await batch.commit();
   },
 
   getFullBackupByMonth: async (monthToFetch) => {
@@ -335,17 +497,30 @@ const invoiceService = {
     try {
       const result = await deleteInBatches();
       invoiceService.clearCache();
+
       if (result === "FULL_SUCCESS") {
+        localStorage.removeItem("wipe_lock");
+
+        // RESET THE ATOMIC BUNCHER TO 0
+        await setDoc(doc(db, "metadata", "invoiceStats"), {
+          total: { amt: 0, count: 0 },
+          paid: { amt: 0, count: 0 },
+          pending: { amt: 0, count: 0 },
+          cancelled: { amt: 0, count: 0 },
+          isSynced: true,
+        });
+
         return {
           success: true,
           isPartial: false,
           message: "All Invoices cleared successfully!",
         };
       } else {
+        localStorage.setItem("wipe_lock", Date.now().toString());
         return {
           success: true,
           isPartial: true,
-          message: `⚠️ 10,000 Limit Reached. Progress saved. Please do Part 2 tomorrow.`,
+          message: `⚠️ 10,000 Limit Reached. Action locked for 24 hours.`,
         };
       }
     } catch (error) {
