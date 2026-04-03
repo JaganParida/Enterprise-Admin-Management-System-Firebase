@@ -21,6 +21,7 @@ const COLLECTION_NAME = "sales";
 const STATS_DOC_REF = doc(db, "systemStats", "salesSummary");
 
 const salesService = {
+  // 🚀 CONCEPT 2: 1-READ DASHBOARD STATS
   getStats: async () => {
     try {
       const snap = await getDoc(STATS_DOC_REF);
@@ -82,6 +83,7 @@ const salesService = {
     }
   },
 
+  // 🚀 CONCEPT 4: STRICT PAGINATION LIMITS
   getAllSales: async (filters = {}, lastDoc = null, limitCount = 50) => {
     let constraints = [];
     let hasInequality = false;
@@ -190,6 +192,13 @@ const salesService = {
     const due = Number(data.amountDue) || 0;
     const isCash = data.paymentMode === "Cash";
 
+    // 🚀 CONCEPT 7: INITIALIZE EDIT LOG
+    const logEntry = {
+      role: user?.role || user?.data?.role || "ADMIN",
+      email: user?.email || user?.data?.email || "system",
+      at: new Date().toISOString(),
+    };
+
     const saleData = {
       ...data,
       amount: amt,
@@ -199,7 +208,7 @@ const salesService = {
       buyerNameLower: (data.buyerName || "").toLowerCase(),
       createdBy: user?.email || "admin@system.com",
       createdAt: new Date().toISOString(),
-      editHistory: [],
+      editHistory: [logEntry],
     };
 
     batch.set(newSaleRef, saleData);
@@ -247,6 +256,16 @@ const salesService = {
       diffCash = newPaid;
     }
 
+    // 🚀 CONCEPT 7: STRICTLY TOP 2 EDIT LOGS
+    let history = old.editHistory || [];
+    const newLog = {
+      role: user?.role || user?.data?.role || "ADMIN",
+      email: user?.email || user?.data?.email || "system",
+      at: new Date().toISOString(),
+    };
+    history.push(newLog);
+    history = history.slice(-2);
+
     const batch = writeBatch(db);
     batch.update(saleRef, {
       ...data,
@@ -254,6 +273,8 @@ const salesService = {
       amountPaid: newPaid,
       amountDue: newDue,
       buyerNameLower: (data.buyerName || "").toLowerCase(),
+      editHistory: history,
+      updatedAt: new Date().toISOString(),
     });
 
     batch.set(
@@ -296,17 +317,25 @@ const salesService = {
     await batch.commit();
   },
 
+  // 🚀 CONCEPT 3: WIPE DATABASE BATCHING (WITH 24H LOCK FIX)
   deleteAllSales: async ({ password, email }) => {
     const currentUser = auth.currentUser;
     if (!currentUser || currentUser.email !== email)
       throw new Error("Authentication Mismatch");
 
+    // 🚨 24-HOUR WIPE LOCK CHECK
+    const lastWipe = localStorage.getItem("last_wipe_time");
+    if (lastWipe && Date.now() < Number(lastWipe) + 86400000) {
+      const hrs = Math.ceil(
+        (Number(lastWipe) + 86400000 - Date.now()) / 3600000,
+      );
+      throw new Error(`Wipe limit reached. Locked for ${hrs} more hours.`);
+    }
+
     try {
-      // Step 1: Re-authenticate with password
       const credential = EmailAuthProvider.credential(email, password);
       await reauthenticateWithCredential(currentUser, credential);
 
-      // Step 2: Delete in Batches (Limit 9500 for safety)
       let totalDeleted = 0;
       while (totalDeleted < 9500) {
         const q = query(collection(db, COLLECTION_NAME), limit(500));
@@ -319,7 +348,6 @@ const salesService = {
         totalDeleted += snapshot.size;
       }
 
-      // Step 3: Reset Stats
       await setDoc(STATS_DOC_REF, {
         total: 0,
         cash: 0,
@@ -327,19 +355,67 @@ const salesService = {
         pendingDues: 0,
       });
 
+      // 🚨 LOCK IF LIMIT HIT
+      if (totalDeleted >= 9500) {
+        localStorage.setItem("last_wipe_time", Date.now().toString());
+      } else {
+        localStorage.removeItem("last_wipe_time");
+      }
+
       return { success: true, count: totalDeleted };
     } catch (error) {
       console.error("Wipe Error:", error);
+      if (error.message.includes("Wipe limit")) throw error;
       throw new Error("Invalid Password or Authentication Failed");
     }
   },
 
+  // 🚀 CONCEPT 6: EXPORT CHUNKING
+  downloadBackupChunk: async (monthToFetch, startTimestamp) => {
+    try {
+      const limitCount = 1000;
+      const endOfMonth = `${monthToFetch}-31T23:59:59.999Z`;
+
+      const constraints = [
+        where("createdAt", ">", startTimestamp),
+        where("createdAt", "<=", endOfMonth),
+        orderBy("createdAt", "asc"),
+        limit(limitCount),
+      ];
+
+      const q = query(collection(db, COLLECTION_NAME), ...constraints);
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        return {
+          allData: [],
+          hasMoreToFetch: false,
+          currentLastCreatedAt: null,
+        };
+      }
+
+      const allData = snapshot.docs.map((doc) => doc.data());
+      const currentLastCreatedAt = allData[allData.length - 1].createdAt;
+      const hasMoreToFetch = snapshot.docs.length === limitCount;
+
+      return { allData, hasMoreToFetch, currentLastCreatedAt };
+    } catch (error) {
+      console.error("Backup Chunk Error:", error);
+      throw error;
+    }
+  },
+
+  // 🚀 CONCEPT 6 FIX: LOCALSTORAGE INSTEAD OF FIRESTORE
   getBackupState: async (month) => {
     try {
-      const snap = await getDoc(doc(db, "systemStats", "backupLocks"));
-      if (snap.exists()) {
-        const data = snap.data();
-        return data[month] || null;
+      const stateStr = localStorage.getItem(`backupLock_${month}`);
+      if (stateStr) {
+        const state = JSON.parse(stateStr);
+        if (state.lockedUntil && Date.now() > state.lockedUntil) {
+          localStorage.removeItem(`backupLock_${month}`);
+          return null;
+        }
+        return state;
       }
       return null;
     } catch (e) {
@@ -347,10 +423,14 @@ const salesService = {
     }
   },
 
+  // 🚀 CONCEPT 6 FIX: LOCALSTORAGE INSTEAD OF FIRESTORE
   setBackupState: async (month, stateData) => {
     try {
-      const lockRef = doc(db, "systemStats", "backupLocks");
-      await setDoc(lockRef, { [month]: stateData }, { merge: true });
+      if (!stateData) {
+        localStorage.removeItem(`backupLock_${month}`);
+      } else {
+        localStorage.setItem(`backupLock_${month}`, JSON.stringify(stateData));
+      }
     } catch (e) {
       console.error("Failed to set lock", e);
     }
