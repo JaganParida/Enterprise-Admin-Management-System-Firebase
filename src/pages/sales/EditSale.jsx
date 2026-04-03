@@ -71,11 +71,10 @@ const EditSale = () => {
       try {
         const { data } = await salesService.getSaleById(id);
         let safeDate = "";
-        if (data.date) {
+        if (data.date)
           safeDate = data.date.includes("T")
             ? data.date.split("T")[0]
             : data.date;
-        }
 
         setFormData({
           date: safeDate,
@@ -121,9 +120,7 @@ const EditSale = () => {
       if (name === "quantity" || name === "pricePerQuantity") {
         const qty = Number(newData.quantity) || 0;
         const rate = Number(newData.pricePerQuantity) || 0;
-        if (qty > 0 && rate > 0) {
-          newData.amount = (qty * rate).toString();
-        }
+        if (qty > 0 && rate > 0) newData.amount = (qty * rate).toString();
       }
       const totalAmount = Number(newData.amount) || 0;
       if (
@@ -134,9 +131,8 @@ const EditSale = () => {
           totalAmount > 0 ? Math.max(0, totalAmount - paid).toString() : "";
       } else if (name === "amountDue") {
         const due = Number(value) || 0;
-        if (totalAmount > 0) {
+        if (totalAmount > 0)
           newData.amountPaid = Math.max(0, totalAmount - due).toString();
-        }
       }
       return newData;
     });
@@ -149,11 +145,8 @@ const EditSale = () => {
         admin || { email: "Unknown", role: "admin" };
       await salesService.updateSale(id, formData, currentUser);
       toast.success("Sales record updated successfully.");
-
-      // 🚀 CROSS-PAGE INVALIDATION: Force both pages to fetch fresh updated data!
       sessionStorage.setItem("report_needs_refresh", "true");
       sessionStorage.setItem("entry_needs_refresh", "true");
-
       navigate(-1);
     } catch (err) {
       toast.error("Failed to update record.");
