@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion"; // 🚀 ADDED ANIMATION LIBRARY
+import { motion } from "framer-motion";
 import salesService from "../../services/salesService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
@@ -32,7 +32,6 @@ const formatDate = (dateStr) => {
   }
 };
 
-// 🚀 GLOBAL MEMORY CACHE
 let globalEntryCache = {
   sales: [],
   stats: { total: 0, cash: 0, online: 0, pendingDues: 0 },
@@ -113,6 +112,7 @@ const Sales = () => {
         else if (data.length === 0 && s.total > 0) isSynced = false;
         else if (s.total < 0 || s.cash < 0 || s.online < 0 || s.pendingDues < 0)
           isSynced = false;
+
         setIsStatsSynced(isSynced);
         globalEntryCache.isStatsSynced = isSynced;
         setStats(s);
@@ -253,7 +253,6 @@ const Sales = () => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10 overflow-hidden">
-      {/* 🚀 SMOOTH SLIDE-IN FOR FORM */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -381,10 +380,10 @@ const Sales = () => {
                   </option>
                   <optgroup label="Bricks" className="bg-[#09090B] font-bold">
                     <option value="Bricks (10 inch)" className="font-normal">
-                      Bricks (10 inch)
+                      Bricks 10"
                     </option>
                     <option value="Bricks (9 inch)" className="font-normal">
-                      Bricks (9 inch)
+                      Bricks 9"
                     </option>
                   </optgroup>
                   <optgroup label="Pavers" className="bg-[#09090B] font-bold">
@@ -517,7 +516,6 @@ const Sales = () => {
         </div>
       </motion.div>
 
-      {/* 🚀 SMOOTH SLIDE-IN FOR RECENT SALES TABLE */}
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
