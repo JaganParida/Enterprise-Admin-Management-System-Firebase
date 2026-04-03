@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import invoiceService from "../../services/invoiceService";
@@ -65,7 +65,14 @@ const modalContentVariants = {
   exit: { opacity: 0, scale: 0.95, y: 10, transition: { duration: 0.2 } },
 };
 
-const AnimatedSearchInput = ({ value, onChange, theme }) => {
+const AnimatedSearchInput = ({
+  value,
+  onChange,
+  onKeyDown,
+  onSearch,
+  onClear,
+  theme,
+}) => {
   const placeholders = [
     "Search by client name...",
     "Search by invoice number...",
@@ -101,19 +108,42 @@ const AnimatedSearchInput = ({ value, onChange, theme }) => {
     return () => clearTimeout(timeout);
   }, [placeholderText, isDeleting, placeholderIndex]);
 
+  const hasValue = value && value.trim().length > 0;
+
   return (
-    <div className="relative w-full lg:max-w-md shrink-0 group">
-      <Search
-        size={16}
-        className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-300 ${value ? theme.primaryText : "text-zinc-500"}`}
-      />
-      <input
-        type="text"
-        placeholder={placeholderText}
-        className="w-full bg-[#121214] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all focus:border-zinc-600"
-        value={value}
-        onChange={onChange}
-      />
+    <div className="flex items-center gap-2 w-full lg:max-w-md shrink-0">
+      <div className="relative flex-1 group">
+        <Search
+          size={16}
+          className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-300 ${value ? theme.primaryText : "text-zinc-500"}`}
+        />
+        <input
+          type="text"
+          placeholder={placeholderText}
+          className="w-full bg-[#121214] border border-zinc-800 rounded-xl pl-10 pr-10 py-2.5 text-sm text-zinc-100 outline-none transition-all focus:border-zinc-600"
+          value={value}
+          onChange={onChange}
+          onKeyDown={onKeyDown}
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+            title="Clear search"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onSearch}
+        disabled={!hasValue}
+        className={`h-10 px-4 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${hasValue ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20" : "bg-[#121214] border border-zinc-800/60 text-zinc-600 cursor-not-allowed"}`}
+      >
+        Search
+      </button>
     </div>
   );
 };
@@ -173,51 +203,43 @@ const InvoiceList = () => {
     cancelled: { amt: 0, count: 0 },
   };
 
-  // 🚀 Load instantly from global cache
-  const [invoices, setInvoices] = useState(cached.isValid ? cached.data : []);
+  const [invoices, setInvoices] = useState(!cached.isDirty ? cached.data : []);
   const [stats, setStats] = useState(
-    cached.isValid && cached.stats ? cached.stats : defaultStats,
+    !cached.isDirty && cached.stats ? cached.stats : defaultStats,
   );
   const [loading, setLoading] = useState(
-    invoices.length === 0 && !cached.isValid,
+    invoices.length === 0 && cached.isDirty,
   );
   const [loadingStats, setLoadingStats] = useState(
-    !cached.isValid || !cached.stats,
+    cached.isDirty || !cached.stats,
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncError, setSyncError] = useState(false);
 
   const [lastDoc, setLastDoc] = useState(
-    cached.isValid ? cached.lastDoc : null,
+    !cached.isDirty ? cached.lastDoc : null,
   );
   const [hasMore, setHasMore] = useState(
-    cached.isValid ? cached.hasMore : false,
+    !cached.isDirty ? cached.hasMore : false,
   );
   const [loadingMore, setLoadingMore] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState(
-    cached.isValid ? cached.filters?.search || "" : "",
+    !cached.isDirty ? cached.filters?.search || "" : "",
   );
   const [filterStatus, setFilterStatus] = useState(
-    cached.isValid ? cached.filters?.status || "All" : "All",
+    !cached.isDirty ? cached.filters?.status || "All" : "All",
   );
   const [filterAmount, setFilterAmount] = useState(
-    cached.isValid ? cached.filters?.amount || "All" : "All",
+    !cached.isDirty ? cached.filters?.amount || "All" : "All",
   );
   const [filterDate, setFilterDate] = useState(
-    cached.isValid ? cached.filters?.date || "All" : "All",
+    !cached.isDirty ? cached.filters?.date || "All" : "All",
   );
   const [filterExactDate, setFilterExactDate] = useState(
-    cached.isValid ? cached.filters?.exactDate || "" : "",
+    !cached.isDirty ? cached.filters?.exactDate || "" : "",
   );
 
-  const previousFilters = useRef({
-    status: filterStatus,
-    search: searchTerm,
-    amount: filterAmount,
-    date: filterDate,
-    exactDate: filterExactDate,
-  });
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
   const [warningTooltip, setWarningTooltip] = useState(null);
   const [historyModal, setHistoryModal] = useState({
@@ -235,12 +257,15 @@ const InvoiceList = () => {
     text: "Download Backup",
     timeLeft: "",
   });
+  const [wipeStatus, setWipeStatus] = useState({
+    disabled: false,
+    text: "Database",
+    timeLeft: "",
+  });
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
-  const isFirstRender = useRef(true);
-  const dataLoaded = useRef(cached.isValid);
 
   const isTransport = (
     typeof window !== "undefined" && location.pathname === "/"
@@ -270,10 +295,10 @@ const InvoiceList = () => {
       const lockKey = `backup_lock_${backupMonth}`;
       const lockTime = localStorage.getItem(lockKey);
       const resumeData = localStorage.getItem(`backup_resume_${backupMonth}`);
+      const hours24 = 24 * 60 * 60 * 1000;
 
       if (lockTime) {
         const elapsed = Date.now() - parseInt(lockTime, 10);
-        const hours24 = 24 * 60 * 60 * 1000;
         if (elapsed < hours24) {
           const remaining = hours24 - elapsed;
           const h = Math.floor(remaining / (1000 * 60 * 60));
@@ -283,31 +308,59 @@ const InvoiceList = () => {
             text: resumeData ? "Resume Locked" : "Backup Locked",
             timeLeft: `Available in ${h}h ${m}m`,
           });
-          return;
-        } else localStorage.removeItem(lockKey);
+        } else {
+          localStorage.removeItem(lockKey);
+          setBackupStatus({
+            disabled: false,
+            text: resumeData ? "Resume Backup" : "Download Backup",
+            timeLeft: "",
+          });
+        }
+      } else {
+        setBackupStatus({
+          disabled: false,
+          text: resumeData ? "Resume Backup" : "Download Backup",
+          timeLeft: "",
+        });
       }
-      setBackupStatus({
-        disabled: false,
-        text: resumeData ? "Resume Backup" : "Download Backup",
-        timeLeft: "",
-      });
+
+      const wipeLockTime = localStorage.getItem("wipe_lock");
+      if (wipeLockTime) {
+        const wipeElapsed = Date.now() - parseInt(wipeLockTime, 10);
+        if (wipeElapsed < hours24) {
+          const wipeRem = hours24 - wipeElapsed;
+          const wh = Math.floor(wipeRem / (1000 * 60 * 60));
+          const wm = Math.floor((wipeRem % (1000 * 60 * 60)) / (1000 * 60));
+          setWipeStatus({
+            disabled: true,
+            text: "Wipe Locked",
+            timeLeft: `Locked for ${wh}h ${wm}m`,
+          });
+        } else {
+          localStorage.removeItem("wipe_lock");
+          setWipeStatus({ disabled: false, text: "Database", timeLeft: "" });
+        }
+      } else {
+        setWipeStatus({ disabled: false, text: "Database", timeLeft: "" });
+      }
     };
+
     checkLockout();
     const interval = setInterval(checkLockout, 60000);
     return () => clearInterval(interval);
   }, [backupMonth, isDeleteAllOpen]);
 
-  const activeFiltersCount =
+  const activeDropdownFiltersCount =
     [filterStatus, filterAmount, filterDate].filter((f) => f !== "All").length +
-    (filterExactDate ? 1 : 0) +
-    (searchTerm ? 1 : 0);
+    (filterExactDate ? 1 : 0);
+  const activeFiltersCount = activeDropdownFiltersCount + (searchTerm ? 1 : 0);
 
   const fetchStats = async (isSilent = false) => {
     if (!isSilent) setLoadingStats(true);
     try {
       const data = await invoiceService.getInvoiceStats();
       setStats(data);
-      invoiceService.cache.stats = data; // Persist to cache
+      invoiceService.cache.stats = data;
     } catch (error) {
       console.error("Error fetching stats:", error);
     } finally {
@@ -315,38 +368,18 @@ const InvoiceList = () => {
     }
   };
 
-  const fetchInvoices = useCallback(
-    async (isManual = false, isLoadMore = false, isSilent = false) => {
-      const currentFilters = {
-        status: filterStatus,
-        search: searchTerm,
-        amount: filterAmount,
-        date: filterDate,
-        exactDate: filterExactDate,
-      };
-      const filtersMatch =
-        JSON.stringify(invoiceService.cache.filters) ===
-        JSON.stringify(currentFilters);
-
-      if (
-        !isManual &&
-        !isLoadMore &&
-        invoiceService.cache.isValid &&
-        filtersMatch
-      ) {
-        setLoading(false);
-        return;
-      }
-
+  const loadData = useCallback(
+    async (filtersToUse, isLoadMore = false) => {
       if (isLoadMore) setLoadingMore(true);
-      else if (!isSilent && invoices.length === 0) setLoading(true);
-      else setIsRefreshing(true);
-
+      else {
+        setInvoices([]);
+        setIsRefreshing(true);
+      }
       setSyncError(false);
 
       try {
         const response = await invoiceService.getAllInvoices(
-          currentFilters,
+          filtersToUse,
           isLoadMore ? lastDoc : null,
         );
         let newData = isLoadMore
@@ -356,25 +389,39 @@ const InvoiceList = () => {
         setLastDoc(response.lastVisible || null);
         const newHasMore = response.data && response.data.length === 50;
         setHasMore(newHasMore);
-        dataLoaded.current = true;
 
         invoiceService.cache = {
           ...invoiceService.cache,
           data: newData,
-          lastDoc: response.lastVisible || null,
+          lastDoc: response.lastVisible,
           hasMore: newHasMore,
-          filters: currentFilters,
-          isValid: true,
+          filters: filtersToUse,
+          isDirty: false,
         };
       } catch (error) {
         setSyncError(true);
         if (error.message && error.message.toLowerCase().includes("index"))
           toast.error("Firebase Index required!");
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
         setIsRefreshing(false);
+        setLoadingMore(false);
+        setLoading(false);
       }
+    },
+    [invoices, lastDoc, toast],
+  );
+
+  const handleApplyFilters = useCallback(
+    (explicitSearch = null) => {
+      const searchToUse = explicitSearch !== null ? explicitSearch : searchTerm;
+      const newFilters = {
+        status: filterStatus,
+        search: searchToUse,
+        amount: filterAmount,
+        date: filterDate,
+        exactDate: filterExactDate,
+      };
+      loadData(newFilters, false);
     },
     [
       filterStatus,
@@ -382,8 +429,7 @@ const InvoiceList = () => {
       filterAmount,
       filterDate,
       filterExactDate,
-      lastDoc,
-      invoices,
+      loadData,
     ],
   );
 
@@ -399,46 +445,19 @@ const InvoiceList = () => {
       JSON.stringify(invoiceService.cache.filters) ===
       JSON.stringify(currentFilters);
 
-    // Only load if cache isn't valid
-    if (invoiceService.cache.isValid && filtersMatch) {
+    if (!invoiceService.cache.isDirty && filtersMatch) {
+      setInvoices(invoiceService.cache.data);
       setLoading(false);
       if (invoiceService.cache.stats) {
+        setStats(invoiceService.cache.stats);
         setLoadingStats(false);
         return;
       }
     }
 
-    fetchInvoices(false, false, invoices.length > 0);
+    handleApplyFilters();
     fetchStats(invoices.length > 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    if (!dataLoaded.current) return;
-    const currentFilters = {
-      status: filterStatus,
-      search: searchTerm,
-      amount: filterAmount,
-      date: filterDate,
-      exactDate: filterExactDate,
-    };
-    if (
-      JSON.stringify(previousFilters.current) === JSON.stringify(currentFilters)
-    )
-      return;
-    previousFilters.current = currentFilters;
-
-    const delayDebounceFn = setTimeout(() => {
-      setInvoices([]);
-      setIsRefreshing(true);
-      fetchInvoices(true);
-    }, 400);
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, filterStatus, filterAmount, filterDate, filterExactDate]);
 
   useEffect(() => {
     if (urlHighlightId && !loading) {
@@ -513,7 +532,6 @@ const InvoiceList = () => {
         newStatus,
         admin?.data || admin || { email: "Unknown", role: "admin" },
       );
-      invoiceService.cache.isValid = true;
       toast.success(`Status updated to ${newStatus}`);
     } catch (error) {
       toast.error("Failed to update status");
@@ -560,7 +578,6 @@ const InvoiceList = () => {
 
     try {
       await invoiceService.deleteInvoice(targetId, admin?.data || admin || {});
-      invoiceService.cache.isValid = true;
       toast.info("Invoice deleted successfully");
     } catch (error) {
       toast.error(error.message || "Failed to delete invoice");
@@ -646,8 +663,22 @@ const InvoiceList = () => {
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
-      dataLoaded.current = false;
-      fetchInvoices(true);
+
+      setFilterStatus("All");
+      setFilterAmount("All");
+      setFilterDate("All");
+      setFilterExactDate("");
+      setSearchTerm("");
+      loadData(
+        {
+          status: "All",
+          amount: "All",
+          date: "All",
+          exactDate: "",
+          search: "",
+        },
+        false,
+      );
     } catch (error) {
       toast.error(error.message || "Incorrect Admin Password.");
     } finally {
@@ -691,16 +722,9 @@ const InvoiceList = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full xl:w-auto">
-          {/* 🚀 PERFECTED SEPARATE SYNC BUTTON UI */}
           <div className="flex items-center gap-2">
             <div
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all ${
-                syncError
-                  ? "border-rose-500/20 bg-rose-500/10 text-rose-500"
-                  : isRefreshing
-                    ? "border-zinc-800/60 bg-zinc-900/50 text-zinc-400"
-                    : "border-emerald-500/20 bg-emerald-500/10 text-emerald-500 opacity-60"
-              }`}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all ${syncError ? "border-rose-500/20 bg-rose-500/10 text-rose-500" : isRefreshing ? "border-zinc-800/60 bg-zinc-900/50 text-zinc-400" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-500 opacity-60"}`}
             >
               {isRefreshing ? (
                 <Loader2 size={12} className="animate-spin" />
@@ -717,12 +741,11 @@ const InvoiceList = () => {
                     : "Up To Date"}
               </span>
             </div>
-
             <button
               type="button"
               onClick={() => {
                 invoiceService.clearCache();
-                fetchInvoices(true);
+                handleApplyFilters();
                 fetchStats();
               }}
               disabled={isRefreshing}
@@ -747,9 +770,11 @@ const InvoiceList = () => {
                     })()
                   : setIsDeleteAllOpen(true)
               }
-              className={`flex w-full items-center justify-center gap-2 bg-[#1a0f14] border border-[#3f1d24] text-rose-100 px-4 py-2 rounded-xl hover:bg-[#2d121a] hover:border-rose-500/50 transition-all font-bold text-sm h-10 ${isManager ? "opacity-50 cursor-not-allowed" : ""}`}
+              disabled={wipeStatus.disabled}
+              className={`flex w-full items-center justify-center gap-2 bg-[#1a0f14] border border-[#3f1d24] text-rose-100 px-4 py-2 rounded-xl hover:bg-[#2d121a] hover:border-rose-500/50 transition-all font-bold text-sm h-10 ${isManager || wipeStatus.disabled ? "opacity-50 cursor-not-allowed" : ""}`}
             >
-              <AlertOctagon size={16} className="text-rose-500" /> Database
+              <AlertOctagon size={16} className="text-rose-500" />{" "}
+              {wipeStatus.text}
             </button>
             <AnimatePresence>
               {warningTooltip === "wipe-all" && (
@@ -785,7 +810,6 @@ const InvoiceList = () => {
         </div>
       </motion.div>
 
-      {/* DASHBOARD SUMMARY CARDS (Purely driven by backend & optimistic cache) */}
       <motion.div
         variants={blockVariants}
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden"
@@ -832,7 +856,6 @@ const InvoiceList = () => {
         />
       </motion.div>
 
-      {/* DATABASE MODAL */}
       <AnimatePresence>
         {isDeleteAllOpen && !isManager && (
           <motion.div
@@ -968,18 +991,36 @@ const InvoiceList = () => {
         variants={blockVariants}
         className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden relative print:shadow-none print:border-none print:bg-white"
       >
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 p-4 border-b border-zinc-800/60 bg-[#0c0c0e] print:hidden">
-          <AnimatedSearchInput
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setFilterAmount("All");
-              setFilterDate("All");
-            }}
-            theme={theme}
-          />
+        <div className="flex flex-col gap-4 p-4 border-b border-zinc-800/60 bg-[#0c0c0e] print:hidden">
+          <div className="w-full max-w-lg">
+            <AnimatedSearchInput
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && searchTerm.trim())
+                  handleApplyFilters(searchTerm);
+              }}
+              onSearch={() => {
+                if (searchTerm.trim()) handleApplyFilters(searchTerm);
+              }}
+              onClear={() => {
+                setSearchTerm("");
+                loadData(
+                  {
+                    status: filterStatus,
+                    amount: filterAmount,
+                    date: filterDate,
+                    exactDate: filterExactDate,
+                    search: "",
+                  },
+                  false,
+                );
+              }}
+              theme={theme}
+            />
+          </div>
 
-          <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto pb-2 lg:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="flex items-center flex-wrap gap-3 w-full pb-1">
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 px-2 shrink-0">
               <Filter size={14} /> Filters
             </div>
@@ -1012,11 +1053,7 @@ const InvoiceList = () => {
             <div className="relative group shrink-0">
               <select
                 value={filterAmount}
-                onChange={(e) => {
-                  setFilterAmount(e.target.value);
-                  setSearchTerm("");
-                  setFilterDate("All");
-                }}
+                onChange={(e) => setFilterAmount(e.target.value)}
                 className={`appearance-none bg-[#121214] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 hover:border-zinc-700 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
               >
                 <option value="All" className="bg-[#09090B]">
@@ -1044,8 +1081,6 @@ const InvoiceList = () => {
                 onChange={(e) => {
                   setFilterDate(e.target.value);
                   if (e.target.value !== "All") setFilterExactDate("");
-                  setSearchTerm("");
-                  setFilterAmount("All");
                 }}
                 className={`appearance-none bg-[#121214] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 hover:border-zinc-700 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
               >
@@ -1080,15 +1115,21 @@ const InvoiceList = () => {
                 onChange={(e) => {
                   setFilterExactDate(e.target.value);
                   if (e.target.value) setFilterDate("All");
-                  setSearchTerm("");
-                  setFilterAmount("All");
                 }}
                 style={{ colorScheme: "dark" }}
                 className={`appearance-none bg-[#121214] border rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterExactDate ? `${theme.primaryBg} ${theme.primaryBorder} text-indigo-100` : "border-zinc-800 text-zinc-300 hover:border-zinc-700"}`}
               />
             </div>
 
-            {/* 🚀 STYLISH CLEAR BUTTON */}
+            <button
+              type="button"
+              disabled={activeDropdownFiltersCount === 0}
+              onClick={() => handleApplyFilters()}
+              className={`h-9 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 font-bold text-xs shrink-0 ${activeDropdownFiltersCount === 0 ? "bg-[#121214] border border-zinc-800/60 text-zinc-600 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"}`}
+            >
+              <Filter size={14} /> Apply Filters
+            </button>
+
             {activeFiltersCount > 0 && (
               <button
                 type="button"
@@ -1098,6 +1139,16 @@ const InvoiceList = () => {
                   setFilterDate("All");
                   setFilterExactDate("");
                   setSearchTerm("");
+                  loadData(
+                    {
+                      status: "All",
+                      amount: "All",
+                      date: "All",
+                      exactDate: "",
+                      search: "",
+                    },
+                    false,
+                  );
                 }}
                 className="h-9 px-3 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-1.5 font-bold text-xs shrink-0 border border-rose-500/20 hover:border-rose-500"
               >
@@ -1265,15 +1316,27 @@ const InvoiceList = () => {
               )}
             </tbody>
           </table>
+
           {invoices.length > 0 && (
             <div className="flex flex-col items-center justify-center p-6 gap-3 border-t border-zinc-800/60 bg-[#09090B] print:hidden">
               <div className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                 Showing {invoices.length} records
               </div>
-              {hasMore && (
+              {hasMore && invoices.length < 5000 && (
                 <Button
                   type="button"
-                  onClick={() => fetchInvoices(true, true)}
+                  onClick={() =>
+                    loadData(
+                      {
+                        status: filterStatus,
+                        search: searchTerm,
+                        amount: filterAmount,
+                        date: filterDate,
+                        exactDate: filterExactDate,
+                      },
+                      true,
+                    )
+                  }
                   disabled={loadingMore}
                   variant="outline"
                   className="rounded-full px-6 border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-all shadow-sm"
@@ -1285,6 +1348,12 @@ const InvoiceList = () => {
                   )}{" "}
                   {loadingMore ? "Loading..." : "Load Next 50 Invoices"}
                 </Button>
+              )}
+              {invoices.length >= 5000 && (
+                <div className="text-amber-500 text-xs font-bold bg-amber-500/10 px-4 py-2 rounded-lg border border-amber-500/20 w-full text-center max-w-lg mt-2">
+                  Display Limit Reached (5,000 records). Use Search/Filters to
+                  find older records to preserve performance.
+                </div>
               )}
             </div>
           )}
