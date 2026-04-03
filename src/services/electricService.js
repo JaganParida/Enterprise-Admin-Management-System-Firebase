@@ -32,47 +32,30 @@ const getLocalDateString = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-// 🚀 GLOBAL ZERO-READ CACHE
+// 🚀 GLOBAL ZERO-READ CACHE (Dictionary Map)
 let memoryCache = {
   stats: null,
-  logs: null,
-  filtersKey: "",
+  queryCache: {},
+  dynamicStatsCache: {},
   isDirty: true,
   lastFetchTime: 0,
 };
 
 const markDirty = () => {
   memoryCache.isDirty = true;
+  memoryCache.queryCache = {};
+  memoryCache.dynamicStatsCache = {};
   localStorage.setItem("electric_last_update", Date.now().toString());
 };
 
-// 🚀 OPTIMIZATION: Mutate Memory Cache Silently (Optimistic UI Helper)
-const silentCacheUpdate = (
-  oldStatus,
-  newStatus,
-  oldAmt,
-  newAmt,
-  targetObj = null,
-  action = null,
-) => {
+const silentCacheUpdate = (oldStatus, newStatus, oldAmt, newAmt) => {
   if (memoryCache.stats) {
     if (oldStatus) memoryCache.stats[oldStatus.toLowerCase()] -= oldAmt;
     if (newStatus) memoryCache.stats[newStatus.toLowerCase()] += newAmt;
   }
-  if (memoryCache.logs && targetObj) {
-    if (action === "ADD") {
-      memoryCache.logs.unshift(targetObj);
-      if (memoryCache.logs.length > 50) memoryCache.logs.pop();
-    } else if (action === "EDIT") {
-      const idx = memoryCache.logs.findIndex((b) => b._id === targetObj._id);
-      if (idx > -1)
-        memoryCache.logs[idx] = { ...memoryCache.logs[idx], ...targetObj };
-    } else if (action === "DELETE") {
-      memoryCache.logs = memoryCache.logs.filter(
-        (b) => b._id !== targetObj._id,
-      );
-    }
-  }
+  memoryCache.isDirty = true;
+  memoryCache.queryCache = {};
+  memoryCache.dynamicStatsCache = {};
   memoryCache.lastFetchTime = Date.now();
   localStorage.setItem("electric_last_update", Date.now().toString());
 };
@@ -82,12 +65,9 @@ const electricService = {
   getCachedStats: () => (!memoryCache.isDirty ? memoryCache.stats : null),
   getCachedLogs: (filters) => {
     const key = JSON.stringify(filters);
-    if (
-      !memoryCache.isDirty &&
-      memoryCache.filtersKey === key &&
-      memoryCache.logs
-    )
-      return memoryCache.logs;
+    if (!memoryCache.isDirty && memoryCache.queryCache[key]) {
+      return memoryCache.queryCache[key];
+    }
     return null;
   },
 
@@ -114,8 +94,13 @@ const electricService = {
     }
   },
 
-  // 🚀 2. THE ATOMIC BUNCHER (WITH FALLBACK)
   getDynamicViewStats: async (filters = {}) => {
+    const filterKey = JSON.stringify(filters);
+
+    if (!memoryCache.isDirty && memoryCache.dynamicStatsCache[filterKey]) {
+      return memoryCache.dynamicStatsCache[filterKey];
+    }
+
     let constraints = [];
     if (filters.status && filters.status !== "All")
       constraints.push(where("status", "==", filters.status));
@@ -154,24 +139,25 @@ const electricService = {
     const q = query(billsCollection, ...constraints);
 
     try {
-      // Attempt 1: Atomic Aggregation (1 Read)
       const snapshot = await getAggregateFromServer(q, {
         totalRecords: count(),
         totalRevenue: sum("totalAmount"),
         averageBill: average("totalAmount"),
       });
 
-      return {
+      const res = {
         count: snapshot.data().totalRecords,
         sum: snapshot.data().totalRevenue,
         avg: snapshot.data().averageBill || 0,
       };
+
+      memoryCache.dynamicStatsCache[filterKey] = res;
+      return res;
     } catch (error) {
       console.warn(
         "Aggregation failed. Falling back to client-side calculation:",
         error,
       );
-      // Attempt 2: Fallback Manual Calculation
       try {
         const fallbackSnapshot = await getDocs(q);
         let totalRecords = 0;
@@ -182,13 +168,14 @@ const electricService = {
           totalRevenue += parseFloat(doc.data().totalAmount) || 0;
         });
 
-        return {
+        const res = {
           count: totalRecords,
           sum: totalRevenue,
           avg: totalRecords > 0 ? totalRevenue / totalRecords : 0,
         };
+        memoryCache.dynamicStatsCache[filterKey] = res;
+        return res;
       } catch (fallbackError) {
-        console.error("Fallback calculation failed:", fallbackError);
         return null;
       }
     }
@@ -207,10 +194,9 @@ const electricService = {
       !forceRefresh &&
       !memoryCache.isDirty &&
       !isLoadMore &&
-      memoryCache.logs &&
-      memoryCache.filtersKey === filterKey
+      memoryCache.queryCache[filterKey]
     ) {
-      return { data: memoryCache.logs, lastVisible: null };
+      return { data: memoryCache.queryCache[filterKey], lastVisible: null };
     }
 
     let constraints = [];
@@ -269,8 +255,7 @@ const electricService = {
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
       if (!isLoadMore) {
-        memoryCache.logs = data;
-        memoryCache.filtersKey = filterKey;
+        memoryCache.queryCache[filterKey] = data;
         memoryCache.isDirty = false;
         memoryCache.lastFetchTime = Date.now();
       }
@@ -335,8 +320,7 @@ const electricService = {
     markDirty();
 
     const newObj = { _id: docRef.id, ...payload };
-    silentCacheUpdate(null, payload.status, 0, totalAmount, newObj, "ADD");
-
+    silentCacheUpdate(null, payload.status, 0, totalAmount);
     return { data: newObj };
   },
 
@@ -406,8 +390,6 @@ const electricService = {
       updateData.status,
       oldTotalAmount,
       newTotalAmount,
-      { _id: id, ...payloadObj },
-      "EDIT",
     );
     return { message: "Bill updated successfully" };
   },
@@ -430,14 +412,7 @@ const electricService = {
         updatePayload.overdue = increment(-amountToRemove);
 
       await setDoc(statsRef, updatePayload, { merge: true });
-      silentCacheUpdate(
-        data.status,
-        null,
-        amountToRemove,
-        0,
-        { _id: id },
-        "DELETE",
-      );
+      silentCacheUpdate(data.status, null, amountToRemove, 0);
     }
 
     await deleteDoc(docRef);
