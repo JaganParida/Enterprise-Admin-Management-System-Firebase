@@ -154,30 +154,13 @@ const electricService = {
       memoryCache.dynamicStatsCache[filterKey] = res;
       return res;
     } catch (error) {
+      // ⚠️ RISK REMOVED: NO MORE getDocs() FALLBACK HERE!
+      // If aggregation fails, we return null to protect Firebase quotas.
       console.warn(
-        "Aggregation failed. Falling back to client-side calculation:",
+        "Aggregation failed. Fallback disabled to protect quota.",
         error,
       );
-      try {
-        const fallbackSnapshot = await getDocs(q);
-        let totalRecords = 0;
-        let totalRevenue = 0;
-
-        fallbackSnapshot.forEach((doc) => {
-          totalRecords++;
-          totalRevenue += parseFloat(doc.data().totalAmount) || 0;
-        });
-
-        const res = {
-          count: totalRecords,
-          sum: totalRevenue,
-          avg: totalRecords > 0 ? totalRevenue / totalRecords : 0,
-        };
-        memoryCache.dynamicStatsCache[filterKey] = res;
-        return res;
-      } catch (fallbackError) {
-        return null;
-      }
+      return null;
     }
   },
 
@@ -272,7 +255,7 @@ const electricService = {
     );
     let constraints = [
       where("month", "==", monthToFetch),
-      limit(Math.min(maxAllowed, 10000)),
+      limit(Math.min(maxAllowed, 1000)), // ⚠️ RISK REMOVED: Capped at 1,000 instead of 10,000
     ];
 
     if (storedLastDocId) {
@@ -429,9 +412,10 @@ const electricService = {
       localStorage.getItem("electric_wipe_meta") || '{"date":"","count":0}',
     );
 
-    if (wipeMeta.date === today && wipeMeta.count >= 10000) {
+    // ⚠️ RISK REMOVED: Capped at 2,000 per day instead of 10,000 to save free tier delete quota
+    if (wipeMeta.date === today && wipeMeta.count >= 2000) {
       throw new Error(
-        "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours.",
+        "Daily Wipe Limit Reached (2,000 records). Action locked for 24 hours to protect Database Limits.",
       );
     }
     if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
@@ -449,7 +433,7 @@ const electricService = {
 
     let totalDeleted = 0,
       hasMore = true;
-    const maxAllowed = 10000 - wipeMeta.count;
+    const maxAllowed = 2000 - wipeMeta.count;
 
     while (hasMore && totalDeleted < maxAllowed) {
       const q = query(
@@ -472,14 +456,14 @@ const electricService = {
     if (totalDeleted >= maxAllowed && hasMore) {
       return {
         isPartial: true,
-        message: "10,000 limit reached. Come back tomorrow for remaining.",
+        message: "2,000 limit reached. Come back tomorrow for remaining.",
       };
     }
 
     await setDoc(statsRef, { paid: 0, pending: 0, overdue: 0 });
     return {
       isPartial: false,
-      message: "All Electric Bills cleared successfully!",
+      message: "Electric Bills wiped within safe limits!",
     };
   },
 };
