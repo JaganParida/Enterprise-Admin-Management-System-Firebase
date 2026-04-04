@@ -9,7 +9,6 @@ import {
   Gauge,
   Activity,
   Plus,
-  Download,
   Calendar,
   ChevronRight,
   Timer,
@@ -117,69 +116,6 @@ const TransportationDashboard = () => {
     loadDashboard();
   }, []);
 
-  const handleExport = () => {
-    try {
-      if (!data || data.cards.totalTrips === 0)
-        return toast.info("No data to export");
-
-      const today = new Date().toLocaleDateString("en-GB");
-      let csvContent = "\uFEFF";
-
-      csvContent += `FLEET COMMAND SUMMARY REPORT\nGenerated On:,="${today}"\n\n`;
-      csvContent += `METRICS OVERVIEW\n`;
-      csvContent += `Total Distance (KM),Total Trips,Total Fuel Expense (Rs),Total Repair Expense (Rs)\n`;
-      csvContent += `${data.cards.totalDistance},${data.cards.totalTrips},${data.cards.totalFuelCost},${data.cards.totalMaintenanceCost}\n\n`;
-
-      csvContent += `RECENT FLEET ACTIVITY\n`;
-      csvContent += `Date,Activity Type,Vehicle No,Details,Amount/Cost (Rs)\n`;
-
-      if (data.recentActivity && data.recentActivity.length > 0) {
-        const rows = data.recentActivity.map((act) => {
-          const dateStr = `="${new Date(act.date || act.createdAt).toLocaleDateString("en-GB")}"`;
-          const type = act.activityType || "Unknown";
-          const vehicle = act.vehicleNo || "-";
-          let details = "";
-          let amount = "-";
-
-          if (type === "Trip") {
-            details = `"${act.loadingPoint} to ${act.unloadingSite}"`;
-            amount = act.totalAmount || "-";
-          } else if (type === "Fuel") {
-            details = `"${act.liters} L"`;
-            amount = act.totalCost;
-          } else if (type === "Maintenance") {
-            details = `"${act.serviceType}"`;
-            amount = act.cost;
-          } else if (type === "JCB") {
-            details = `"${act.totalHours}h ${act.totalMinutes}m • ${act.location}"`;
-            amount = "-";
-          }
-
-          return `${dateStr},${type},${vehicle},${details},${amount}`;
-        });
-        csvContent += rows.join("\n");
-      } else {
-        csvContent += "No recent activity found.\n";
-      }
-
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute(
-        "download",
-        `Fleet_Report_${new Date().toISOString().split("T")[0]}.csv`,
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      toast.success("Dashboard report exported successfully!");
-    } catch (error) {
-      toast.error("Failed to export report.");
-    }
-  };
-
   const expenseChartData = useMemo(() => {
     return {
       labels: ["Expenses Overview"],
@@ -271,13 +207,7 @@ const TransportationDashboard = () => {
             {isSynced ? "Dashboard Up to Date" : "Sync Required"}
           </Button>
 
-          <Button
-            variant="outline"
-            className="text-xs h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white transition-colors"
-            onClick={handleExport}
-          >
-            <Download size={16} /> Export Report
-          </Button>
+          {/* EXPORT BUTTON REMOVED FROM HERE */}
 
           <div className="relative">
             <Button
@@ -404,7 +334,6 @@ const TransportationDashboard = () => {
         />
       </div>
 
-      {/* 🚀 FIXED HEIGHT CONTAINER (Adjusted to 400px for perfect Graph visibility) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[500px]">
         {/* CHART SECTION */}
         <div
@@ -425,7 +354,6 @@ const TransportationDashboard = () => {
             </h3>
           </div>
 
-          {/* 🚀 min-h-0 prevents the chart from pushing past the bottom border, pb-2 gives X-axis space */}
           <div className="relative flex-1 w-full z-10 min-h-0 pb-2">
             <div className="absolute inset-0">
               <Suspense fallback={<ChartSkeleton />}>
