@@ -139,7 +139,7 @@ const FuelTracker = () => {
         10,
       );
       if (globalLastUpdate > fuelService.getLastFetchTime())
-        setSyncStatus("required"); // Custom state to trigger refresh prompt
+        setSyncStatus("required");
     };
     const interval = setInterval(checkSync, 2000);
     return () => clearInterval(interval);
