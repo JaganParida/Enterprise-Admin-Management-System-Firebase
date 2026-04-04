@@ -136,8 +136,7 @@ const EditStock = () => {
         admin || { email: "Unknown", role: "admin" };
       await stockService.updateStock(id, formData, currentUserData);
       toast.success("Inventory record synchronized.");
-      // 🚀 FLUSH CACHE
-      sessionStorage.setItem("stock_needs_refresh", "true");
+      // 🚀 CACHE INJECTION ENABLED: No need to flush storage, service handles it.
       navigate("/enterprise/stock");
     } catch (err) {
       toast.error("Failed to update stock record.");
@@ -167,7 +166,7 @@ const EditStock = () => {
           size={16}
           className="mr-2 group-hover:-translate-x-1 transition-transform"
         />{" "}
-        Return to Inventory List
+        Back to Inventory List
       </button>
 
       <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden shadow-xl">
@@ -383,7 +382,7 @@ const EditStock = () => {
                 <RefreshCcw size={16} className="animate-spin mr-2" />
               ) : (
                 <Save size={16} className="mr-2" />
-              )}{" "}
+              )}
               {saving ? "Processing..." : "Commit Update"}
             </button>
           </div>
