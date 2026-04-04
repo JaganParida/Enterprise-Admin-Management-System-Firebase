@@ -13,15 +13,16 @@ import {
   setDoc,
   getAggregateFromServer,
   sum,
+  deleteField,
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const COLLECTION_NAME = "sales";
 const STATS_DOC_REF = doc(db, "systemStats", "salesSummary");
+const LOCKS_DOC_REF = doc(db, "systemStats", "locks"); // 🚀 FIX 2: Server-side locks
 
 const salesService = {
-  // 🚀 CONCEPT 2: 1-READ DASHBOARD STATS
   getStats: async () => {
     try {
       const snap = await getDoc(STATS_DOC_REF);
@@ -42,6 +43,8 @@ const salesService = {
   },
 
   recalculateStats: async () => {
+    let newStats = { total: 0, cash: 0, online: 0, pendingDues: 0 };
+
     try {
       const cashQuery = query(
         collection(db, COLLECTION_NAME),
@@ -52,38 +55,48 @@ const salesService = {
         where("paymentMode", "==", "Online"),
       );
 
-      const [cashAgg, onlineAgg] = await Promise.all([
-        getAggregateFromServer(cashQuery, {
-          totalAmt: sum("amount"),
-          totalPaid: sum("amountPaid"),
-          totalDue: sum("amountDue"),
-        }),
-        getAggregateFromServer(onlineQuery, {
-          totalAmt: sum("amount"),
-          totalPaid: sum("amountPaid"),
-          totalDue: sum("amountDue"),
-        }),
-      ]);
+      try {
+        const [cashAgg, onlineAgg] = await Promise.all([
+          getAggregateFromServer(cashQuery, {
+            totalAmt: sum("amount"),
+            totalPaid: sum("amountPaid"),
+            totalDue: sum("amountDue"),
+          }),
+          getAggregateFromServer(onlineQuery, {
+            totalAmt: sum("amount"),
+            totalPaid: sum("amountPaid"),
+            totalDue: sum("amountDue"),
+          }),
+        ]);
 
-      const cashData = cashAgg.data();
-      const onlineData = onlineAgg.data();
+        const cashData = cashAgg.data();
+        const onlineData = onlineAgg.data();
 
-      const newStats = {
-        total: (cashData.totalAmt || 0) + (onlineData.totalAmt || 0),
-        cash: cashData.totalPaid || 0,
-        online: onlineData.totalPaid || 0,
-        pendingDues: (cashData.totalDue || 0) + (onlineData.totalDue || 0),
-      };
+        newStats = {
+          total: (cashData.totalAmt || 0) + (onlineData.totalAmt || 0),
+          cash: cashData.totalPaid || 0,
+          online: onlineData.totalPaid || 0,
+          pendingDues: (cashData.totalDue || 0) + (onlineData.totalDue || 0),
+        };
 
-      await setDoc(STATS_DOC_REF, newStats);
-      return newStats;
+        await setDoc(STATS_DOC_REF, newStats);
+        return newStats;
+      } catch (aggError) {
+        // 🚀 FIX 1: Removed getDocs fallback. Never fetch whole DB on failure.
+        console.error(
+          "🔥 Aggregation failed! Aborting to protect read quotas.",
+          aggError,
+        );
+        throw new Error(
+          "Aggregation failed due to server error. Stats not updated.",
+        );
+      }
     } catch (error) {
-      console.error("Aggregation Error:", error);
+      console.error("Critical Stats Sync Error:", error);
       throw error;
     }
   },
 
-  // 🚀 CONCEPT 4: STRICT PAGINATION LIMITS
   getAllSales: async (filters = {}, lastDoc = null, limitCount = 50) => {
     let constraints = [];
     let hasInequality = false;
@@ -192,7 +205,6 @@ const salesService = {
     const due = Number(data.amountDue) || 0;
     const isCash = data.paymentMode === "Cash";
 
-    // 🚀 CONCEPT 7: INITIALIZE EDIT LOG
     const logEntry = {
       role: user?.role || user?.data?.role || "ADMIN",
       email: user?.email || user?.data?.email || "system",
@@ -256,7 +268,6 @@ const salesService = {
       diffCash = newPaid;
     }
 
-    // 🚀 CONCEPT 7: STRICTLY TOP 2 EDIT LOGS
     let history = old.editHistory || [];
     const newLog = {
       role: user?.role || user?.data?.role || "ADMIN",
@@ -317,19 +328,21 @@ const salesService = {
     await batch.commit();
   },
 
-  // 🚀 CONCEPT 3: WIPE DATABASE BATCHING (WITH 24H LOCK FIX)
   deleteAllSales: async ({ password, email }) => {
     const currentUser = auth.currentUser;
     if (!currentUser || currentUser.email !== email)
       throw new Error("Authentication Mismatch");
 
-    // 🚨 24-HOUR WIPE LOCK CHECK
-    const lastWipe = localStorage.getItem("last_wipe_time");
-    if (lastWipe && Date.now() < Number(lastWipe) + 86400000) {
-      const hrs = Math.ceil(
-        (Number(lastWipe) + 86400000 - Date.now()) / 3600000,
-      );
-      throw new Error(`Wipe limit reached. Locked for ${hrs} more hours.`);
+    // 🚀 FIX 2: Check lock from Firestore (Server-Side)
+    const lockSnap = await getDoc(LOCKS_DOC_REF);
+    if (lockSnap.exists()) {
+      const data = lockSnap.data();
+      if (data.lastWipeTime && Date.now() < data.lastWipeTime + 86400000) {
+        const hrs = Math.ceil(
+          (data.lastWipeTime + 86400000 - Date.now()) / 3600000,
+        );
+        throw new Error(`Wipe limit reached. Locked for ${hrs} more hours.`);
+      }
     }
 
     try {
@@ -355,25 +368,31 @@ const salesService = {
         pendingDues: 0,
       });
 
-      // 🚨 LOCK IF LIMIT HIT
+      // 🚀 FIX 2: Set Server-Side lock if limit hit
       if (totalDeleted >= 9500) {
-        localStorage.setItem("last_wipe_time", Date.now().toString());
+        await setDoc(
+          LOCKS_DOC_REF,
+          { lastWipeTime: Date.now() },
+          { merge: true },
+        );
       } else {
-        localStorage.removeItem("last_wipe_time");
+        await setDoc(
+          LOCKS_DOC_REF,
+          { lastWipeTime: deleteField() },
+          { merge: true },
+        );
       }
 
       return { success: true, count: totalDeleted };
     } catch (error) {
-      console.error("Wipe Error:", error);
       if (error.message.includes("Wipe limit")) throw error;
       throw new Error("Invalid Password or Authentication Failed");
     }
   },
 
-  // 🚀 CONCEPT 6: EXPORT CHUNKING
   downloadBackupChunk: async (monthToFetch, startTimestamp) => {
     try {
-      const limitCount = 1000;
+      const limitCount = 10000;
       const endOfMonth = `${monthToFetch}-31T23:59:59.999Z`;
 
       const constraints = [
@@ -386,13 +405,12 @@ const salesService = {
       const q = query(collection(db, COLLECTION_NAME), ...constraints);
       const snapshot = await getDocs(q);
 
-      if (snapshot.empty) {
+      if (snapshot.empty)
         return {
           allData: [],
           hasMoreToFetch: false,
           currentLastCreatedAt: null,
         };
-      }
 
       const allData = snapshot.docs.map((doc) => doc.data());
       const currentLastCreatedAt = allData[allData.length - 1].createdAt;
@@ -405,17 +423,19 @@ const salesService = {
     }
   },
 
-  // 🚀 CONCEPT 6 FIX: LOCALSTORAGE INSTEAD OF FIRESTORE
+  // 🚀 FIX 2: Firestore instead of LocalStorage for Backup States
   getBackupState: async (month) => {
     try {
-      const stateStr = localStorage.getItem(`backupLock_${month}`);
-      if (stateStr) {
-        const state = JSON.parse(stateStr);
-        if (state.lockedUntil && Date.now() > state.lockedUntil) {
-          localStorage.removeItem(`backupLock_${month}`);
-          return null;
+      const snap = await getDoc(LOCKS_DOC_REF);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.backupLocks && data.backupLocks[month]) {
+          const state = data.backupLocks[month];
+          if (state.lockedUntil && Date.now() > state.lockedUntil) {
+            return null; // Expired
+          }
+          return state;
         }
-        return state;
       }
       return null;
     } catch (e) {
@@ -423,13 +443,20 @@ const salesService = {
     }
   },
 
-  // 🚀 CONCEPT 6 FIX: LOCALSTORAGE INSTEAD OF FIRESTORE
   setBackupState: async (month, stateData) => {
     try {
       if (!stateData) {
-        localStorage.removeItem(`backupLock_${month}`);
+        await setDoc(
+          LOCKS_DOC_REF,
+          { backupLocks: { [month]: deleteField() } },
+          { merge: true },
+        );
       } else {
-        localStorage.setItem(`backupLock_${month}`, JSON.stringify(stateData));
+        await setDoc(
+          LOCKS_DOC_REF,
+          { backupLocks: { [month]: stateData } },
+          { merge: true },
+        );
       }
     } catch (e) {
       console.error("Failed to set lock", e);
