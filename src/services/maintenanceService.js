@@ -61,25 +61,16 @@ const maintenanceService = {
       let totalCost = snapshot.data().totalCost || 0;
       let serviceCount = snapshot.data().serviceCount || 0;
 
-      if (serviceCount > 0 && totalCost === 0)
-        throw new Error("String fallback");
-
       const result = { totalCost, serviceCount };
       memoryCache.stats = result;
       return result;
     } catch (error) {
-      try {
-        const snap = await getDocs(query(maintCollection));
-        let totalCost = 0;
-        snap.forEach((doc) => {
-          totalCost += Number(doc.data().cost) || 0;
-        });
-        const result = { totalCost, serviceCount: snap.size };
-        memoryCache.stats = result;
-        return result;
-      } catch (fallbackError) {
-        return { totalCost: 0, serviceCount: 0 };
-      }
+      // 🛑 FIXED: Never fallback to getDocs(). Just return 0 to protect read limits.
+      console.error(
+        "Aggregation failed. Returning 0 to protect daily read limits:",
+        error,
+      );
+      return { totalCost: 0, serviceCount: 0 };
     }
   },
 
@@ -238,8 +229,9 @@ const maintenanceService = {
     let wipeMeta = JSON.parse(
       localStorage.getItem("maintenance_wipe_meta") || '{"date":"","count":0}',
     );
-    if (wipeMeta.date === today && wipeMeta.count >= 10000)
-      throw new Error("Daily Wipe Limit Reached.");
+    // 🛑 FIXED: Reduced to 5000 to protect Delete Quotas
+    if (wipeMeta.date === today && wipeMeta.count >= 5000)
+      throw new Error("Daily Wipe Limit Reached (5,000 max).");
     if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
 
     const currentUser = auth.currentUser;
@@ -255,7 +247,7 @@ const maintenanceService = {
 
     let totalDeleted = 0,
       hasMore = true;
-    const maxAllowed = 10000 - wipeMeta.count;
+    const maxAllowed = 5000 - wipeMeta.count; // 🛑 FIXED: 5000 max
 
     while (hasMore && totalDeleted < maxAllowed) {
       const currentBatchSize = Math.min(500, maxAllowed - totalDeleted);
@@ -274,7 +266,9 @@ const maintenanceService = {
     markDirty();
 
     if (totalDeleted >= maxAllowed && hasMore)
-      return { warning: "10,000 limit reached. Come back tomorrow." };
+      return {
+        warning: "5,000 limit reached. Come back tomorrow to delete the rest.",
+      };
     return { success: true };
   },
 };
