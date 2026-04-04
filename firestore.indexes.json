@@ -102,6 +102,14 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "grandTotal", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "invoices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]
     },
@@ -119,6 +127,22 @@
       "fields": [
         { "fieldPath": "quantity", "order": "DESCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "production",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "productName", "order": "ASCENDING" },
+        { "fieldPath": "quantity", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "production",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "productName", "order": "ASCENDING" },
+        { "fieldPath": "quantity", "order": "ASCENDING" }
       ]
     },
     {
