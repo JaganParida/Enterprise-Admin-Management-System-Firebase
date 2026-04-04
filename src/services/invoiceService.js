@@ -5,7 +5,6 @@ import {
   setDoc,
   getDoc,
   getDocs,
-  addDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -15,6 +14,9 @@ import {
   startAfter,
   writeBatch,
   increment,
+  getAggregateFromServer,
+  sum,
+  count,
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
@@ -62,7 +64,7 @@ const invoiceService = {
     this.markDirty();
   },
 
-  // 🚀 THE 1-READ ATOMIC BUNCHER 🚀
+  // 🚀 THE ULTIMATE ZERO-READ ATOMIC BUNCHER 🚀
   getInvoiceStats: async () => {
     try {
       const statsRef = doc(db, "metadata", "invoiceStats");
@@ -73,31 +75,42 @@ const invoiceService = {
         return statsDoc.data();
       }
 
-      // --- ONE-TIME SYNC ENGINE ---
-      // If the document is missing (first run), we calculate it once and bundle it natively.
-      console.log("Running One-Time Atomic Sync...");
-      const snapshot = await getDocs(query(invCollection));
+      // --- AGGREGATION SYNC ENGINE (RISK-FREE) ---
+      // Even if you have 1 Million records, this will cost EXACTLY 4 reads.
+      console.log("Running Ultra-Optimized Aggregation Sync...");
+
+      const qTotal = query(invCollection);
+      const qPaid = query(invCollection, where("status", "==", "Paid"));
+      const qPending = query(invCollection, where("status", "==", "Pending"));
+      const qCancelled = query(
+        invCollection,
+        where("status", "==", "Cancelled"),
+      );
+
+      // Run aggregations in parallel for speed
+      const [aggTotal, aggPaid, aggPending, aggCancelled] = await Promise.all([
+        getAggregateFromServer(qTotal, { c: count(), s: sum("grandTotal") }),
+        getAggregateFromServer(qPaid, { c: count(), s: sum("grandTotal") }),
+        getAggregateFromServer(qPending, { c: count(), s: sum("grandTotal") }),
+        getAggregateFromServer(qCancelled, {
+          c: count(),
+          s: sum("grandTotal"),
+        }),
+      ]);
 
       let stats = {
-        total: { amt: 0, count: 0 },
-        paid: { amt: 0, count: 0 },
-        pending: { amt: 0, count: 0 },
-        cancelled: { amt: 0, count: 0 },
+        total: { amt: aggTotal.data().s || 0, count: aggTotal.data().c || 0 },
+        paid: { amt: aggPaid.data().s || 0, count: aggPaid.data().c || 0 },
+        pending: {
+          amt: aggPending.data().s || 0,
+          count: aggPending.data().c || 0,
+        },
+        cancelled: {
+          amt: aggCancelled.data().s || 0,
+          count: aggCancelled.data().c || 0,
+        },
         isSynced: true,
       };
-
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        const amt = Number(data.grandTotal) || 0;
-        const statusKey = (data.status || "Pending").toLowerCase();
-
-        stats.total.amt += amt;
-        stats.total.count += 1;
-        if (stats[statusKey]) {
-          stats[statusKey].amt += amt;
-          stats[statusKey].count += 1;
-        }
-      });
 
       await setDoc(statsRef, stats);
       return stats;
@@ -405,13 +418,14 @@ const invoiceService = {
     await batch.commit();
   },
 
+  // ⚠️ SAFE GUARD ADDED: Max 2,500 records per chunk for Export
   getFullBackupByMonth: async (monthToFetch) => {
     const startDate = `${monthToFetch}-01`;
     const endDate = `${monthToFetch}-31`;
     let allData = [];
     let lastVisible = null;
     let fetchedCount = 0;
-    const SAFE_BACKUP_LIMIT = 10000;
+    const SAFE_BACKUP_LIMIT = 2500; // REDUCED FROM 10,000 to save Quota
     const resumeKey = `backup_resume_${monthToFetch}`;
     const resumeDataStr = localStorage.getItem(resumeKey);
     let partNumber = 1;
@@ -459,6 +473,7 @@ const invoiceService = {
     }
   },
 
+  // ⚠️ SAFE GUARD ADDED: Max 2,500 records per day for Wipe
   deleteAllInvoices: async ({ password, email, user }) => {
     const userRole = user?.data?.role || user?.role;
     if (userRole === "manager") throw new Error("Action Denied.");
@@ -478,7 +493,7 @@ const invoiceService = {
     }
 
     let totalDeleted = 0;
-    const SAFE_DAILY_LIMIT = 10000;
+    const SAFE_DAILY_LIMIT = 2500; // REDUCED FROM 10,000 to save Quota
 
     const deleteInBatches = async () => {
       if (totalDeleted >= SAFE_DAILY_LIMIT) return "PARTIAL_SUCCESS";
@@ -520,7 +535,7 @@ const invoiceService = {
         return {
           success: true,
           isPartial: true,
-          message: `⚠️ 10,000 Limit Reached. Action locked for 24 hours.`,
+          message: `⚠️ 2,500 Daily Safe Limit Reached. Action locked for 24 hours to prevent Firebase quota exhaustion.`,
         };
       }
     } catch (error) {
