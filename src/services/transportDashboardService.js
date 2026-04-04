@@ -37,7 +37,7 @@ const transportDashboardService = {
         totalFuelCost = 0,
         totalMaintenanceCost = 0;
 
-      // 1. 🚀 SERVER-SIDE AGGREGATION (Atomic)
+      // 1. 🚀 SERVER-SIDE AGGREGATION (Atomic & Efficient)
       try {
         const [tripAgg, fuelAgg, maintAgg] = await Promise.all([
           getAggregateFromServer(query(collection(db, "trips")), {
@@ -57,28 +57,19 @@ const transportDashboardService = {
         totalFuelCost = fuelAgg.data().totalCost || 0;
         totalMaintenanceCost = maintAgg.data().totalCost || 0;
       } catch (aggError) {
+        // 🚀 BULLETPROOF FALLBACK: Agar aggregation fail hua, toh NO read limit explosion!
         console.warn(
-          "Aggregation failed. Falling back to client calculation. WARNING: High Read Cost.",
+          "Aggregation failed. Returning cached data to prevent Firebase limit hit.",
           aggError,
         );
-        const [tripsSnap, fuelSnap, maintSnap] = await Promise.all([
-          getDocs(collection(db, "trips")),
-          getDocs(collection(db, "fuels")),
-          getDocs(collection(db, "maintenances")),
-        ]);
-        totalTrips = tripsSnap.size;
-        tripsSnap.forEach(
-          (doc) => (totalDistance += Number(doc.data().distanceTravelled) || 0),
-        );
-        fuelSnap.forEach(
-          (doc) => (totalFuelCost += Number(doc.data().totalCost) || 0),
-        );
-        maintSnap.forEach(
-          (doc) => (totalMaintenanceCost += Number(doc.data().cost) || 0),
-        );
+        totalDistance = localCache.data?.cards?.totalDistance || 0;
+        totalTrips = localCache.data?.cards?.totalTrips || 0;
+        totalFuelCost = localCache.data?.cards?.totalFuelCost || 0;
+        totalMaintenanceCost =
+          localCache.data?.cards?.totalMaintenanceCost || 0;
       }
 
-      // 2. 🚀 OPTIMIZED RECENT ACTIVITY FETCH
+      // 2. 🚀 OPTIMIZED RECENT ACTIVITY FETCH (Strictly Limited to 10 max per collection)
       const [tripsRecent, fuelRecent, maintRecent, jcbRecent] =
         await Promise.all([
           getDocs(
