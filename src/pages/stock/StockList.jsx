@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import stockService from "../../services/stockService";
+import stockService, { memoryCache } from "../../services/stockService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -20,54 +20,31 @@ import {
   EyeOff,
   RefreshCcw,
   ChevronDown,
-  Calendar,
   AlertCircle,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-import { db } from "../../config/firebase";
-import {
-  collection,
-  query,
-  limit,
-  orderBy,
-  startAfter,
-  getDocs,
-  documentId,
-  where,
-} from "firebase/firestore";
 
-const getPreviousMonthString = () => {
-  const d = new Date();
-  d.setMonth(d.getMonth() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
-
-// 🚀 IMMORTAL CACHE SYSTEM
 const defaultFilters = { search: "", category: "All", stockLevel: "All" };
-let globalStockCache = {
-  logs: [],
-  lastDoc: null,
-  hasMore: false,
-  loadedCount: 0,
-  fetched: false,
-  filters: { ...defaultFilters },
-};
 
 const StockList = () => {
-  const [stocks, setStocks] = useState(globalStockCache.logs);
-  const [loading, setLoading] = useState(!globalStockCache.fetched);
-  const [lastDoc, setLastDoc] = useState(globalStockCache.lastDoc);
-  const [hasMore, setHasMore] = useState(globalStockCache.hasMore);
-  const [loadedCount, setLoadedCount] = useState(globalStockCache.loadedCount);
+  const [stocks, setStocks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadedCount, setLoadedCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  const [syncState, setSyncState] = useState("syncing"); // synced, syncing, error
 
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
   const [activeHighlight, setActiveHighlight] = useState(null);
 
-  const [filters, setFilters] = useState(globalStockCache.filters);
+  const [pendingFilters, setPendingFilters] = useState(defaultFilters);
+  const [activeFilters, setActiveFilters] = useState(defaultFilters);
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [stockToDelete, setStockToDelete] = useState(null);
 
@@ -76,20 +53,14 @@ const StockList = () => {
   const [deletePassword, setDeletePassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [wiping, setWiping] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
     data: [],
     itemName: "",
   });
-  const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
-  const [serverLockTime, setServerLockTime] = useState(null);
-  const [backupResumePart, setBackupResumePart] = useState(null);
-  const [isBackupLocked, setIsBackupLocked] = useState(false);
-  const [lockTimeRemaining, setLockTimeRemaining] = useState("");
-  const [isExporting, setIsExporting] = useState(false);
 
-  // 🚀 New Wipe Limit States
   const [wipeState, setWipeState] = useState({ count: 0, lockedUntil: null });
   const [isWipeLocked, setIsWipeLocked] = useState(false);
   const [wipeLockTimeRemaining, setWipeLockTimeRemaining] = useState("");
@@ -98,12 +69,16 @@ const StockList = () => {
   const { admin } = useAuth();
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
+
   const RECORDS_PER_PAGE = 50;
   const SCROLL_LIMIT = 5000;
-  const hasActiveFilters =
-    filters.search !== "" ||
-    filters.category !== "All" ||
-    filters.stockLevel !== "All";
+
+  const hasUnappliedChanges =
+    JSON.stringify(pendingFilters) !== JSON.stringify(activeFilters);
+  const hasAnyFilters =
+    pendingFilters.search !== "" ||
+    pendingFilters.category !== "All" ||
+    pendingFilters.stockLevel !== "All";
 
   // --- WIPE LOCK EFFECT ---
   useEffect(() => {
@@ -138,75 +113,42 @@ const StockList = () => {
     return () => clearInterval(timer);
   }, [wipeState.lockedUntil]);
 
-  // --- BACKUP LOCK EFFECT ---
-  useEffect(() => {
-    if (isDeleteAllOpen) {
-      const getLock = async () => {
-        const state = await stockService.getBackupState(
-          `stock_backup_${backupMonth}`,
-        );
-        if (state) {
-          setBackupResumePart((state.part || 0) + 1);
-          setServerLockTime(state.lockedUntil || null);
-        } else {
-          setBackupResumePart(null);
-          setServerLockTime(null);
-        }
-      };
-      getLock();
-    }
-  }, [isDeleteAllOpen, backupMonth]);
-
-  useEffect(() => {
-    if (!serverLockTime) {
-      setIsBackupLocked(false);
-      return;
-    }
-    const updateCountdown = () => {
-      const diff = serverLockTime - Date.now();
-      if (diff > 0) {
-        setIsBackupLocked(true);
-        const hrs = Math.floor(diff / 3600000);
-        const mins = Math.floor((diff % 3600000) / 60000);
-        setLockTimeRemaining(`${hrs}h ${mins}m`);
-      } else {
-        setIsBackupLocked(false);
-        setServerLockTime(null);
-      }
-    };
-    updateCountdown();
-    const timer = setInterval(updateCountdown, 60000);
-    return () => clearInterval(timer);
-  }, [serverLockTime]);
-
-  const fetchStocks = async (isLoadMore = false) => {
+  // --- MAIN FETCH ---
+  const fetchStocks = async (
+    filtersToApply,
+    isLoadMore = false,
+    forceRefresh = false,
+  ) => {
     if (isLoadMore) setLoadingMore(true);
-    else setLoading(true);
+    else {
+      setLoading(true);
+      setSyncState("syncing");
+    }
+
     try {
       const response = await stockService.getAllStocks(
-        filters,
+        filtersToApply,
         isLoadMore ? lastDoc : null,
         RECORDS_PER_PAGE,
+        forceRefresh,
       );
+
       const fetchedDataLength = response?.data?.length || 0;
-      const newHasMore = fetchedDataLength === RECORDS_PER_PAGE;
+      const newHasMore = response.hasMore;
       const newData = isLoadMore
         ? [...stocks, ...(response?.data || [])]
         : response?.data || [];
 
       setStocks(newData);
-      globalStockCache.logs = newData;
       setLastDoc(response.lastVisible || null);
-      globalStockCache.lastDoc = response.lastVisible || null;
       setHasMore(newHasMore);
-      globalStockCache.hasMore = newHasMore;
-      setLoadedCount((prev) => {
-        const n = isLoadMore ? prev + fetchedDataLength : fetchedDataLength;
-        globalStockCache.loadedCount = n;
-        return n;
-      });
-      globalStockCache.fetched = true;
+      setLoadedCount((prev) =>
+        isLoadMore ? prev + fetchedDataLength : fetchedDataLength,
+      );
+
+      setSyncState("synced");
     } catch (error) {
+      setSyncState("error");
       toast.error("Failed to load inventory data.");
     } finally {
       setLoading(false);
@@ -215,21 +157,20 @@ const StockList = () => {
   };
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      const filtersChanged =
-        JSON.stringify(globalStockCache.filters) !== JSON.stringify(filters);
-      const needsRefresh =
-        sessionStorage.getItem("stock_needs_refresh") === "true";
-      if (needsRefresh) {
-        sessionStorage.removeItem("stock_needs_refresh");
-        fetchStocks(false);
-      } else if (filtersChanged || !globalStockCache.fetched) {
-        globalStockCache.filters = filters;
-        fetchStocks(false);
-      }
-    }, 400);
-    return () => clearTimeout(delayDebounceFn);
-  }, [filters]);
+    fetchStocks(activeFilters, false, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleApplyFilters = () => {
+    setActiveFilters(pendingFilters);
+    fetchStocks(pendingFilters, false, false);
+  };
+
+  const handleClearFilters = () => {
+    setPendingFilters(defaultFilters);
+    setActiveFilters(defaultFilters);
+    fetchStocks(defaultFilters, false, false);
+  };
 
   useEffect(() => {
     if (urlHighlightId && !loading) {
@@ -243,61 +184,24 @@ const StockList = () => {
     }
   }, [urlHighlightId, loading]);
 
-  const handleFullBackup = async (monthToFetch = backupMonth) => {
-    if (isBackupLocked)
-      return toast.error(
-        `Daily Limit Reached. Locked for ${lockTimeRemaining}.`,
-      );
+  // 🚀 OPTIMIZED: 0-Read RAM Export
+  const handleFullBackup = async () => {
     try {
-      if (!monthToFetch) return toast.error("Please select a month to backup.");
       setIsExporting(true);
-      const QUOTA_LIMIT = 10000;
-      const BATCH_SIZE = 1000;
-      const savedState = await stockService.getBackupState(
-        `stock_backup_${monthToFetch}`,
-      );
-      let partNumber = savedState ? savedState.part + 1 : 1;
-      let lastDocDate = savedState ? savedState.lastDate : null;
-      let lastDocId = savedState ? savedState.lastId : null;
 
-      toast.info(
-        savedState
-          ? `Resuming Backup Part ${partNumber}...`
-          : `Starting Secure Backup...`,
-      );
-      let allData = [];
-      let hasMoreToFetch = true;
-      let currentLastDoc = null;
+      const allData = memoryCache.data;
 
-      while (hasMoreToFetch && allData.length < QUOTA_LIMIT) {
-        let constraints = [
-          where("createdAt", ">=", monthToFetch),
-          where("createdAt", "<=", monthToFetch + "\uf8ff"),
-          orderBy("createdAt", "asc"),
-          orderBy(documentId(), "asc"),
-          limit(BATCH_SIZE),
-        ];
-        if (currentLastDoc) constraints.push(startAfter(currentLastDoc));
-        else if (lastDocDate && lastDocId)
-          constraints.push(startAfter(lastDocDate, lastDocId));
-
-        const q = query(collection(db, "stocks"), ...constraints);
-        const snap = await getDocs(q);
-        if (snap.empty) {
-          hasMoreToFetch = false;
-          break;
-        }
-        allData.push(...snap.docs.map((d) => d.data()));
-        currentLastDoc = snap.docs[snap.docs.length - 1];
-        if (snap.docs.length < BATCH_SIZE) hasMoreToFetch = false;
+      if (!allData || allData.length === 0) {
+        toast.error("No data loaded in view to export.");
+        setIsExporting(false);
+        return;
       }
 
-      if (allData.length === 0) {
-        await stockService.setBackupState(`stock_backup_${monthToFetch}`, null);
-        setBackupResumePart(null);
-        setServerLockTime(null);
-        setIsExporting(false);
-        return toast.success(`All records downloaded!`);
+      if (memoryCache.hasMore) {
+        toast.warning(
+          "Exporting loaded records. Scroll down to load more before exporting for a complete backup.",
+          { autoClose: 6000 },
+        );
       }
 
       const headers = [
@@ -320,32 +224,15 @@ const StockList = () => {
       link.href = url;
       link.setAttribute(
         "download",
-        `Stock_Backup_${monthToFetch}_Part_${partNumber}.csv`,
+        `Fast_Backup_Stock_${new Date().toISOString().split("T")[0]}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      if (hasMoreToFetch) {
-        const lockTime = Date.now() + 24 * 60 * 60 * 1000;
-        await stockService.setBackupState(`stock_backup_${monthToFetch}`, {
-          lastDate: currentLastDoc.data().createdAt,
-          lastId: currentLastDoc.id,
-          part: partNumber,
-          lockedUntil: lockTime,
-        });
-        setBackupResumePart(partNumber + 1);
-        setServerLockTime(lockTime);
-        toast.warning(
-          `Daily limit (10,000) exceeded! Download next part tomorrow.`,
-          { autoClose: 8000 },
-        );
-      } else {
-        await stockService.setBackupState(`stock_backup_${monthToFetch}`, null);
-        setBackupResumePart(null);
-        setServerLockTime(null);
-        toast.success(`Backup Complete for ${monthToFetch}!`);
-      }
+      toast.success(
+        `Exported ${allData.length} records successfully (0 Server Reads)!`,
+      );
     } catch (e) {
       toast.error("Backup failed.");
     } finally {
@@ -365,9 +252,6 @@ const StockList = () => {
       await stockService.deleteStock(stockToDelete._id, currentUser);
       toast.success("Stock item deleted.");
       setStocks(stocks.filter((s) => s._id !== stockToDelete._id));
-      globalStockCache.logs = globalStockCache.logs.filter(
-        (s) => s._id !== stockToDelete._id,
-      );
     } catch (error) {
       toast.error("Failed to delete.");
     } finally {
@@ -397,18 +281,9 @@ const StockList = () => {
       } else {
         toast.success(res.message);
       }
-
       setDeletePassword("");
       setShowPassword(false);
       setStocks([]);
-      globalStockCache = {
-        logs: [],
-        lastDoc: null,
-        hasMore: false,
-        loadedCount: 0,
-        fetched: true,
-        filters: { ...defaultFilters },
-      };
     } catch (error) {
       toast.error(error.message || "Wipe failed.");
     } finally {
@@ -446,18 +321,42 @@ const StockList = () => {
 
         <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto overflow-x-auto hide-scrollbar">
           <button
+            onClick={() => fetchStocks(activeFilters, false, true)}
+            disabled={syncState === "synced"}
+            className={`h-10 px-4 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-all shrink-0 ${
+              syncState === "synced"
+                ? "bg-transparent border border-zinc-800/40 text-zinc-500 cursor-not-allowed opacity-40 pointer-events-none"
+                : syncState === "error"
+                  ? "bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20"
+                  : "bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
+            }`}
+          >
+            <RefreshCcw
+              size={14}
+              className={syncState === "syncing" ? "animate-spin" : ""}
+            />
+            <span className="hidden sm:inline-block">
+              {syncState === "synced"
+                ? "Up to Date"
+                : syncState === "error"
+                  ? "Retry Fetch"
+                  : "Sync Required"}
+            </span>
+          </button>
+
+          <button
             type="button"
             onClick={() => !isManager && setIsDeleteAllOpen(true)}
             className={`h-10 px-4 border border-rose-900/50 text-white bg-[#0f0709] hover:bg-rose-950/60 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-colors shrink-0 ${isManager ? "opacity-50 cursor-not-allowed" : ""}`}
           >
-            <AlertOctagon size={14} className="text-rose-500" />{" "}
-            <span className="inline-block whitespace-nowrap">Database</span>
+            <AlertOctagon size={14} className="text-rose-500" />
+            <span className="hidden sm:inline-block whitespace-nowrap">
+              Database
+            </span>
           </button>
+
           <Link to="/enterprise/stock/add" className="shrink-0">
-            <button
-              type="button"
-              className="h-10 px-5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex justify-center items-center transition-colors whitespace-nowrap shadow-sm"
-            >
+            <button className="h-10 px-5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex justify-center items-center transition-colors whitespace-nowrap shadow-sm">
               <Plus size={16} className="mr-1" /> Add Stock
             </button>
           </Link>
@@ -477,24 +376,26 @@ const StockList = () => {
         )}
 
         <div className="p-4 border-b border-zinc-800/60 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="relative w-full md:w-[320px] group shrink-0">
-            <Search
-              size={14}
-              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? "text-indigo-400" : "text-zinc-500 group-hover:text-zinc-400"}`}
-            />
-            <input
-              type="text"
-              placeholder="Search items..."
-              className="w-full bg-[#111116] border border-zinc-800/80 rounded-full pl-10 pr-4 py-2 text-xs text-white outline-none transition-all focus:border-indigo-500/50 hover:border-zinc-700/80 placeholder:text-zinc-600 shadow-sm"
-              value={filters.search}
-              onChange={(e) =>
-                setFilters({
-                  ...filters,
-                  search: e.target.value,
-                  stockLevel: "All",
-                })
-              }
-            />
+          <div className="flex w-full md:w-[320px] group shrink-0 gap-2">
+            <div className="relative w-full">
+              <Search
+                size={14}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
+              />
+              <input
+                type="text"
+                placeholder="Search item names..."
+                className="w-full bg-[#111116] border border-zinc-800/80 rounded-lg pl-10 pr-4 py-2 text-xs text-white outline-none focus:border-indigo-500/50 shadow-sm"
+                value={pendingFilters.search}
+                onChange={(e) =>
+                  setPendingFilters((prev) => ({
+                    ...prev,
+                    search: e.target.value,
+                  }))
+                }
+                onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+              />
+            </div>
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto hide-scrollbar pb-1 md:pb-0 shrink-0">
@@ -504,11 +405,14 @@ const StockList = () => {
 
             <div className="relative shrink-0">
               <select
-                value={filters.category}
+                value={pendingFilters.category}
                 onChange={(e) =>
-                  setFilters({ ...filters, category: e.target.value })
+                  setPendingFilters((prev) => ({
+                    ...prev,
+                    category: e.target.value,
+                  }))
                 }
-                className="appearance-none bg-[#111116] border border-zinc-800/80 rounded-full pl-4 pr-8 py-2 text-[11px] md:text-xs font-semibold text-zinc-300 outline-none cursor-pointer focus:border-indigo-500/50 hover:bg-[#18181f] transition-all shadow-sm"
+                className="appearance-none bg-[#111116] border border-zinc-800/80 rounded-lg pl-4 pr-8 py-2 text-[11px] md:text-xs font-semibold text-zinc-300 outline-none cursor-pointer focus:border-indigo-500/50 shadow-sm"
               >
                 <option value="All">All Categories</option>
                 <option value="Purchasing Item">Purchasing Item</option>
@@ -523,15 +427,15 @@ const StockList = () => {
 
             <div className="relative shrink-0">
               <select
-                value={filters.stockLevel}
+                value={pendingFilters.stockLevel}
                 onChange={(e) =>
-                  setFilters({
-                    ...filters,
+                  setPendingFilters((prev) => ({
+                    ...prev,
                     stockLevel: e.target.value,
                     search: "",
-                  })
+                  }))
                 }
-                className="appearance-none bg-[#111116] border border-zinc-800/80 rounded-full pl-4 pr-8 py-2 text-[11px] md:text-xs font-semibold text-zinc-300 outline-none cursor-pointer focus:border-indigo-500/50 hover:bg-[#18181f] transition-all shadow-sm"
+                className="appearance-none bg-[#111116] border border-zinc-800/80 rounded-lg pl-4 pr-8 py-2 text-[11px] md:text-xs font-semibold text-zinc-300 outline-none cursor-pointer focus:border-indigo-500/50 shadow-sm"
               >
                 <option value="All">Any Stock Level</option>
                 <option value="Low">Low (&lt; 100)</option>
@@ -544,14 +448,30 @@ const StockList = () => {
               />
             </div>
 
-            {hasActiveFilters && (
-              <button
-                onClick={() => setFilters(defaultFilters)}
-                className="shrink-0 px-3 py-2 text-[11px] md:text-xs rounded-full flex items-center gap-1 text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition-colors font-bold ml-1 shadow-sm"
-              >
-                <X size={12} /> Clear
-              </button>
-            )}
+            <AnimatePresence mode="popLayout">
+              {hasUnappliedChanges && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  onClick={handleApplyFilters}
+                  className="shrink-0 px-4 py-2 text-[11px] md:text-xs rounded-lg flex items-center gap-1 text-white bg-indigo-600 hover:bg-indigo-500 transition-colors font-bold shadow-sm"
+                >
+                  Apply
+                </motion.button>
+              )}
+              {hasAnyFilters && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  onClick={handleClearFilters}
+                  className="shrink-0 px-3 py-2 text-[11px] md:text-xs rounded-lg flex items-center gap-1 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-colors font-bold shadow-sm"
+                >
+                  <X size={12} /> Clear
+                </motion.button>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
@@ -584,7 +504,7 @@ const StockList = () => {
                 <tr
                   key={stock._id}
                   id={stock._id}
-                  className={`transition-colors duration-300 group border-l-4 ${activeHighlight === stock._id ? "bg-indigo-500/[0.08] border-indigo-500" : "border-transparent hover:bg-[#111116]"}`}
+                  className={`transition-colors duration-300 group ${activeHighlight === stock._id ? "bg-indigo-500/[0.08]" : "hover:bg-[#111116]"}`}
                 >
                   <td className="py-4 px-5 align-middle">
                     <div className="font-bold text-white tracking-wide">
@@ -595,7 +515,7 @@ const StockList = () => {
                         onClick={() => openHistory(stock)}
                         className="mt-1.5 flex items-center gap-1 bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-700/50 rounded px-2 py-0.5 transition-colors w-max"
                       >
-                        <History size={10} className="text-zinc-400" />{" "}
+                        <History size={10} className="text-zinc-400" />
                         <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">
                           Edited
                         </span>
@@ -667,13 +587,13 @@ const StockList = () => {
               </div>
             ) : (
               <button
-                onClick={() => fetchStocks(true)}
+                onClick={() => fetchStocks(activeFilters, true)}
                 disabled={loadingMore}
                 className="bg-[#16161a] text-zinc-300 border border-zinc-800 hover:bg-[#1a1a24] hover:text-white px-6 py-2.5 text-xs rounded-xl transition-all flex items-center justify-center min-w-[160px] font-bold shadow-sm"
               >
-                {loadingMore ? (
+                {loadingMore && (
                   <RefreshCcw size={14} className="animate-spin mr-2" />
-                ) : null}{" "}
+                )}
                 {loadingMore
                   ? "Loading..."
                   : `Load Next 50 (Showing ${loadedCount})`}
@@ -768,7 +688,7 @@ const StockList = () => {
         )}
       </AnimatePresence>
 
-      {/* WIPE ALL MODAL */}
+      {/* WIPE & EXPORT MODAL */}
       <AnimatePresence>
         {isDeleteAllOpen && !isManager && (
           <motion.div
@@ -799,54 +719,35 @@ const StockList = () => {
                       Database Management
                     </h2>
                     <p className="text-zinc-400 text-[11px] font-medium">
-                      Export data or permanently erase records.
+                      Export current view or permanently erase records.
                     </p>
                   </div>
                 </div>
               </div>
               <div className="p-6 space-y-5">
+                {/* 🚀 OPTIMIZED EXPORT UI (No Date Picker Needed) */}
                 <div className="bg-[#151210] border border-amber-900/30 rounded-xl p-5 relative overflow-hidden shadow-inner">
                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
                   <div className="pl-2">
                     <h3 className="text-amber-500 font-bold text-sm flex items-center gap-2 mb-1.5">
-                      <ShieldAlert size={16} /> Step 1: Secure Data Export
+                      <ShieldAlert size={16} /> Step 1: Secure Fast Export
                     </h3>
                     <p className="text-zinc-400 text-[11px] mb-4 leading-relaxed font-medium">
-                      Download a complete CSV backup of your records. Max 10,000
-                      records daily limit.
+                      Download a complete CSV backup of the records currently
+                      loaded in your view. (Costs 0 Server Reads).
                     </p>
-                    <div className="flex flex-col sm:flex-row items-center gap-2.5">
-                      <div className="relative w-full sm:w-[200px]">
-                        <Calendar
-                          size={14}
-                          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
-                        />
-                        <input
-                          type="month"
-                          value={backupMonth}
-                          onChange={(e) => setBackupMonth(e.target.value)}
-                          style={{ colorScheme: "dark" }}
-                          disabled={isBackupLocked || isExporting}
-                          className="bg-[#0a0a0a] border border-zinc-800 focus:border-amber-500/50 rounded-lg pl-10 pr-3 py-2.5 text-xs font-bold text-zinc-200 w-full outline-none disabled:opacity-50"
-                        />
-                      </div>
-                      <button
-                        onClick={() => handleFullBackup(backupMonth)}
-                        disabled={isBackupLocked || isExporting}
-                        className={`w-full sm:flex-1 py-2.5 rounded-lg text-xs font-bold border flex items-center justify-center ${isBackupLocked ? "bg-[#0a0a0a] border-zinc-800 text-zinc-500 cursor-not-allowed opacity-60" : "bg-[#0a0a0c] border-indigo-900/50 hover:bg-[#111116] hover:border-indigo-500/50 text-indigo-400 shadow-sm"}`}
-                      >
-                        {!isBackupLocked && !isExporting && (
-                          <Download size={14} className="mr-1.5" />
-                        )}
-                        {isExporting
-                          ? "Processing Chunk..."
-                          : isBackupLocked
-                            ? `Locked: ${lockTimeRemaining}`
-                            : backupResumePart
-                              ? `Resume (Part ${backupResumePart})`
-                              : "Download Backup"}
-                      </button>
-                    </div>
+                    <button
+                      onClick={handleFullBackup}
+                      disabled={isExporting}
+                      className="w-full py-2.5 rounded-lg text-xs font-bold border flex items-center justify-center bg-[#0a0a0c] border-indigo-900/50 hover:bg-[#111116] hover:border-indigo-500/50 text-indigo-400 shadow-sm"
+                    >
+                      {!isExporting && (
+                        <Download size={14} className="mr-1.5" />
+                      )}
+                      {isExporting
+                        ? "Processing..."
+                        : "Download Loaded Records"}
+                    </button>
                   </div>
                 </div>
 
