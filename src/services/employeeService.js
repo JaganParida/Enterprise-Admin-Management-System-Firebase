@@ -1,12 +1,10 @@
 import { db, auth } from "../config/firebase";
 import {
   collection,
-  addDoc,
+  doc,
   getDocs,
   getDoc,
-  doc,
   updateDoc,
-  deleteDoc,
   query,
   orderBy,
   limit,
@@ -18,12 +16,15 @@ import {
   getAggregateFromServer,
   sum,
   count,
+  getDocsFromCache,
+  getDocsFromServer,
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const empCollection = collection(db, "employees");
 const salaryCollection = collection(db, "salaryPayments");
 const statsDocRef = doc(db, "systemStats", "employees");
+const dailyLimitsRef = doc(db, "systemStats", "dailyLimits"); // 🚀 GLOBAL LIMIT TRACKER
 
 const getLocalISTDate = () => {
   const date = new Date();
@@ -46,7 +47,6 @@ const markDirty = () => {
   localStorage.setItem("emp_last_update", Date.now().toString());
 };
 
-// 🚀 OPTIMIZATION: Silently Mutate Memory Cache (Optimistic UI)
 const silentCacheUpdate = (target, action, payloadObj) => {
   if (target === "EMPLOYEE" && memoryCache.employees) {
     if (action === "ADD") {
@@ -77,6 +77,38 @@ const silentCacheUpdate = (target, action, payloadObj) => {
 
   memoryCache.lastFetchTime = Date.now();
   localStorage.setItem("emp_last_update", Date.now().toString());
+};
+
+// 🚀 HELPER: Check Global Limits to prevent multiple admins bypassing limits
+const checkGlobalLimits = async (type, requestedAmount) => {
+  const today = new Date().toISOString().split("T")[0];
+  const snap = await getDoc(dailyLimitsRef);
+  let data = snap.exists()
+    ? snap.data()
+    : { date: today, wipeCount: 0, backupCount: 0 };
+
+  if (data.date !== today) {
+    data = { date: today, wipeCount: 0, backupCount: 0 }; // Reset for new day
+  }
+
+  const currentCount = type === "WIPE" ? data.wipeCount : data.backupCount;
+  // Limit Wipes to 5k (5k reads + 5k deletes) and Backups to 10k (10k reads) globally per day
+  const maxAllowed = type === "WIPE" ? 5000 : 10000;
+
+  if (currentCount + requestedAmount > maxAllowed) {
+    throw new Error(
+      `Global daily limit reached for ${type}. Try again tomorrow to protect Free Tier limits.`,
+    );
+  }
+
+  return { today, currentCount, maxAllowed };
+};
+
+const updateGlobalLimits = async (type, amountAdded, today) => {
+  const updatePayload = { date: today };
+  if (type === "WIPE") updatePayload.wipeCount = increment(amountAdded);
+  if (type === "BACKUP") updatePayload.backupCount = increment(amountAdded);
+  await setDoc(dailyLimitsRef, updatePayload, { merge: true });
 };
 
 const employeeService = {
@@ -159,7 +191,21 @@ const employeeService = {
 
     try {
       const q = query(empCollection, ...constraints);
-      const snapshot = await getDocs(q);
+      let snapshot;
+
+      // 🚀 AGGRESSIVE CACHE: Attempt cache first if fetched within last 5 mins and not forcing
+      const timeSinceFetch = Date.now() - memoryCache.lastFetchTime;
+      if (!forceRefresh && timeSinceFetch < 300000) {
+        try {
+          snapshot = await getDocsFromCache(q);
+          if (snapshot.empty && !isLoadMore) throw new Error("Cache Empty");
+        } catch (err) {
+          snapshot = await getDocsFromServer(q); // Fallback to server
+        }
+      } else {
+        snapshot = await getDocsFromServer(q);
+      }
+
       const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
@@ -189,23 +235,6 @@ const employeeService = {
         where("nameLower", ">=", searchLower),
         where("nameLower", "<=", searchLower + "\uf8ff"),
       );
-    } else if (
-      filters.salary &&
-      filters.salary !== "All" &&
-      filters.salary !== "No Salary Taken"
-    ) {
-      if (filters.salary === "Under ₹10k")
-        constraints.push(
-          where("salaryTaken", ">", 0),
-          where("salaryTaken", "<", 10000),
-        );
-      else if (filters.salary === "₹10k - ₹50k")
-        constraints.push(
-          where("salaryTaken", ">=", 10000),
-          where("salaryTaken", "<=", 50000),
-        );
-      else if (filters.salary === "Over ₹50k")
-        constraints.push(where("salaryTaken", ">", 50000));
     }
 
     try {
@@ -222,27 +251,12 @@ const employeeService = {
         salaryTakenSum: snapshot.data().totalSalaryTaken,
       };
     } catch (error) {
+      // 🚀 RISK ELIMINATED: No more manual getDocs() fallback.
+      // If aggregation fails, return null. Safe & Zero Reads.
       console.warn(
-        "Dynamic Aggregation failed, falling back to manual calc:",
-        error,
+        "Aggregation failed. Safe mode: Returning null to protect read quota.",
       );
-      try {
-        const q = query(empCollection, ...constraints);
-        const fallbackSnap = await getDocs(q);
-        let baseSalarySum = 0;
-        let salaryTakenSum = 0;
-
-        fallbackSnap.forEach((doc) => {
-          const d = doc.data();
-          baseSalarySum += Number(d.initialSalary || 0);
-          salaryTakenSum += Number(d.salaryTaken || 0);
-        });
-
-        return { count: fallbackSnap.size, baseSalarySum, salaryTakenSum };
-      } catch (fallbackErr) {
-        console.error("Fallback failed:", fallbackErr);
-        return null;
-      }
+      return null;
     }
   },
 
@@ -292,7 +306,6 @@ const employeeService = {
       at: getLocalISTDate(),
     };
     currentHistory.push(currentEdit);
-
     if (currentHistory.length > 2) currentHistory = currentHistory.slice(-2);
 
     const payload = {
@@ -313,8 +326,7 @@ const employeeService = {
 
   deleteEmployee: async (id, user) => {
     const userRole = user?.data?.role || user?.role;
-    if (userRole === "manager")
-      throw new Error("Action Denied: Managers cannot delete records.");
+    if (userRole === "manager") throw new Error("Action Denied.");
 
     const batch = writeBatch(db);
     batch.delete(doc(db, "employees", id));
@@ -327,20 +339,7 @@ const employeeService = {
 
   deleteAllEmployees: async ({ password, email, user }) => {
     const userRole = user?.data?.role || user?.role;
-    if (userRole === "manager")
-      throw new Error("Action Denied: Only Admins can wipe the database.");
-
-    const today = new Date().toISOString().split("T")[0];
-    let wipeMeta = JSON.parse(
-      localStorage.getItem("emp_wipe_meta") || '{"date":"","count":0}',
-    );
-
-    if (wipeMeta.date === today && wipeMeta.count >= 10000) {
-      throw new Error(
-        "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours.",
-      );
-    }
-    if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
+    if (userRole === "manager") throw new Error("Action Denied.");
 
     const currentUser = auth.currentUser;
     try {
@@ -353,16 +352,22 @@ const employeeService = {
       throw new Error("Incorrect Admin Password.");
     }
 
-    let totalDeleted = 0,
-      hasMore = true;
-    const maxAllowed = 10000 - wipeMeta.count;
+    // 🚀 GLOBAL LIMIT CHECK (Max 5000 wipes per day globally to save 10k ops)
+    const { today, currentCount, maxAllowed } = await checkGlobalLimits(
+      "WIPE",
+      500,
+    );
 
-    while (hasMore && totalDeleted < maxAllowed) {
+    let totalDeleted = 0;
+    let hasMore = true;
+    const remainingQuota = maxAllowed - currentCount;
+
+    while (hasMore && totalDeleted < remainingQuota) {
       const q = query(
         empCollection,
-        limit(Math.min(500, maxAllowed - totalDeleted)),
+        limit(Math.min(500, remainingQuota - totalDeleted)),
       );
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocsFromServer(q); // Force server to ensure exact sync
       if (snapshot.empty) break;
 
       const batch = writeBatch(db);
@@ -371,56 +376,68 @@ const employeeService = {
       totalDeleted += snapshot.size;
     }
 
-    wipeMeta.count += totalDeleted;
-    localStorage.setItem("emp_wipe_meta", JSON.stringify(wipeMeta));
+    await updateGlobalLimits("WIPE", totalDeleted, today);
     markDirty();
 
-    if (totalDeleted >= maxAllowed && hasMore) {
+    if (totalDeleted === 0)
+      return { isPartial: false, message: "Database is already empty." };
+
+    if (totalDeleted >= remainingQuota && hasMore) {
       return {
         isPartial: true,
-        message: "10,000 limit reached. Come back tomorrow for remaining.",
+        message: `Global Free Tier limit reached. ${totalDeleted} deleted. Remaining ops locked until tomorrow.`,
       };
     }
 
     await setDoc(statsDocRef, { totalCount: 0 });
     return {
       isPartial: false,
-      message: "All Employee records cleared successfully!",
+      message: `Wiped ${totalDeleted} Employee records successfully!`,
     };
   },
 
-  // 🚀 CONCEPT 6 FIX: Applied strict Date Filtering and StartAfter pagination retrieval
   getBackupChunk: async (monthToFetch, limitCount, lastDocId = null) => {
+    // 🚀 GLOBAL LIMIT CHECK for Backups
+    const { today, currentCount, maxAllowed } = await checkGlobalLimits(
+      "BACKUP",
+      limitCount,
+    );
+
+    // Adjust requested limit if approaching daily quota
+    const safeLimitCount = Math.min(limitCount, maxAllowed - currentCount);
+    if (safeLimitCount <= 0)
+      throw new Error("Global 10k backup limit reached for today.");
+
     let constraints = [
       where("createdAt", ">=", `${monthToFetch}-01`),
       where("createdAt", "<=", `${monthToFetch}-31T23:59:59.999Z`),
       orderBy("createdAt", "asc"),
-      limit(limitCount),
+      limit(safeLimitCount),
     ];
 
-    // Restore memory state if resuming from 10k limit drop-off
     if (lastDocId) {
       try {
         const docRef = doc(db, "employees", lastDocId);
         const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          constraints.push(startAfter(docSnap));
-        }
+        if (docSnap.exists()) constraints.push(startAfter(docSnap));
       } catch (err) {
-        console.warn(
-          "Failed to resume from last document, starting from beginning of chunk.",
-          err,
-        );
+        console.warn("Failed to resume from last document.");
       }
     }
 
     const q = query(empCollection, ...constraints);
-    const snapshot = await getDocs(q);
+    const snapshot = await getDocsFromServer(q);
     const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
+
+    // Record usage globally
+    if (data.length > 0) {
+      await updateGlobalLimits("BACKUP", data.length, today);
+    }
 
     return {
       data,
       lastDocId: snapshot.docs[snapshot.docs.length - 1]?.id || null,
+      wasLimited: safeLimitCount < limitCount,
     };
   },
 
@@ -459,14 +476,12 @@ const employeeService = {
       const targetEmp = memoryCache.employees.find(
         (e) => e._id === paymentData.employeeId,
       );
-      if (targetEmp) {
+      if (targetEmp)
         silentCacheUpdate("EMPLOYEE", "EDIT", {
           ...targetEmp,
           salaryTaken: targetEmp.salaryTaken + Number(paymentData.amount),
         });
-      }
     }
-
     return { data: newObj };
   },
 
@@ -476,7 +491,6 @@ const employeeService = {
     forceRefresh = false,
   ) => {
     const isLoadMore = !!lastVisibleDoc;
-
     if (
       !forceRefresh &&
       !memoryCache.isDirty &&
