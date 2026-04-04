@@ -24,6 +24,7 @@ import {
   MapPin,
   RefreshCcw,
   CheckCircle2,
+  FilterX,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -36,10 +37,13 @@ import {
   query,
   where,
   limit,
+  orderBy,
+  startAfter,
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
 const MAX_RECORDS_LIMIT = 5000;
+const SAFE_BACKUP_LIMIT = 2500;
 
 const getPreviousMonthString = () => {
   const d = new Date();
@@ -61,17 +65,25 @@ const JcbReport = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [filters, setFilters] = useState(defaultFilters);
+  // 🚀 ACTIVE FILTERS (Used for DB Fetch)
+  const [activeFilters, setActiveFilters] = useState(defaultFilters);
 
-  // 🚀 SYNCHRONOUS CACHE INITIALIZATION
+  // 🚀 LOCAL INPUT STATES (Decoupled from DB Fetch)
+  const [localSearch, setLocalSearch] = useState("");
+  const [pendingFilters, setPendingFilters] = useState({
+    vehicleFilter: "All",
+    dateFilter: "All",
+    exactDate: "",
+  });
+
   const [logs, setLogs] = useState(
-    () => jcbService.getCachedLogs(filters) || [],
+    () => jcbService.getCachedLogs(activeFilters) || [],
   );
   const [loading, setLoading] = useState(
-    () => !jcbService.getCachedLogs(filters),
+    () => !jcbService.getCachedLogs(activeFilters),
   );
   const [syncStatus, setSyncStatus] = useState(() =>
-    jcbService.getCachedLogs(filters) ? "up-to-date" : "syncing",
+    jcbService.getCachedLogs(activeFilters) ? "up-to-date" : "syncing",
   );
 
   const [lastDoc, setLastDoc] = useState(null);
@@ -164,7 +176,7 @@ const JcbReport = () => {
     }
   }, [urlHighlightId, logs.length]);
 
-  // 🚀 OPTIMIZED FETCH: 0 Reads, NO Unconditional Loaders
+  // 🚀 OPTIMIZED FETCH: Uses activeFilters directly
   const fetchLogs = useCallback(
     async (isLoadMore = false, forceSync = false) => {
       if (isLoadMore) setLoadingMore(true);
@@ -174,7 +186,7 @@ const JcbReport = () => {
 
       try {
         const response = await jcbService.getLogs(
-          filters,
+          activeFilters,
           isLoadMore ? lastDoc : null,
           50,
           forceSync,
@@ -198,15 +210,44 @@ const JcbReport = () => {
         setLoadingMore(false);
       }
     },
-    [filters, lastDoc, logs.length],
+    [activeFilters, lastDoc, logs.length],
   );
 
+  // 🚀 MANUAL TRIGGERS: Replaces Debounce
+  const executeSearch = () => {
+    setActiveFilters({
+      ...defaultFilters,
+      search: localSearch,
+    });
+    setPendingFilters({
+      vehicleFilter: "All",
+      dateFilter: "All",
+      exactDate: "",
+    });
+  };
+
+  const executeApplyFilters = () => {
+    setActiveFilters({
+      search: "",
+      ...pendingFilters,
+    });
+    setLocalSearch("");
+  };
+
+  const executeClearAll = () => {
+    setLocalSearch("");
+    setPendingFilters({
+      vehicleFilter: "All",
+      dateFilter: "All",
+      exactDate: "",
+    });
+    setActiveFilters(defaultFilters);
+  };
+
+  // Fetch only when activeFilters change (triggered by manual buttons)
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchLogs(false);
-    }, 400);
-    return () => clearTimeout(delayDebounceFn);
-  }, [filters]);
+    fetchLogs(false);
+  }, [activeFilters]);
 
   const handleDisabledClick = (action) => {
     setWarningTooltip(action);
@@ -237,33 +278,39 @@ const JcbReport = () => {
   };
 
   const activeFiltersCount =
-    [filters.vehicleFilter, filters.dateFilter].filter((f) => f !== "All")
-      .length +
-    (filters.exactDate ? 1 : 0) +
-    (filters.search ? 1 : 0);
+    [activeFilters.vehicleFilter, activeFilters.dateFilter].filter(
+      (f) => f !== "All",
+    ).length +
+    (activeFilters.exactDate ? 1 : 0) +
+    (activeFilters.search ? 1 : 0);
 
+  // Checks if buttons should be disabled
+  const isSearchDisabled = !localSearch.trim() && !activeFilters.search;
+  const isApplyDisabled =
+    pendingFilters.vehicleFilter === "All" &&
+    pendingFilters.dateFilter === "All" &&
+    !pendingFilters.exactDate &&
+    activeFilters.vehicleFilter === "All" &&
+    activeFilters.dateFilter === "All" &&
+    !activeFilters.exactDate;
+
+  // ... (handleFullBackup and handleWipeAll remain exactly the same)
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
-
       const today = new Date().toISOString().split("T")[0];
       let dlMeta = JSON.parse(
         localStorage.getItem(`backup_jcb_${monthToFetch}_meta`) ||
           '{"date":"","count":0,"lastId":null}',
       );
-
-      if (dlMeta.date === today && dlMeta.count >= 10000)
-        return toast.error(
-          "Daily Download Limit (10,000) reached. Next batch available tomorrow.",
-        );
+      if (dlMeta.date === today && dlMeta.count >= SAFE_BACKUP_LIMIT)
+        return toast.error(`Daily Limit (${SAFE_BACKUP_LIMIT}) reached.`);
       if (dlMeta.date !== today) {
         dlMeta.date = today;
         dlMeta.count = 0;
       }
-
-      const fetchLimit = 10000 - dlMeta.count;
-      toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
-
+      const fetchLimit = SAFE_BACKUP_LIMIT - dlMeta.count;
+      toast.info(`Fetching secure backup...`);
       const qConstraints = [
         where("date", ">=", monthToFetch),
         where("date", "<=", monthToFetch + "\uf8ff"),
@@ -274,15 +321,12 @@ const JcbReport = () => {
         const lastDocRef = await getDoc(doc(db, "jcb_logs", dlMeta.lastId));
         if (lastDocRef.exists()) qConstraints.push(startAfter(lastDocRef));
       }
-
       const q = query(collection(db, "jcb_logs"), ...qConstraints);
       const snapshot = await getDocs(q);
-
       if (snapshot.empty)
         return toast.info(
           `All records for ${monthToFetch} downloaded completely.`,
         );
-
       const headers = [
         "Date",
         "Vehicle No",
@@ -302,32 +346,29 @@ const JcbReport = () => {
           : "-";
         return `${dateStr},"${log.vehicleNo}","${log.customerName}","${log.phone}","${log.location}","${log.startTime}","${log.endTime}",${log.totalHours},${log.totalMinutes},${log.totalMins}`;
       });
-
       const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       link.setAttribute(
         "download",
-        `Backup_JCB_${monthToFetch}_Part${Math.floor(dlMeta.count / 10000) + 1}.csv`,
+        `Backup_JCB_${monthToFetch}_Part${Math.floor(dlMeta.count / SAFE_BACKUP_LIMIT) + 1}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
       dlMeta.count += snapshot.size;
       dlMeta.lastId = snapshot.docs[snapshot.docs.length - 1].id;
       localStorage.setItem(
         `backup_jcb_${monthToFetch}_meta`,
         JSON.stringify(dlMeta),
       );
-
       if (snapshot.size === fetchLimit)
         toast.warning(
-          "10,000 Limit reached. Download the next batch tomorrow.",
+          `${SAFE_BACKUP_LIMIT} Limit reached. Download next tomorrow.`,
         );
       else {
-        toast.success(`Backup completed (${snapshot.size} records)!`);
+        toast.success(`Backup completed!`);
         localStorage.setItem(`backup_jcb_${monthToFetch}`, "true");
         if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
       }
@@ -348,13 +389,13 @@ const JcbReport = () => {
         user: currentUser,
       });
       if (response.warning) toast.warning(response.warning);
-      else toast.success("JCB database cleared successfully.");
+      else toast.success("Database cleared.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
       fetchLogs(false, true);
     } catch (error) {
-      toast.error(error.message || "Incorrect Admin Password.");
+      toast.error(error.message);
     } finally {
       setWiping(false);
     }
@@ -462,28 +503,52 @@ const JcbReport = () => {
       )}
 
       <div className="bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl border-zinc-800/60">
+        {/* 🚀 MANUAL SEARCH SECTION */}
         <div className="p-5 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-3xl bg-zinc-900/10 border-zinc-800/60">
-          <div className="relative w-full sm:w-80 xl:w-96 group">
-            <Search
-              size={18}
-              className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500"}`}
-            />
-            <input
-              type="text"
-              placeholder="Search customer name..."
-              className="w-full bg-transparent border border-zinc-800 rounded-xl pl-12 pr-4 py-3 text-sm text-zinc-100 outline-none transition-all focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 placeholder:text-zinc-600"
-              value={filters.search}
-              onChange={(e) =>
-                setFilters({
-                  ...filters,
-                  search: e.target.value,
-                  dateFilter: "All",
-                })
-              }
-            />
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+            <div className="relative w-full sm:w-80 xl:w-96 group">
+              <Search
+                size={18}
+                className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-300 ${localSearch ? theme.primaryText : "text-zinc-500"}`}
+              />
+              <input
+                type="text"
+                placeholder="Search customer name..."
+                className="w-full bg-transparent border border-zinc-800 rounded-xl pl-12 pr-4 py-3 text-sm text-zinc-100 outline-none transition-all focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 placeholder:text-zinc-600"
+                value={localSearch}
+                onChange={(e) => setLocalSearch(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && !isSearchDisabled && executeSearch()
+                }
+              />
+            </div>
+            <button
+              onClick={executeSearch}
+              disabled={isSearchDisabled}
+              className={`h-11 px-6 rounded-xl text-xs font-bold tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-2 ${
+                isSearchDisabled
+                  ? "bg-zinc-800/50 text-zinc-500 border border-zinc-700/50 opacity-50 cursor-not-allowed"
+                  : `${theme.primaryBg} ${theme.primaryText} border ${theme.primaryBorder} hover:opacity-80 hover:shadow-lg active:scale-95 cursor-pointer`
+              }`}
+            >
+              SEARCH
+            </button>
           </div>
+
+          {/* 🚀 CUSTOM LOCALIZED REFRESH CURSOR/BUTTON */}
+          <button
+            onClick={() => fetchLogs(false, true)}
+            title="Refresh Grid Data"
+            className={`w-11 h-11 flex items-center justify-center rounded-xl bg-zinc-800/40 border border-zinc-700/50 hover:bg-zinc-700/50 transition-all cursor-pointer group hover:shadow-[0_0_15px_rgba(255,255,255,0.05)] active:scale-95 ml-auto sm:ml-0`}
+          >
+            <RefreshCcw
+              size={18}
+              className={`text-zinc-400 group-hover:text-white group-hover:animate-spin duration-1000`}
+            />
+          </button>
         </div>
 
+        {/* 🚀 MANUAL FILTER SECTION */}
         <div className="p-4 border-b bg-[#09090B] flex flex-wrap items-center gap-4 relative z-20 border-zinc-800/60">
           <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] px-3 py-1 border-r border-zinc-800 mr-2 text-zinc-500">
             <Filter size={16} /> FILTERS{" "}
@@ -495,11 +560,15 @@ const JcbReport = () => {
               </span>
             )}
           </div>
+
           <div className="relative group">
             <select
-              value={filters.vehicleFilter}
+              value={pendingFilters.vehicleFilter}
               onChange={(e) =>
-                setFilters({ ...filters, vehicleFilter: e.target.value })
+                setPendingFilters({
+                  ...pendingFilters,
+                  vehicleFilter: e.target.value,
+                })
               }
               className="appearance-none bg-transparent border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
             >
@@ -521,15 +590,15 @@ const JcbReport = () => {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
             />
           </div>
+
           <div className="relative group">
             <select
-              value={filters.dateFilter}
+              value={pendingFilters.dateFilter}
               onChange={(e) =>
-                setFilters({
-                  ...filters,
+                setPendingFilters({
+                  ...pendingFilters,
                   dateFilter: e.target.value,
                   exactDate: "",
-                  search: "",
                 })
               }
               className="appearance-none bg-transparent border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
@@ -544,40 +613,48 @@ const JcbReport = () => {
               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
             />
           </div>
+
           <div className="relative group flex items-center">
             <div
-              className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filters.exactDate ? theme.primaryText : "text-zinc-500"}`}
+              className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${pendingFilters.exactDate ? theme.primaryText : "text-zinc-500"}`}
             >
               <Calendar size={14} />
             </div>
             <input
               type="date"
-              value={filters.exactDate}
+              value={pendingFilters.exactDate}
               onChange={(e) =>
-                setFilters({
-                  ...filters,
+                setPendingFilters({
+                  ...pendingFilters,
                   exactDate: e.target.value,
                   dateFilter: "All",
                 })
               }
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-transparent border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50 ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
+              className={`appearance-none bg-transparent border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50 ${pendingFilters.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
+
+          {/* 🚀 APPLY FILTERS BUTTON */}
+          <button
+            onClick={executeApplyFilters}
+            disabled={isApplyDisabled}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-2 ${
+              isApplyDisabled
+                ? "bg-zinc-800/50 text-zinc-500 border border-zinc-700/50 opacity-50 cursor-not-allowed"
+                : `bg-white text-black border border-white hover:bg-gray-200 cursor-pointer`
+            }`}
+          >
+            APPLY
+          </button>
+
           {activeFiltersCount > 0 && (
             <Button
               variant="ghost"
-              onClick={() =>
-                setFilters({
-                  search: "",
-                  vehicleFilter: "All",
-                  dateFilter: "All",
-                  exactDate: "",
-                })
-              }
-              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5"
+              onClick={executeClearAll}
+              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
             >
-              <X size={14} /> Clear All
+              <FilterX size={14} /> Clear Active
             </Button>
           )}
         </div>
@@ -709,7 +786,7 @@ const JcbReport = () => {
                         colSpan="4"
                         className="p-12 text-center text-zinc-500 italic animate-in fade-in"
                       >
-                        No JCB records found.
+                        No JCB records found for this query.
                       </td>
                     </tr>
                   )}
@@ -796,7 +873,7 @@ const JcbReport = () => {
                   <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
                     Download backup before wiping.{" "}
                     <strong className="text-amber-400">
-                      Limit: 10,000 records/day.
+                      Limit: {SAFE_BACKUP_LIMIT} records/day.
                     </strong>{" "}
                     If you exceed this, the system will save your progress, and
                     you can download the rest tomorrow.
