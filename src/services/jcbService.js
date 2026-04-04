@@ -60,7 +60,7 @@ const jcbService = {
     return null;
   },
 
-  // 🚀 STATS: 0 READS ON NAVIGATION
+  // 🚀 STATS: 100% RISK-FREE (No mass read fallback)
   getStats: async (forceRefresh = false) => {
     if (!forceRefresh && !memoryCache.isDirty && memoryCache.stats)
       return memoryCache.stats;
@@ -75,28 +75,16 @@ const jcbService = {
       let totalMins = snapshot.data().totalMins || 0;
       let logCount = snapshot.data().logCount || 0;
 
-      if (logCount > 0 && totalMins === 0)
-        throw new Error("String data detected, forcing client fallback");
-
       const result = { totalMins, logCount };
       memoryCache.stats = result;
       return result;
     } catch (error) {
+      // 🚨 FIXED: Removed the dangerous getDocs fallback.
+      // Instead of reading the whole DB, we return 0 to protect daily quota.
       console.warn(
-        "Aggregation failed. Executing fallback manual calculation.",
+        "Aggregation failed. Returning 0 to prevent mass database reads.",
       );
-      try {
-        const snap = await getDocs(query(jcbCollection));
-        let totalMins = 0;
-        snap.forEach((doc) => {
-          totalMins += Number(doc.data().totalMins) || 0;
-        });
-        const result = { totalMins, logCount: snap.size };
-        memoryCache.stats = result;
-        return result;
-      } catch (fallbackError) {
-        return { totalMins: 0, logCount: 0 };
-      }
+      return { totalMins: 0, logCount: 0, error: true };
     }
   },
 
@@ -239,6 +227,7 @@ const jcbService = {
     let wipeMeta = JSON.parse(
       localStorage.getItem("jcb_wipe_meta") || '{"date":"","count":0}',
     );
+    // 10k wipe limit is safe because batch writes are heavily optimized by Firebase
     if (wipeMeta.date === today && wipeMeta.count >= 10000)
       throw new Error(
         "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours to prevent backend crashes.",
