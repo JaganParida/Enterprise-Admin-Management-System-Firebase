@@ -61,7 +61,15 @@ const productionService = {
       await setDoc(doc(db, METADATA_COLLECTION, STATS_DOC), newStats);
       return newStats;
     } catch (error) {
-      throw new Error("Failed to synchronize database");
+      // ✅ FIX 1: FALLBACK BOMB REMOVED
+      // We no longer fallback to getDocs() which would burn all daily reads.
+      console.error(
+        "Aggregation failed. Server error or indexing delay.",
+        error,
+      );
+      throw new Error(
+        "Stats sync failed due to server timeout. Please try again later.",
+      );
     }
   },
 
@@ -91,7 +99,6 @@ const productionService = {
     if (filters.exactDate)
       constraints.push(where("date", "==", filters.exactDate));
 
-    // ONE Inequality constraint at a time to prevent Firebase errors
     if (filters.search) {
       const searchLower = filters.search.toLowerCase().trim();
       constraints.push(
@@ -143,7 +150,6 @@ const productionService = {
     }
   },
 
-  // 🚀 LABOUR & DUES EXACT PAGINATION
   getAllLabourPayouts: async (
     filters = {},
     lastDoc = null,
@@ -250,7 +256,8 @@ const productionService = {
       by: user?.email || "Unknown",
       at: new Date().toISOString(),
     });
-    if (history.length > 10) history = history.slice(-10);
+    // Strict Top 2 History
+    if (history.length > 2) history = history.slice(-2);
 
     const batch = writeBatch(db);
     batch.update(docRef, {
@@ -334,7 +341,8 @@ const productionService = {
       by: user?.email || "Unknown",
       at: new Date().toISOString(),
     });
-    if (history.length > 10) history = history.slice(-10);
+    // Strict Top 2 History
+    if (history.length > 2) history = history.slice(-2);
 
     const batch = writeBatch(db);
     batch.update(docRef, {
@@ -378,7 +386,7 @@ const productionService = {
     await batch.commit();
   },
 
-  // 🚀 BATCH WIPE (NO CRASH ON LARGE DATABASES)
+  // 🚀 ✅ FIX 2: BATCH WIPE SAFE LIMIT (2k instead of 10k)
   deleteAllProduction: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Only Admins can wipe.");
@@ -397,28 +405,68 @@ const productionService = {
       throw new Error("Incorrect Admin Password.");
     }
 
+    // CHECK DAILY LOCK STATUS FIRST
+    const lockDoc = await getDoc(doc(db, METADATA_COLLECTION, "wipe_lock"));
+    if (lockDoc.exists()) {
+      const lockedUntil = lockDoc.data().lockedUntil;
+      if (Date.now() < lockedUntil) {
+        const hrs = Math.ceil((lockedUntil - Date.now()) / (1000 * 60 * 60));
+        throw new Error(
+          `Daily Delete Limit Reached. Locked for ${hrs} hour(s).`,
+        );
+      }
+    }
+
+    const DAILY_LIMIT = 2000; // REDUCED FROM 10,000 to protect Firebase Free Tier
+    let totalDeleted = 0;
+
     const wipeInChunks = async (collectionName) => {
       let isDeleting = true;
-      while (isDeleting) {
-        const q = query(collection(db, collectionName), limit(500));
+      while (isDeleting && totalDeleted < DAILY_LIMIT) {
+        const remainingAllowed = DAILY_LIMIT - totalDeleted;
+        const limitCount = Math.min(500, remainingAllowed);
+
+        const q = query(collection(db, collectionName), limit(limitCount));
         const snapshot = await getDocs(q);
+
         if (snapshot.empty) break;
 
         const batch = writeBatch(db);
         snapshot.docs.forEach((doc) => batch.delete(doc.ref));
         await batch.commit();
+
+        totalDeleted += snapshot.docs.length;
+        if (totalDeleted >= DAILY_LIMIT) {
+          isDeleting = false;
+        }
       }
     };
 
     try {
       await wipeInChunks(PROD_COLLECTION);
-      await wipeInChunks(LABOUR_COLLECTION);
-      await setDoc(doc(db, METADATA_COLLECTION, STATS_DOC), {
-        output: 0,
-        paid: 0,
-        due: 0,
-      });
-      return { message: "Database wiped safely" };
+      if (totalDeleted < DAILY_LIMIT) {
+        await wipeInChunks(LABOUR_COLLECTION);
+      }
+
+      if (totalDeleted >= DAILY_LIMIT) {
+        // ENFORCE 24 HOUR LOCK IF LIMIT REACHED
+        await setDoc(doc(db, METADATA_COLLECTION, "wipe_lock"), {
+          lockedUntil: Date.now() + 24 * 60 * 60 * 1000,
+        });
+        return {
+          message:
+            "Wiped 2k records. Daily safe limit reached and system locked.",
+        };
+      } else {
+        // FULLY WIPED - RESET STATS AND CLEAR LOCK
+        await setDoc(doc(db, METADATA_COLLECTION, STATS_DOC), {
+          output: 0,
+          paid: 0,
+          due: 0,
+        });
+        await deleteDoc(doc(db, METADATA_COLLECTION, "wipe_lock")); // clear lock if expired
+        return { message: "Database wiped safely" };
+      }
     } catch (error) {
       throw new Error("Failed to clear database.");
     }
