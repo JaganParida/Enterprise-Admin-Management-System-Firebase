@@ -45,7 +45,6 @@ const formatDate = (dateStr) => {
   }
 };
 
-// 🚀 GLOBAL MEMORY CACHE (CONCEPT 1: ZERO-READ NAVIGATION)
 let globalReportCache = {
   sales: [],
   rawDues: [],
@@ -95,6 +94,9 @@ const SalesReport = () => {
   const [loading, setLoading] = useState(!globalReportCache.fetchedTabs.sales);
   const [syncingStats, setSyncingStats] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // 🚀 FIX 3: Search Cooldown Timer
+  const [searchCooldown, setSearchCooldown] = useState(0);
 
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -149,7 +151,6 @@ const SalesReport = () => {
     filters.dateFilter !== "All" ||
     filters.exactDate !== "";
 
-  // 🚀 CONCEPT 6: WIPE MODAL BACKUP LOCK STATE
   useEffect(() => {
     if (isDeleteAllOpen) {
       const getLock = async () => {
@@ -188,11 +189,9 @@ const SalesReport = () => {
     return () => clearInterval(timer);
   }, [serverLockTime]);
 
-  // 🚀 CONCEPT 1: ZERO-READ CACHE NAV & CONCEPT 8: TAB SWITCHING (NO DEBOUNCE)
   useEffect(() => {
     const needsRefresh =
       sessionStorage.getItem("report_needs_refresh") === "true";
-
     if (needsRefresh) {
       sessionStorage.removeItem("report_needs_refresh");
       globalReportCache.fetchedTabs = { sales: false, dues: false };
@@ -232,7 +231,6 @@ const SalesReport = () => {
     rawDues.forEach((sale) => {
       const buyer = sale.buyerName || "Unknown Customer";
       if (searchLower && !buyer.toLowerCase().includes(searchLower)) return;
-
       if (!map[buyer]) {
         map[buyer] = {
           buyerName: buyer,
@@ -248,7 +246,6 @@ const SalesReport = () => {
     return Object.values(map).sort((a, b) => b.totalDue - a.totalDue);
   }, [rawDues, filters.search]);
 
-  // 🚀 CORE FETCH FUNCTION
   const executeFetch = async (
     isLoadMore = false,
     overrideFilters = filters,
@@ -338,7 +335,7 @@ const SalesReport = () => {
           ? salesLoadedCount + response.data.length
           : response.data.length;
         const newDoc = response.lastVisible || null;
-        const newHasMore = response.data.length === 50; // Concept 4 Limit
+        const newHasMore = response.data.length === 50;
 
         setSales(newData);
         globalReportCache.sales = newData;
@@ -357,9 +354,22 @@ const SalesReport = () => {
     }
   };
 
-  // 🚀 CONCEPT 8: STRICT MANUAL APPLY (REPLACES DEBOUNCE)
+  // 🚀 FIX 3: Anti-Spam Search Applicator
   const handleApplyFilters = (e) => {
     if (e) e.preventDefault();
+    if (searchCooldown > 0) return; // Block spam
+
+    setSearchCooldown(3); // 3 seconds cooldown
+    const timer = setInterval(() => {
+      setSearchCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
     globalReportCache.filters = filters;
     globalReportCache.fetchedTabs = { sales: false, dues: false };
     executeFetch(false, filters);
@@ -380,7 +390,6 @@ const SalesReport = () => {
     executeFetch(false, reset);
   };
 
-  // 🚀 CONCEPT 5: SMART SYNC BUTTON
   const handleSyncStats = async () => {
     if (isStatsSynced) return;
     setSyncingStats(true);
@@ -399,7 +408,6 @@ const SalesReport = () => {
     }
   };
 
-  // 🚀 CONCEPT 2: OPTIMISTIC UI ON DELETE
   const executeDelete = async () => {
     const idToDelete = deleteModal.id;
     const saleToDelete =
@@ -454,11 +462,9 @@ const SalesReport = () => {
     }
   };
 
-  // 🚀 CONCEPT 6: EXPORT CHUNKING WITH LOCALSTORAGE
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     if (isBackupLocked)
       return toast.error(`Backup is locked. Please wait ${lockTimeRemaining}.`);
-
     try {
       if (!monthToFetch) return toast.error("Please select a month.");
 
@@ -530,7 +536,6 @@ const SalesReport = () => {
     }
   };
 
-  // 🚀 CONCEPT 3: WIPE DATABASE
   const handleWipeAll = async () => {
     if (isManager || !deletePassword)
       return toast.error("Please enter admin password");
@@ -554,7 +559,6 @@ const SalesReport = () => {
         rawDues: [],
         stats: { total: 0, cash: 0, online: 0, pendingDues: 0 },
       };
-
       setSales([]);
       setRawDues([]);
       setStats(emptyState.stats);
@@ -573,7 +577,6 @@ const SalesReport = () => {
       };
     } catch (e) {
       toast.error(e.message || "Incorrect Password.");
-      console.error(e);
     } finally {
       setWiping(false);
     }
@@ -612,7 +615,6 @@ const SalesReport = () => {
 
   return (
     <div className="pb-10 relative space-y-8 overflow-x-hidden">
-      {/* 🚀 HEADER & NAVIGATION */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -730,7 +732,6 @@ const SalesReport = () => {
         </div>
       </motion.div>
 
-      {/* 🚀 STAGGERED STATS */}
       <motion.div
         variants={containerVariants}
         initial="hidden"
@@ -801,7 +802,6 @@ const SalesReport = () => {
         </motion.div>
       </motion.div>
 
-      {/* 🚀 FIXED FILTER & SEARCH UI */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -889,9 +889,12 @@ const SalesReport = () => {
                 <Button
                   type="submit"
                   variant="primary"
-                  className="!px-6 !py-2 !text-xs !rounded-lg flex-1 sm:flex-none shadow-lg"
+                  disabled={searchCooldown > 0}
+                  className={`!px-6 !py-2 !text-xs !rounded-lg flex-1 sm:flex-none shadow-lg ${searchCooldown > 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
-                  Apply Search
+                  {searchCooldown > 0
+                    ? `Wait ${searchCooldown}s`
+                    : "Apply Search"}
                 </Button>
                 {hasActiveFilters && (
                   <Button
@@ -908,7 +911,6 @@ const SalesReport = () => {
           </form>
         </div>
 
-        {/* 🚀 DATA TABLES */}
         {activeTab === "all_sales" && (
           <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
             <table className="w-full text-left min-w-[750px]">
@@ -1021,7 +1023,6 @@ const SalesReport = () => {
           </div>
         )}
 
-        {/* 🚀 DUES TAB */}
         {activeTab === "dues" && (
           <div className="p-3 md:p-4 custom-scrollbar min-h-[400px]">
             {groupedDuesUI.length === 0 && !loading ? (
@@ -1166,7 +1167,6 @@ const SalesReport = () => {
           </div>
         )}
 
-        {/* 🚀 PAGINATION / LOAD MORE */}
         {currentHasMore && (
           <div className="flex justify-center p-6 border-t border-zinc-800/60">
             {currentLoadedCount >= 5000 ? (
@@ -1191,7 +1191,6 @@ const SalesReport = () => {
         )}
       </motion.div>
 
-      {/* 🚀 WIPE DATABASE MODAL */}
       <AnimatePresence>
         {isDeleteAllOpen && !isManager && (
           <motion.div
