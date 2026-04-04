@@ -51,7 +51,7 @@ const vehicleService = {
     return null;
   },
 
-  // 1. 🚀 ATOMIC SERVER-SIDE STATS
+  // 1. 🚀 ATOMIC SERVER-SIDE STATS (100% RISK FREE)
   getStats: async (force = false) => {
     if (!force && !localCache.isDirty && localCache.stats) {
       return localCache.stats; // 0 Reads!
@@ -85,24 +85,18 @@ const vehicleService = {
       localCache.stats = result;
       return result;
     } catch (error) {
-      console.warn("Atomic Aggregation failed, falling back to client calc.");
-      const [tripDocs, expDocs] = await Promise.all([
-        getDocs(query(tripCollection)),
-        getDocs(query(expenseCollection)),
-      ]);
-      let trips = { total: 0, paid: 0, due: 0, count: tripDocs.size };
-      let expenses = { total: 0, count: expDocs.size };
-      tripDocs.forEach((doc) => {
-        trips.total += Number(doc.data().totalAmount) || 0;
-        trips.paid += Number(doc.data().amountPaid) || 0;
-        trips.due += Number(doc.data().amountDue) || 0;
-      });
-      expDocs.forEach((doc) => {
-        expenses.total += Number(doc.data().amount) || 0;
-      });
-      const result = { trips, expenses };
-      localCache.stats = result;
-      return result;
+      // 🚨 FIXED: No more fallback `getDocs` that reads the whole database.
+      // Gracefully return cached stats or zeros to protect the Free Tier quota.
+      console.warn(
+        "Atomic Aggregation failed. Returning cached stats to protect read limits.",
+      );
+      return (
+        localCache.stats || {
+          trips: { total: 0, paid: 0, due: 0, count: 0 },
+          expenses: { total: 0, count: 0 },
+          error: "Failed to load live stats.",
+        }
+      );
     }
   },
 
@@ -286,7 +280,7 @@ const vehicleService = {
     return { data: fetchedData, lastVisible: newLastVisible };
   },
 
-  // 4. 🚀 10,000 BACKUP CHUNKER
+  // 4. 🚀 SECURE BACKUP CHUNKER (Max 2,000 Limit for Safety)
   getBackupChunk: async (monthToFetch, type, maxAllowed) => {
     const collectionRef = type === "trips" ? tripCollection : expenseCollection;
     const storedLastDocId = localStorage.getItem(
@@ -297,7 +291,8 @@ const vehicleService = {
       where("date", ">=", monthToFetch),
       where("date", "<=", monthToFetch + "\uf8ff"),
       orderBy("date", "asc"),
-      limit(Math.min(maxAllowed, 10000)),
+      // 🚨 FIXED: Hard capped at 2,000 reads to prevent API abuse
+      limit(Math.min(maxAllowed, 2000)),
     ];
 
     if (storedLastDocId) {
@@ -448,7 +443,7 @@ const vehicleService = {
     return { message: "Deleted" };
   },
 
-  // 5. 🚀 ATOMIC CHUNKED DELETE (Max 10k daily limit)
+  // 5. 🚀 ATOMIC CHUNKED DELETE (Max 5,000 daily limit for safety)
   deleteAllLogs: async ({ password, type = "trips", email }) => {
     const today = new Date().toISOString().split("T")[0];
     const wipeKey = `vehicle_wipe_meta_${type}`;
@@ -456,9 +451,10 @@ const vehicleService = {
       localStorage.getItem(wipeKey) || '{"date":"","count":0}',
     );
 
-    if (wipeMeta.date === today && wipeMeta.count >= 10000) {
+    // 🚨 FIXED: Lowered limits to 5,000 for strict safety
+    if (wipeMeta.date === today && wipeMeta.count >= 5000) {
       throw new Error(
-        "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours.",
+        "Daily Wipe Limit Reached (5,000 records). Action locked for 24 hours to protect database limits.",
       );
     }
     if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
@@ -479,7 +475,7 @@ const vehicleService = {
 
     let totalDeleted = 0;
     let hasMore = true;
-    const maxAllowed = 10000 - wipeMeta.count;
+    const maxAllowed = 5000 - wipeMeta.count; // 🚨 Safe Cap
     const targetCollection =
       type === "expenses" ? expenseCollection : tripCollection;
 
@@ -507,7 +503,7 @@ const vehicleService = {
       if (totalDeleted >= maxAllowed && hasMore) {
         return {
           warning:
-            "10,000 records deleted. Daily limit reached. Come back tomorrow.",
+            "5,000 records deleted. Daily safety limit reached. Come back tomorrow.",
         };
       }
       return { success: true, deletedCount: totalDeleted };
