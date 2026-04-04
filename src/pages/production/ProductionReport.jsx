@@ -204,7 +204,8 @@ const ProductionReport = () => {
     date: "All",
     exactDate: "",
   };
-  const [filters, setFilters] = useState(
+
+  const [localFilters, setLocalFilters] = useState(
     globalProdReportCache?.filters || defaultFilters,
   );
 
@@ -231,16 +232,15 @@ const ProductionReport = () => {
   const [isExporting, setIsExporting] = useState(false);
 
   const hasActiveFilters =
-    (filters?.search || "") !== "" ||
-    (filters?.product || "All") !== "All" ||
-    (filters?.quantity || "All") !== "All" ||
-    (filters?.date || "All") !== "All" ||
-    (filters?.exactDate || "") !== "";
+    (localFilters?.search || "") !== "" ||
+    (localFilters?.product || "All") !== "All" ||
+    (localFilters?.quantity || "All") !== "All" ||
+    (localFilters?.date || "All") !== "All" ||
+    (localFilters?.exactDate || "") !== "";
 
   const RECORDS_PER_PAGE = 50;
   const SCROLL_LIMIT = 5000;
 
-  // Backup Timers
   useEffect(() => {
     if (isDeleteAllOpen) {
       const getLock = async () => {
@@ -283,11 +283,10 @@ const ProductionReport = () => {
     return () => clearInterval(timer);
   }, [serverLockTime]);
 
-  // Case-Insensitive Dues Mapping (O(n) memory safe filter)
   const groupedDuesUI = useMemo(() => {
     if (activeTab !== "dues") return [];
     const map = {};
-    const searchLower = filters?.search?.trim().toLowerCase() || "";
+    const searchLower = localFilters?.search?.trim().toLowerCase() || "";
     (duesLogs || []).forEach((log) => {
       const party = log?.labourName || "Unknown Party";
       if (searchLower && !party.toLowerCase().includes(searchLower)) return;
@@ -302,16 +301,14 @@ const ProductionReport = () => {
       map[party].records.push(log);
     });
     return Object.values(map).sort((a, b) => b.totalDue - a.totalDue);
-  }, [duesLogs, filters?.search, activeTab]);
+  }, [duesLogs, localFilters?.search, activeTab]);
 
-  // 🚀 MAIN FETCH ENGINE (TRUE PAGINATION + FILTERING)
-  const fetchLogs = async (isLoadMore = false) => {
+  const fetchLogs = async (isLoadMore = false, overrideFilters = null) => {
     if (isLoadMore) setLoadingMore(true);
     else setLoading(true);
     try {
       let currentStats = stats;
       if (!isLoadMore) {
-        // This is 1 Read only!
         const s = await productionService.getStats();
         currentStats = s || { output: 0, paid: 0, due: 0 };
         setStats(currentStats);
@@ -320,9 +317,9 @@ const ProductionReport = () => {
 
       let response;
       const currentLastDoc = lastDocs?.[activeTab] || null;
-      const safeFilters = filters || defaultFilters;
+      const safeFilters =
+        overrideFilters || globalProdReportCache?.filters || defaultFilters;
 
-      // Exact 50 records requested to Firebase
       if (activeTab === "production") {
         response = await productionService.getAllProduction(
           safeFilters,
@@ -349,7 +346,6 @@ const ProductionReport = () => {
       const newDoc = response?.lastVisible || null;
       const newHasMore = fetchedDataLength === RECORDS_PER_PAGE;
 
-      // 🚀 THE FIX: Only validate sync status if NO FILTERS are applied
       const noFiltersApplied =
         !safeFilters.search &&
         safeFilters.product === "All" &&
@@ -383,7 +379,6 @@ const ProductionReport = () => {
           else if (activeTab === "dues" && !hasData && currentStats.due > 0)
             isSynced = false;
         } else {
-          // If filters are applied, keep the previous known state so it doesn't trigger false alarms
           isSynced = isStatsSynced;
         }
 
@@ -447,31 +442,44 @@ const ProductionReport = () => {
   };
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      const filtersChanged =
-        JSON.stringify(globalProdReportCache?.filters || {}) !==
-        JSON.stringify(filters || {});
-      const needsRefresh =
-        sessionStorage.getItem("prod_report_needs_refresh") === "true";
+    const needsRefresh =
+      sessionStorage.getItem("prod_report_needs_refresh") === "true";
 
-      if (needsRefresh) {
-        sessionStorage.removeItem("prod_report_needs_refresh");
-        globalProdReportCache.fetchedTabs = {
-          production: false,
-          labour: false,
-          dues: false,
-        };
-        fetchLogs(false);
-      } else if (
-        filtersChanged ||
-        !globalProdReportCache?.fetchedTabs?.[activeTab]
-      ) {
-        globalProdReportCache.filters = filters || defaultFilters;
-        fetchLogs(false);
-      }
-    }, 400);
-    return () => clearTimeout(delayDebounceFn);
-  }, [filters, activeTab]);
+    if (needsRefresh) {
+      sessionStorage.removeItem("prod_report_needs_refresh");
+      globalProdReportCache.fetchedTabs = {
+        production: false,
+        labour: false,
+        dues: false,
+      };
+      fetchLogs(false);
+    } else if (!globalProdReportCache?.fetchedTabs?.[activeTab]) {
+      fetchLogs(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const handleApplyFilters = (e) => {
+    if (e) e.preventDefault();
+    globalProdReportCache.filters = localFilters;
+    globalProdReportCache.fetchedTabs = {
+      production: false,
+      labour: false,
+      dues: false,
+    };
+    fetchLogs(false, localFilters);
+  };
+
+  const handleClearFilters = () => {
+    setLocalFilters(defaultFilters);
+    globalProdReportCache.filters = defaultFilters;
+    globalProdReportCache.fetchedTabs = {
+      production: false,
+      labour: false,
+      dues: false,
+    };
+    fetchLogs(false, defaultFilters);
+  };
 
   useEffect(() => {
     if (
@@ -493,6 +501,17 @@ const ProductionReport = () => {
     }
   }, [urlHighlightId, loading, location?.search, navigate]);
 
+  const forceRefresh = () => {
+    if (globalProdReportCache) {
+      globalProdReportCache.fetchedTabs = {
+        production: false,
+        labour: false,
+        dues: false,
+      };
+    }
+    fetchLogs(false);
+  };
+
   const handleSyncStats = async () => {
     if (isStatsSynced) return;
     setSyncingStats(true);
@@ -505,7 +524,7 @@ const ProductionReport = () => {
       globalProdReportCache.isStatsSynced = true;
       toast.success("Database synchronized successfully!");
     } catch (e) {
-      toast.error("Sync failed.");
+      toast.error(e.message || "Sync failed.");
     } finally {
       setSyncingStats(false);
     }
@@ -588,8 +607,8 @@ const ProductionReport = () => {
     try {
       if (!monthToFetch) return toast.error("Please select a month.");
       setIsExporting(true);
-      const QUOTA_LIMIT = 10000;
-      const BATCH_SIZE = 1000;
+      const QUOTA_LIMIT = 2000; // REDUCED FROM 10k TO PROTECT QUOTA
+      const BATCH_SIZE = 500; // Smoother chunks
       const collectionName =
         activeTab === "production" ? "production" : "labour_payouts";
       const savedState = await productionService.getBackupState(
@@ -693,7 +712,7 @@ const ProductionReport = () => {
         setBackupResumePart(partNumber + 1);
         setServerLockTime(lockTime);
         toast.warning(
-          `Daily limit (10,000) exceeded! Download next part tomorrow.`,
+          `Daily safe limit (2,000) reached. Download next part tomorrow.`,
           { autoClose: 8000 },
         );
       } else {
@@ -718,12 +737,12 @@ const ProductionReport = () => {
     setWiping(true);
     try {
       const currentUser = admin?.data || admin || {};
-      await productionService.deleteAllProduction({
+      const res = await productionService.deleteAllProduction({
         password: deletePassword,
         email: currentUser.email,
         user: currentUser,
       });
-      toast.success("Database cleared successfully.");
+      toast.success(res.message || "Database cleared successfully.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
       setShowPassword(false);
@@ -751,17 +770,6 @@ const ProductionReport = () => {
     } finally {
       setWiping(false);
     }
-  };
-
-  const forceRefresh = () => {
-    if (globalProdReportCache) {
-      globalProdReportCache.fetchedTabs = {
-        production: false,
-        labour: false,
-        dues: false,
-      };
-    }
-    fetchLogs(false);
   };
 
   const currentLogs =
@@ -815,7 +823,8 @@ const ProductionReport = () => {
                 onClick={() => {
                   setActiveTab(tab);
                   setExpandedCustomer(null);
-                  setFilters(defaultFilters);
+                  setLocalFilters(defaultFilters);
+                  globalProdReportCache.filters = defaultFilters;
                 }}
                 className={`relative px-5 h-full text-xs font-bold rounded-full transition-all tracking-wide whitespace-nowrap shrink-0 flex-1 sm:flex-none ${activeTab === tab ? "text-white" : "text-zinc-400 hover:text-white"}`}
               >
@@ -985,22 +994,25 @@ const ProductionReport = () => {
           </div>
         )}
 
-        {/* 🚀 SEARCH & FILTER TOOLBAR */}
-        <div className="p-4 border-b border-zinc-800/60 flex flex-col md:flex-row items-center justify-between gap-4">
+        {/* ✅ FIX: FORM BASED SEARCH & FILTER TOOLBAR */}
+        <form
+          onSubmit={handleApplyFilters}
+          className="p-4 border-b border-zinc-800/60 flex flex-col xl:flex-row items-center justify-between gap-4"
+        >
           {/* SEARCH INPUT */}
-          <div className="relative w-full md:w-[320px] group shrink-0">
+          <div className="relative w-full xl:w-[320px] group shrink-0">
             <Search
               size={14}
-              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters?.search ? "text-indigo-400" : "text-zinc-500 group-hover:text-zinc-400"}`}
+              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${localFilters?.search ? "text-indigo-400" : "text-zinc-500 group-hover:text-zinc-400"}`}
             />
             <input
               type="text"
               placeholder={`Search ${activeTab === "production" ? "product" : "buyer"}...`}
               className="w-full bg-[#111116] border border-zinc-800/80 rounded-full pl-10 pr-4 py-2 text-xs text-white outline-none transition-all focus:border-indigo-500/50 hover:border-zinc-700/80 placeholder:text-zinc-600 shadow-sm"
-              value={filters?.search || ""}
+              value={localFilters?.search || ""}
               onChange={(e) =>
-                setFilters({
-                  ...filters,
+                setLocalFilters({
+                  ...localFilters,
                   search: e.target.value,
                   quantity: "All",
                   date: "All",
@@ -1011,7 +1023,7 @@ const ProductionReport = () => {
           </div>
 
           {/* FILTERS - PILL SHAPES */}
-          <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto hide-scrollbar pb-1 md:pb-0 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto overflow-x-auto hide-scrollbar pb-1 xl:pb-0 shrink-0">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 mr-1 shrink-0">
               <Filter size={12} /> Filters
             </div>
@@ -1020,9 +1032,12 @@ const ProductionReport = () => {
               <>
                 <div className="relative shrink-0">
                   <select
-                    value={filters?.product || "All"}
+                    value={localFilters?.product || "All"}
                     onChange={(e) =>
-                      setFilters({ ...filters, product: e.target.value })
+                      setLocalFilters({
+                        ...localFilters,
+                        product: e.target.value,
+                      })
                     }
                     className="appearance-none bg-[#111116] border border-zinc-800/80 rounded-full pl-4 pr-8 py-2 text-[11px] md:text-xs font-semibold text-zinc-300 outline-none cursor-pointer focus:border-indigo-500/50 hover:bg-[#18181f] transition-all shadow-sm"
                   >
@@ -1039,10 +1054,10 @@ const ProductionReport = () => {
                 </div>
                 <div className="relative shrink-0">
                   <select
-                    value={filters?.quantity || "All"}
+                    value={localFilters?.quantity || "All"}
                     onChange={(e) =>
-                      setFilters({
-                        ...filters,
+                      setLocalFilters({
+                        ...localFilters,
                         quantity: e.target.value,
                         search: "",
                         date: "All",
@@ -1066,10 +1081,10 @@ const ProductionReport = () => {
 
             <div className="relative shrink-0">
               <select
-                value={filters?.date || "All"}
+                value={localFilters?.date || "All"}
                 onChange={(e) =>
-                  setFilters({
-                    ...filters,
+                  setLocalFilters({
+                    ...localFilters,
                     date: e.target.value,
                     exactDate: "",
                     search: "",
@@ -1092,36 +1107,45 @@ const ProductionReport = () => {
             <div className="relative shrink-0">
               <Calendar
                 size={12}
-                className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${filters?.exactDate ? "text-indigo-400" : "text-zinc-500"}`}
+                className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${localFilters?.exactDate ? "text-indigo-400" : "text-zinc-500"}`}
               />
               <input
                 type="date"
-                value={filters?.exactDate || ""}
+                value={localFilters?.exactDate || ""}
                 onChange={(e) => {
-                  setFilters({ ...filters, exactDate: e.target.value });
-                  if (e.target.value)
-                    setFilters((prev) => ({
-                      ...prev,
-                      date: "All",
-                      search: "",
-                      quantity: "All",
-                    }));
+                  const newDate = e.target.value;
+                  setLocalFilters((prev) => ({
+                    ...prev,
+                    exactDate: newDate,
+                    ...(newDate
+                      ? { date: "All", search: "", quantity: "All" }
+                      : {}),
+                  }));
                 }}
                 style={{ colorScheme: "dark" }}
-                className={`appearance-none bg-[#111116] rounded-full pl-9 pr-3 py-2 text-[11px] md:text-xs font-semibold outline-none cursor-pointer transition-all shadow-sm ${filters?.exactDate ? "border border-indigo-500/50 text-indigo-400" : "border border-zinc-800/80 text-zinc-300 hover:bg-[#18181f]"}`}
+                className={`appearance-none bg-[#111116] rounded-full pl-9 pr-3 py-2 text-[11px] md:text-xs font-semibold outline-none cursor-pointer transition-all shadow-sm ${localFilters?.exactDate ? "border border-indigo-500/50 text-indigo-400" : "border border-zinc-800/80 text-zinc-300 hover:bg-[#18181f]"}`}
               />
             </div>
 
+            {/* ✅ MANUAL APPLY BUTTON */}
+            <button
+              type="submit"
+              className="shrink-0 px-4 py-2 text-[11px] md:text-xs rounded-full flex items-center gap-1 text-white bg-indigo-600 hover:bg-indigo-500 transition-colors font-bold shadow-sm ml-auto xl:ml-0"
+            >
+              Apply
+            </button>
+
             {hasActiveFilters && (
               <button
-                onClick={() => setFilters(defaultFilters)}
-                className="shrink-0 px-3 py-2 text-[11px] md:text-xs rounded-full flex items-center gap-1 text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition-colors font-bold ml-1 shadow-sm"
+                type="button"
+                onClick={handleClearFilters}
+                className="shrink-0 px-3 py-2 text-[11px] md:text-xs rounded-full flex items-center gap-1 text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition-colors font-bold shadow-sm"
               >
                 <X size={12} /> Clear
               </button>
             )}
           </div>
-        </div>
+        </form>
 
         {/* 🚀 DATA TABLES */}
         <div className="overflow-x-auto hide-scrollbar min-h-[400px]">
@@ -1660,7 +1684,7 @@ const ProductionReport = () => {
                       <ShieldAlert size={16} /> Step 1: Secure Data Export
                     </h3>
                     <p className="text-zinc-400 text-[11px] mb-4 leading-relaxed">
-                      Download a complete CSV backup of your records. Max 10,000
+                      Download a complete CSV backup of your records. Max 2,000
                       records daily limit.
                     </p>
                     <div className="flex flex-col sm:flex-row items-center gap-2.5">

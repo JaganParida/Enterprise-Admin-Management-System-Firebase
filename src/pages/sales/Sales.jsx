@@ -378,20 +378,97 @@ const Sales = () => {
                   <option value="" className="bg-[#09090B]">
                     Select...
                   </option>
-                  <optgroup label="Bricks" className="bg-[#09090B] font-bold">
-                    <option value="Bricks (10 inch)" className="font-normal">
-                      Bricks 10"
+                  <optgroup
+                    label="Bricks"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
+                  >
+                    <option
+                      value="Bricks (10 inch)"
+                      className="text-zinc-100 font-normal"
+                    >
+                      Bricks (10 inch)
                     </option>
-                    <option value="Bricks (9 inch)" className="font-normal">
-                      Bricks 9"
+                    <option
+                      value="Bricks (9 inch)"
+                      className="text-zinc-100 font-normal"
+                    >
+                      Bricks (9 inch)
+                    </option>
+                    <option
+                      value="Bricks (8 inch)"
+                      className="text-zinc-100 font-normal"
+                    >
+                      Bricks (8 inch)
                     </option>
                   </optgroup>
-                  <optgroup label="Pavers" className="bg-[#09090B] font-bold">
-                    <option value="Zig Zag (60mm)" className="font-normal">
+                  <optgroup
+                    label="Paver Blocks"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
+                  >
+                    <option
+                      value="Zig Zag (60mm)"
+                      className="text-zinc-100 font-normal"
+                    >
                       Zig Zag (60mm)
                     </option>
-                    <option value="6-12 Brick (60mm)" className="font-normal">
+                    <option
+                      value="Zig Zag (80mm)"
+                      className="text-zinc-100 font-normal"
+                    >
+                      Zig Zag (80mm)
+                    </option>
+                    <option
+                      value="6/12 Brick (60mm)"
+                      className="text-zinc-100 font-normal"
+                    >
                       6/12 Brick (60mm)
+                    </option>
+                    <option
+                      value="6/12 Brick (80mm)"
+                      className="text-zinc-100 font-normal"
+                    >
+                      6/12 Brick (80mm)
+                    </option>
+                    <option
+                      value="6/6 Brick (60mm)"
+                      className="text-zinc-100 font-normal"
+                    >
+                      6/6 Brick 60mm
+                    </option>
+                    <option
+                      value="6/6 Brick (80mm)"
+                      className="text-zinc-100 font-normal"
+                    >
+                      6/6 Brick (80mm)
+                    </option>
+                  </optgroup>
+                  <optgroup
+                    label="Chequered Tiles"
+                    className={`bg-[#09090B] font-bold ${theme.primaryText}`}
+                  >
+                    <option
+                      value="Hexagon"
+                      className="text-zinc-100 font-normal"
+                    >
+                      Hexagon
+                    </option>
+                    <option
+                      value="Brick Design (9inch)"
+                      className="text-zinc-100 font-normal"
+                    >
+                      Brick Design (9inch)
+                    </option>
+                    <option
+                      value="Curve Stone"
+                      className="text-zinc-100 font-normal"
+                    >
+                      Curve Stone
+                    </option>
+                    <option
+                      value="Cover Block"
+                      className="text-zinc-100 font-normal"
+                    >
+                      Cover Block
                     </option>
                   </optgroup>
                 </select>

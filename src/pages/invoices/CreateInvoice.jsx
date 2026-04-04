@@ -398,6 +398,53 @@ const CreateInvoice = () => {
                               >
                                 6/12 Brick (60mm)
                               </option>
+                              <option
+                                value="Paver Blocks 6/12 Brick (80mm)"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
+                              >
+                                6/12 Brick (80mm)
+                              </option>
+                              <option
+                                value="Paver Blocks 6/6 Brick (60mm)"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
+                              >
+                                6/6 Brick 60mm
+                              </option>
+                              <option
+                                value="Paver Blocks 6/6 Brick (80mm)"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
+                              >
+                                6/6 Brick (80mm)
+                              </option>
+                            </optgroup>
+                            <optgroup
+                              label="Chequered Tiles"
+                              className={`bg-[#09090B] font-bold ${theme.primaryText}`}
+                            >
+                              <option
+                                value="Chequered Tiles Hexagon"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
+                              >
+                                Hexagon
+                              </option>
+                              <option
+                                value="Chequered Tiles Brick Design (9inch)"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
+                              >
+                                Brick Design (9inch)
+                              </option>
+                              <option
+                                value="Chequered Tiles Curve Stone"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
+                              >
+                                Curve Stone
+                              </option>
+                              <option
+                                value="Chequered Tiles Cover Block"
+                                className="bg-[#09090B] text-zinc-100 font-normal"
+                              >
+                                Cover Block
+                              </option>
                             </optgroup>
                             <option
                               value="Other Building Materials"
