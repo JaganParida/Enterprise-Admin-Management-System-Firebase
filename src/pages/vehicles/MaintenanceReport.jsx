@@ -43,6 +43,7 @@ const MaintenanceReport = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // 🚀 ACTIVE DATABASE FILTERS (Triggers Fetch)
   const [filters, setFilters] = useState({
     search: "",
     amountFilter: "Any Amount",
@@ -50,7 +51,15 @@ const MaintenanceReport = () => {
     exactDate: "",
   });
 
-  // 🚀 INITIALIZE FROM CACHE TO PREVENT LOADER FLICKER
+  // 🚀 LOCAL UI FILTERS (Decoupled from Database)
+  const [localSearch, setLocalSearch] = useState("");
+  const [localFilters, setLocalFilters] = useState({
+    amountFilter: "Any Amount",
+    dateFilter: "All",
+    exactDate: "",
+  });
+
+  // INITIALIZE FROM CACHE
   const [logs, setLogs] = useState(
     () =>
       maintenanceService.getCachedLogs({
@@ -188,11 +197,9 @@ const MaintenanceReport = () => {
     }
   };
 
+  // 🚀 STRICT MANUAL TRIGGER - No more debounce
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchLogs(false);
-    }, 400);
-    return () => clearTimeout(delayDebounceFn);
+    fetchLogs(false);
   }, [filters]);
 
   const handleDisabledClick = (action) => {
@@ -230,6 +237,46 @@ const MaintenanceReport = () => {
     (filters.exactDate ? 1 : 0) +
     (filters.search ? 1 : 0);
 
+  // 🚀 ACTION HANDLERS FOR BUTTONS
+  const applySearch = () => {
+    if (!localSearch.trim() && !filters.search) return;
+    setFilters((prev) => ({
+      ...prev,
+      search: localSearch,
+      amountFilter: "Any Amount",
+      dateFilter: "All",
+      exactDate: "",
+    }));
+    setLocalFilters({
+      amountFilter: "Any Amount",
+      dateFilter: "All",
+      exactDate: "",
+    });
+  };
+
+  const applyFilters = () => {
+    setFilters((prev) => ({
+      ...prev,
+      amountFilter: localFilters.amountFilter,
+      dateFilter: localFilters.dateFilter,
+      exactDate: localFilters.exactDate,
+      search: "",
+    }));
+    setLocalSearch("");
+  };
+
+  const clearAllFilters = () => {
+    const reset = {
+      search: "",
+      amountFilter: "Any Amount",
+      dateFilter: "All",
+      exactDate: "",
+    };
+    setLocalSearch("");
+    setLocalFilters(reset);
+    setFilters(reset);
+  };
+
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
@@ -240,16 +287,16 @@ const MaintenanceReport = () => {
           '{"date":"","count":0,"lastId":null}',
       );
 
-      if (dlMeta.date === today && dlMeta.count >= 10000)
+      if (dlMeta.date === today && dlMeta.count >= 5000)
         return toast.error(
-          "Daily Download Limit (10,000) reached. Next batch available tomorrow.",
+          "Daily Download Limit (5,000) reached to protect database limits. Next batch available tomorrow.",
         );
       if (dlMeta.date !== today) {
         dlMeta.date = today;
         dlMeta.count = 0;
       }
 
-      const fetchLimit = 10000 - dlMeta.count;
+      const fetchLimit = 5000 - dlMeta.count;
       toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
 
       let qConstraints = [
@@ -298,7 +345,7 @@ const MaintenanceReport = () => {
       link.href = URL.createObjectURL(blob);
       link.setAttribute(
         "download",
-        `Backup_Maintenance_${monthToFetch}_Part${Math.floor(dlMeta.count / 10000) + 1}.csv`,
+        `Backup_Maintenance_${monthToFetch}_Part${Math.floor(dlMeta.count / 5000) + 1}.csv`,
       );
       document.body.appendChild(link);
       link.click();
@@ -313,7 +360,7 @@ const MaintenanceReport = () => {
 
       if (snapshot.size === fetchLimit) {
         toast.warning(
-          "10,000 Limit reached. System remembered the state. Download the next batch tomorrow.",
+          "5,000 Limit reached. System remembered the state. Download the next batch tomorrow.",
         );
       } else {
         toast.success(`Backup completed (${snapshot.size} records)!`);
@@ -349,6 +396,11 @@ const MaintenanceReport = () => {
     }
   };
 
+  const isFilterApplyDisabled =
+    localFilters.amountFilter === "Any Amount" &&
+    localFilters.dateFilter === "All" &&
+    !localFilters.exactDate;
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -369,7 +421,6 @@ const MaintenanceReport = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
-          {/* 🚀 Smart Sync Button -> onClick passes TRUE to force bypass RAM cache */}
           <Button
             variant="ghost"
             onClick={() => fetchLogs(false, true)}
@@ -467,26 +518,50 @@ const MaintenanceReport = () => {
         <div
           className={`p-5 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-3xl bg-zinc-900/10 border-zinc-800/60`}
         >
-          <div className="relative w-full sm:w-80 group">
-            <Search
-              size={16}
-              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
-            />
-            <input
-              type="text"
-              placeholder="Search vehicle no..."
-              className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-200 outline-none transition-all shadow-inner ${theme.primaryFocus}`}
-              value={filters.search}
-              onChange={(e) =>
-                setFilters({
-                  ...filters,
-                  search: e.target.value,
-                  amountFilter: "Any Amount",
-                  dateFilter: "All",
-                })
-              }
-            />
+          {/* 🚀 DECOUPLED SEARCH INPUT & BUTTON */}
+          <div className="flex w-full sm:w-auto gap-2 flex-1 max-w-lg">
+            <div className="relative w-full group">
+              <Search
+                size={16}
+                className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${localSearch ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
+              />
+              <input
+                type="text"
+                placeholder="Search vehicle no..."
+                className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-200 outline-none transition-all shadow-inner ${theme.primaryFocus}`}
+                value={localSearch}
+                onChange={(e) => setLocalSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") applySearch();
+                }}
+              />
+            </div>
+            <Button
+              onClick={applySearch}
+              disabled={!localSearch.trim()}
+              variant="primary"
+              className={`px-6 py-2.5 rounded-xl font-bold text-xs transition-all tracking-wider ${!localSearch.trim() ? "opacity-30 cursor-not-allowed bg-zinc-800 text-zinc-500" : ""}`}
+            >
+              Search
+            </Button>
           </div>
+
+          {/* 🚀 MANUAL REFRESH SECTION BUTTON */}
+          <Button
+            onClick={() => fetchLogs(false, true)}
+            disabled={syncStatus === "syncing"}
+            variant="outline"
+            title="Reload Section"
+            className="px-4 py-2.5 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-all flex items-center gap-2"
+          >
+            <RefreshCcw
+              size={14}
+              className={syncStatus === "syncing" ? "animate-spin" : ""}
+            />
+            <span className="text-xs font-bold uppercase tracking-widest hidden sm:block">
+              Reload
+            </span>
+          </Button>
         </div>
 
         <div
@@ -506,13 +581,11 @@ const MaintenanceReport = () => {
           </div>
           <div className="relative group">
             <select
-              value={filters.amountFilter}
+              value={localFilters.amountFilter}
               onChange={(e) =>
-                setFilters({
-                  ...filters,
+                setLocalFilters({
+                  ...localFilters,
                   amountFilter: e.target.value,
-                  search: "",
-                  dateFilter: "All",
                 })
               }
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
@@ -529,14 +602,12 @@ const MaintenanceReport = () => {
           </div>
           <div className="relative group">
             <select
-              value={filters.dateFilter}
+              value={localFilters.dateFilter}
               onChange={(e) =>
-                setFilters({
-                  ...filters,
+                setLocalFilters({
+                  ...localFilters,
                   dateFilter: e.target.value,
                   exactDate: "",
-                  search: "",
-                  amountFilter: "Any Amount",
                 })
               }
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
@@ -553,38 +624,40 @@ const MaintenanceReport = () => {
           </div>
           <div className="relative group flex items-center">
             <div
-              className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filters.exactDate ? theme.primaryText : "text-zinc-500"}`}
+              className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${localFilters.exactDate ? theme.primaryText : "text-zinc-500"}`}
             >
               <Calendar size={14} />
             </div>
             <input
               type="date"
-              value={filters.exactDate}
+              value={localFilters.exactDate}
               onChange={(e) =>
-                setFilters({
-                  ...filters,
+                setLocalFilters({
+                  ...localFilters,
                   exactDate: e.target.value,
                   dateFilter: "All",
-                  search: "",
-                  amountFilter: "Any Amount",
                 })
               }
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
+              className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${localFilters.exactDate ? "text-white border-zinc-600" : "text-zinc-500 border-zinc-800"}`}
             />
           </div>
+
+          {/* 🚀 DECOUPLED FILTER APPLY BUTTON */}
+          <Button
+            onClick={applyFilters}
+            disabled={isFilterApplyDisabled}
+            variant="outline"
+            className={`px-4 py-1.5 h-10 rounded-xl font-bold text-xs uppercase tracking-widest transition-all ${isFilterApplyDisabled ? "opacity-30 cursor-not-allowed border-zinc-800 text-zinc-500" : `border-${isTransport ? "cyan" : "indigo"}-500/50 ${theme.primaryText} hover:${theme.primaryBg}`}`}
+          >
+            Apply Filters
+          </Button>
+
           {activeFiltersCount > 0 && (
             <Button
               variant="ghost"
-              onClick={() =>
-                setFilters({
-                  search: "",
-                  amountFilter: "Any Amount",
-                  dateFilter: "All",
-                  exactDate: "",
-                })
-              }
-              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5"
+              onClick={clearAllFilters}
+              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
             >
               <X size={14} /> Clear All
             </Button>
@@ -807,7 +880,7 @@ const MaintenanceReport = () => {
                   <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
                     Download backup before wiping.{" "}
                     <strong className="text-amber-400">
-                      Limit: 10,000 records/day.
+                      Limit: 5,000 records/day.
                     </strong>{" "}
                     If you exceed this, the system will save your progress, and
                     you can download the rest tomorrow.
