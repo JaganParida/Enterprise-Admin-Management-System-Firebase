@@ -44,7 +44,8 @@ const ChartSkeleton = () => (
   <div className="w-full h-full bg-zinc-800/30 animate-pulse rounded-2xl border border-zinc-800/60"></div>
 );
 
-const MAX_RECORDS_LIMIT = 5000;
+// ⚠️ RISK REMOVED: Capped UI display at 1,000 to prevent accidental read explosions on scroll
+const MAX_RECORDS_LIMIT = 1000;
 
 const getCurrentMonth = () => {
   const d = new Date();
@@ -489,15 +490,17 @@ const ElectricBill = () => {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
       const monthlyKey = `backup_count_${monthToFetch}_electric`;
       const downloadedCount = Number(localStorage.getItem(monthlyKey) || 0);
-      if (downloadedCount >= 10000)
+
+      // ⚠️ RISK REMOVED: Check against 1,000 instead of 10,000
+      if (downloadedCount >= 1000)
         return toast.error(
-          "10,000 daily download limit reached. Try again tomorrow.",
+          "1,000 daily download limit reached (Database Protection). Try again tomorrow.",
         );
 
       toast.info(`Fetching secure backup chunk...`);
       const res = await electricService.getBackupChunk(
         monthToFetch,
-        10000 - downloadedCount,
+        1000 - downloadedCount,
       );
       if (res.data.length === 0)
         return toast.info(`No more records found for ${monthToFetch}.`);
@@ -531,8 +534,11 @@ const ElectricBill = () => {
         res.lastDocId,
       );
 
-      if (res.data.length === 10000 - downloadedCount)
-        toast.warning("10,000 Limit reached. Download next batch tomorrow.");
+      // ⚠️ RISK REMOVED: Warning triggers at 1,000
+      if (res.data.length === 1000 - downloadedCount)
+        toast.warning(
+          "1,000 Free-Tier Limit reached. Download next batch tomorrow.",
+        );
       else {
         toast.success(`Downloaded ${res.data.length} records securely!`);
         localStorage.setItem(`backup_electric_${monthToFetch}`, "true");
@@ -1421,7 +1427,7 @@ const ElectricBill = () => {
                     </h4>
                     <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
                       To preserve system performance, infinite scrolling stops
-                      at 5,000 records. Use filters to locate older bills.
+                      at 1,000 records. Use filters to locate older bills.
                     </p>
                   </div>
                 </div>
@@ -1466,7 +1472,7 @@ const ElectricBill = () => {
                       Recommended: Safe Backup
                     </h3>
                     <p className="text-amber-100/60 text-xs mb-3 leading-relaxed">
-                      Before wiping, please download the backup. Limit: 10,000
+                      Before wiping, please download the backup. Limit: 1,000
                       daily.
                     </p>
                     <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
