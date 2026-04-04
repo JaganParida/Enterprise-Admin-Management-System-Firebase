@@ -319,26 +319,20 @@ const EmployeeList = () => {
     }
   };
 
+  // 🚀 RISK-FREE UPDATE: Server-sided limits implementation
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
 
-      const monthlyKey = `backup_count_${monthToFetch}_emp`;
       const lastDocKey = `backup_last_doc_${monthToFetch}_emp`;
-
-      const downloadedCount = Number(localStorage.getItem(monthlyKey) || 0);
       const savedLastDocId = localStorage.getItem(lastDocKey);
-
-      if (downloadedCount >= 10000)
-        return toast.error(
-          "10,000 daily download limit reached. Try again tomorrow.",
-        );
 
       toast.info(`Fetching secure backup chunk for ${monthToFetch}...`);
 
+      // Attempt to fetch 1000 records at a time to be safe with RAM
       const res = await employeeService.getBackupChunk(
         monthToFetch,
-        10000 - downloadedCount,
+        1000,
         savedLastDocId,
       );
 
@@ -354,7 +348,6 @@ const EmployeeList = () => {
         "Base Salary",
         "Salary Taken",
       ];
-
       const rows = res.data.map((emp) => {
         const name = `"${emp.name || ""}"`;
         const position = `"${emp.position || ""}"`;
@@ -376,22 +369,24 @@ const EmployeeList = () => {
       link.click();
       document.body.removeChild(link);
 
-      localStorage.setItem(monthlyKey, downloadedCount + res.data.length);
-      if (res.lastDocId) {
-        localStorage.setItem(lastDocKey, res.lastDocId);
-      }
+      if (res.lastDocId) localStorage.setItem(lastDocKey, res.lastDocId);
 
-      if (res.data.length === 10000 - downloadedCount) {
-        toast.warning("10,000 Limit reached. Download next batch tomorrow.");
+      if (res.wasLimited) {
+        toast.warning(
+          "Global Daily Backup Limit Reached. Download next batch tomorrow.",
+        );
       } else {
         toast.success(`Downloaded ${res.data.length} records securely!`);
-        localStorage.setItem(`backup_employees_${monthToFetch}`, "true");
-        localStorage.removeItem(lastDocKey);
-        if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
+        if (res.data.length < 1000) {
+          // We reached the end of the month's data
+          localStorage.setItem(`backup_employees_${monthToFetch}`, "true");
+          localStorage.removeItem(lastDocKey);
+          if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
+        }
       }
     } catch (error) {
       console.error(error);
-      toast.error("Failed to generate backup.");
+      toast.error(error.message || "Failed to generate backup.");
     }
   };
 
@@ -718,8 +713,9 @@ const EmployeeList = () => {
         </div>
       </motion.form>
 
+      {/* 🚀 RISK-FREE UPDATE: Graceful Error Catching for Stats */}
       <AnimatePresence>
-        {dynamicFilterStats && activeFiltersCount > 0 && !loading && (
+        {activeFiltersCount > 0 && !loading && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
@@ -733,36 +729,46 @@ const EmployeeList = () => {
                   Filter Stats
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 text-xs">Total People:</span>
-                <span className="text-white font-mono font-bold text-sm">
-                  {dynamicFilterStats.count}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 text-xs">
-                  Total Base Salary:
-                </span>
-                <span className="font-mono font-bold text-sm text-zinc-300">
-                  ₹
-                  {Number(dynamicFilterStats.baseSalarySum).toLocaleString(
-                    "en-IN",
-                  )}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 text-xs">
-                  Total Salary Paid:
-                </span>
-                <span
-                  className={`font-mono font-bold text-sm ${theme.primaryText}`}
-                >
-                  ₹
-                  {Number(dynamicFilterStats.salaryTakenSum).toLocaleString(
-                    "en-IN",
-                  )}
-                </span>
-              </div>
+
+              {/* If stats are null due to failure, show safe message instead of crashing */}
+              {!dynamicFilterStats ? (
+                <div className="text-zinc-500 text-xs font-mono">
+                  📊 Stats temporarily offline (Quota Protection Active)
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500 text-xs">Total People:</span>
+                    <span className="text-white font-mono font-bold text-sm">
+                      {dynamicFilterStats.count}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500 text-xs">
+                      Total Base Salary:
+                    </span>
+                    <span className="font-mono font-bold text-sm text-zinc-300">
+                      ₹
+                      {Number(dynamicFilterStats.baseSalarySum).toLocaleString(
+                        "en-IN",
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500 text-xs">
+                      Total Salary Paid:
+                    </span>
+                    <span
+                      className={`font-mono font-bold text-sm ${theme.primaryText}`}
+                    >
+                      ₹
+                      {Number(dynamicFilterStats.salaryTakenSum).toLocaleString(
+                        "en-IN",
+                      )}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </motion.div>
         )}
