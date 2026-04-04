@@ -4,7 +4,6 @@ import stockService from "../../services/stockService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
 import { Package, ArrowLeft, Save, ChevronDown } from "lucide-react";
-import Input from "../../components/common/Input";
 
 const AddStock = () => {
   const navigate = useNavigate();
@@ -67,10 +66,21 @@ const AddStock = () => {
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
-      await stockService.createStock(formData, currentUser);
+
+      const qty = Number(formData.quantity) || 0;
+      const itemPrice = Number(formData.price) || 0;
+
+      const payloadToSave = {
+        ...formData,
+        quantity: qty,
+        price: itemPrice,
+        totalValue: qty * itemPrice,
+      };
+
+      await stockService.createStock(payloadToSave, currentUser);
+
       toast.success("Stock item added successfully!");
-      // 🚀 FLUSH CACHE TO SHOW NEW ITEM ON NEXT LOAD
-      sessionStorage.setItem("stock_needs_refresh", "true");
+      // 🚀 CACHE INJECTION ENABLED: No need to flush storage, service handles it.
       navigate("/enterprise/stock");
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to add stock.");
