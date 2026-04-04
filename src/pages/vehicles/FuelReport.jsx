@@ -23,6 +23,8 @@ import {
   IndianRupee,
   RefreshCcw,
   CheckCircle2,
+  SearchCode,
+  Hourglass,
 } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -49,9 +51,13 @@ const FuelReport = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [filters, setFilters] = useState(defaultFilters);
+  // 🚀 DECOUPLED LOCAL INPUT FROM ACTIVE QUERY
+  const [filterInput, setFilterInput] = useState(defaultFilters);
+  const [activeFilters, setActiveFilters] = useState(defaultFilters);
 
-  // 🚀 INITIALIZE FROM CACHE TO PREVENT LOADER FLICKER
+  // 🚀 4-SECOND RELAXATION STATE
+  const [isCooldown, setIsCooldown] = useState(false);
+
   const [logs, setLogs] = useState(
     () => fuelService.getCachedLogs(defaultFilters) || [],
   );
@@ -136,14 +142,18 @@ const FuelReport = () => {
     }
   }, [urlHighlightId, logs.length]);
 
-  const fetchLogs = async (isLoadMore = false, force = false) => {
+  const fetchLogs = async (
+    isLoadMore = false,
+    force = false,
+    filterObj = activeFilters,
+  ) => {
     if (isLoadMore) setLoadingMore(true);
     else if (logs.length === 0 || force) setSyncStatus("syncing");
     if (logs.length === 0 && !isLoadMore) setLoading(true);
 
     try {
       const response = await fuelService.getLogs(
-        filters,
+        filterObj,
         isLoadMore ? lastDoc : null,
         50,
         force,
@@ -168,11 +178,37 @@ const FuelReport = () => {
   };
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
+    if (!fuelService.getCachedLogs(defaultFilters)) {
       fetchLogs(false);
-    }, 400);
-    return () => clearTimeout(delayDebounceFn);
-  }, [filters]);
+    }
+  }, []);
+
+  // 🚀 BUTTON STATE LOGIC
+  const hasChanges =
+    JSON.stringify(filterInput) !== JSON.stringify(activeFilters);
+  const isApplyDisabled = isCooldown || !hasChanges;
+
+  // 🚀 APPLY FILTERS WITH 4S RELAXATION
+  const applyFilters = () => {
+    if (isApplyDisabled) return;
+    setActiveFilters(filterInput);
+    fetchLogs(false, true, filterInput);
+
+    // Trigger 4-second relaxation
+    setIsCooldown(true);
+    setTimeout(() => setIsCooldown(false), 4000);
+  };
+
+  const clearFilters = () => {
+    if (isCooldown) return;
+    setFilterInput(defaultFilters);
+    setActiveFilters(defaultFilters);
+    fetchLogs(false, true, defaultFilters);
+
+    // Trigger 4-second relaxation for clear button too
+    setIsCooldown(true);
+    setTimeout(() => setIsCooldown(false), 4000);
+  };
 
   const handleDisabledClick = (action) => {
     setWarningTooltip(action);
@@ -201,11 +237,11 @@ const FuelReport = () => {
   };
 
   const activeFiltersCount =
-    [filters.amountFilter, filters.dateFilter].filter(
+    [activeFilters.amountFilter, activeFilters.dateFilter].filter(
       (f) => f !== "Any Amount" && f !== "All",
     ).length +
-    (filters.exactDate ? 1 : 0) +
-    (filters.search ? 1 : 0);
+    (activeFilters.exactDate ? 1 : 0) +
+    (activeFilters.search ? 1 : 0);
 
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
@@ -215,16 +251,16 @@ const FuelReport = () => {
         localStorage.getItem(`backup_${monthToFetch}_meta`) ||
           '{"date":"","count":0,"lastId":null}',
       );
-      if (dlMeta.date === today && dlMeta.count >= 10000)
+      if (dlMeta.date === today && dlMeta.count >= 1000)
         return toast.error(
-          "Daily Download Limit (10,000) reached. Next batch available tomorrow.",
+          "Daily Download Limit (1,000) reached to protect your Firebase Quota.",
         );
       if (dlMeta.date !== today) {
         dlMeta.date = today;
         dlMeta.count = 0;
       }
 
-      const fetchLimit = 10000 - dlMeta.count;
+      const fetchLimit = 1000 - dlMeta.count;
       toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
 
       const qConstraints = [
@@ -269,7 +305,7 @@ const FuelReport = () => {
       link.href = URL.createObjectURL(blob);
       link.setAttribute(
         "download",
-        `Backup_Fuel_${monthToFetch}_Part${Math.floor(dlMeta.count / 10000) + 1}.csv`,
+        `Backup_Fuel_${monthToFetch}_Part${Math.floor(dlMeta.count / 1000) + 1}.csv`,
       );
       document.body.appendChild(link);
       link.click();
@@ -283,9 +319,7 @@ const FuelReport = () => {
       );
 
       if (snapshot.size === fetchLimit) {
-        toast.warning(
-          "10,000 Limit reached. Download the next batch tomorrow.",
-        );
+        toast.warning("1,000 Limit reached. Download the next batch tomorrow.");
       } else {
         toast.success(`Backup completed (${snapshot.size} records)!`);
         if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
@@ -337,7 +371,6 @@ const FuelReport = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 items-center">
-          {/* 🚀 Smart Sync Button */}
           <Button
             variant="ghost"
             onClick={() => fetchLogs(false, true)}
@@ -431,26 +464,45 @@ const FuelReport = () => {
         <div
           className={`p-5 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-3xl bg-zinc-900/10 border-zinc-800/60`}
         >
-          <div className="relative w-full sm:w-80 group">
-            <Search
-              size={16}
-              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filters.search ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
-            />
-            <input
-              type="text"
-              placeholder="Search vehicle..."
-              className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-200 outline-none transition-all shadow-inner ${theme.primaryFocus}`}
-              value={filters.search}
-              onChange={(e) =>
-                setFilters({
-                  ...filters,
-                  search: e.target.value,
-                  amountFilter: "Any Amount",
-                  dateFilter: "All",
-                  exactDate: "",
-                })
-              }
-            />
+          <div className="relative w-full sm:w-80 group flex items-center gap-2">
+            <div className="relative w-full">
+              <Search
+                size={16}
+                className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${filterInput.search ? theme.primaryText : "text-zinc-500 group-hover:text-zinc-400"}`}
+              />
+              <input
+                type="text"
+                placeholder="Search vehicle..."
+                className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-200 outline-none transition-all shadow-inner ${theme.primaryFocus}`}
+                value={filterInput.search}
+                onChange={(e) =>
+                  setFilterInput({
+                    ...filterInput,
+                    search: e.target.value,
+                    amountFilter: "Any Amount",
+                    dateFilter: "All",
+                    exactDate: "",
+                  })
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") applyFilters();
+                }}
+              />
+            </div>
+
+            {/* 🚀 OPACITY LOGIC & 4S RELAXATION BUTTON */}
+            <Button
+              onClick={applyFilters}
+              disabled={isApplyDisabled}
+              className={`!px-3 !py-2.5 shrink-0 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all duration-300 ${isApplyDisabled ? "opacity-30 cursor-not-allowed bg-zinc-800 text-zinc-500 border-transparent" : `${theme.primaryBg} ${theme.primaryText} hover:opacity-80`}`}
+            >
+              {isCooldown ? (
+                <Hourglass size={16} className="animate-spin" />
+              ) : (
+                <SearchCode size={16} />
+              )}
+              {isCooldown ? "Wait..." : "Find"}
+            </Button>
           </div>
         </div>
 
@@ -471,10 +523,10 @@ const FuelReport = () => {
           </div>
           <div className="relative group">
             <select
-              value={filters.amountFilter}
+              value={filterInput.amountFilter}
               onChange={(e) =>
-                setFilters({
-                  ...filters,
+                setFilterInput({
+                  ...filterInput,
                   amountFilter: e.target.value,
                   search: "",
                   dateFilter: "All",
@@ -495,10 +547,10 @@ const FuelReport = () => {
           </div>
           <div className="relative group">
             <select
-              value={filters.dateFilter}
+              value={filterInput.dateFilter}
               onChange={(e) =>
-                setFilters({
-                  ...filters,
+                setFilterInput({
+                  ...filterInput,
                   dateFilter: e.target.value,
                   exactDate: "",
                   search: "",
@@ -519,16 +571,16 @@ const FuelReport = () => {
           </div>
           <div className="relative group flex items-center">
             <div
-              className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filters.exactDate ? theme.primaryText : "text-zinc-500"}`}
+              className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filterInput.exactDate ? theme.primaryText : "text-zinc-500"}`}
             >
               <Calendar size={14} />
             </div>
             <input
               type="date"
-              value={filters.exactDate}
+              value={filterInput.exactDate}
               onChange={(e) =>
-                setFilters({
-                  ...filters,
+                setFilterInput({
+                  ...filterInput,
                   exactDate: e.target.value,
                   dateFilter: "All",
                   search: "",
@@ -536,21 +588,26 @@ const FuelReport = () => {
                 })
               }
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filters.exactDate ? "text-white" : "text-zinc-500"}`}
+              className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterInput.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
+
+          {/* 🚀 OPACITY LOGIC & 4S RELAXATION BUTTON */}
+          <Button
+            onClick={applyFilters}
+            disabled={isApplyDisabled}
+            variant="outline"
+            className={`!px-4 !py-2 !h-auto !text-xs !rounded-xl font-bold transition-all duration-300 ${isApplyDisabled ? "opacity-30 cursor-not-allowed bg-zinc-800/30 border-transparent text-zinc-500" : "bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-white"}`}
+          >
+            {isCooldown ? "Applying..." : "Apply Filters"}
+          </Button>
+
           {activeFiltersCount > 0 && (
             <Button
               variant="ghost"
-              onClick={() =>
-                setFilters({
-                  search: "",
-                  amountFilter: "Any Amount",
-                  dateFilter: "All",
-                  exactDate: "",
-                })
-              }
-              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5"
+              onClick={clearFilters}
+              disabled={isCooldown}
+              className="!px-3 !py-1.5 !text-xs !rounded-full !ml-auto md:!ml-2 flex items-center gap-1.5 text-red-400 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <X size={14} /> Clear All
             </Button>
@@ -687,7 +744,7 @@ const FuelReport = () => {
                         colSpan="4"
                         className="p-10 text-center text-zinc-500 italic"
                       >
-                        No fuel records found matching filters.
+                        No fuel records found matching applied filters.
                       </td>
                     </tr>
                   )}
@@ -770,7 +827,7 @@ const FuelReport = () => {
                   <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
                     Download backup before wiping.{" "}
                     <strong className="text-amber-400">
-                      Limit: 10,000 records/day.
+                      Limit: 1,000 records/day.
                     </strong>{" "}
                     If you exceed this, the system will save your progress, and
                     you can download the rest tomorrow.
