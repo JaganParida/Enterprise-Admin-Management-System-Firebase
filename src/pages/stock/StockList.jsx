@@ -37,6 +37,9 @@ const StockList = () => {
 
   const [syncState, setSyncState] = useState("syncing"); // synced, syncing, error
 
+  // 🚀 ANTI-SPAM COOLDOWN STATE
+  const [syncCooldown, setSyncCooldown] = useState(0);
+
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const urlHighlightId = searchParams.get("highlight");
@@ -79,6 +82,14 @@ const StockList = () => {
     pendingFilters.search !== "" ||
     pendingFilters.category !== "All" ||
     pendingFilters.stockLevel !== "All";
+
+  // --- COOLDOWN EFFECT ---
+  useEffect(() => {
+    if (syncCooldown > 0) {
+      const timer = setTimeout(() => setSyncCooldown(syncCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [syncCooldown]);
 
   // --- WIPE LOCK EFFECT ---
   useEffect(() => {
@@ -172,6 +183,13 @@ const StockList = () => {
     fetchStocks(defaultFilters, false, false);
   };
 
+  // 🚀 GUARDED MANUAL SYNC
+  const handleManualSync = () => {
+    if (syncCooldown > 0) return; // Prevent execution if in cooldown
+    fetchStocks(activeFilters, false, true);
+    setSyncCooldown(10); // Lock for 10 seconds
+  };
+
   useEffect(() => {
     if (urlHighlightId && !loading) {
       setActiveHighlight(urlHighlightId);
@@ -184,7 +202,7 @@ const StockList = () => {
     }
   }, [urlHighlightId, loading]);
 
-  // 🚀 OPTIMIZED: 0-Read RAM Export
+  // OPTIMIZED: 0-Read RAM Export
   const handleFullBackup = async () => {
     try {
       setIsExporting(true);
@@ -272,14 +290,14 @@ const StockList = () => {
         user: currentUser,
       });
 
-      if (res.locked) {
-        toast.warning(res.message, { autoClose: 8000 });
+      if (res?.locked) {
+        toast.warning(res?.message, { autoClose: 8000 });
         setWipeState((prev) => ({
           ...prev,
           lockedUntil: Date.now() + 24 * 60 * 60 * 1000,
         }));
       } else {
-        toast.success(res.message);
+        toast.success(res?.message || "Records permanently wiped.");
       }
       setDeletePassword("");
       setShowPassword(false);
@@ -320,11 +338,12 @@ const StockList = () => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto overflow-x-auto hide-scrollbar">
+          {/* 🚀 UPDATED SYNC BUTTON WITH COOLDOWN */}
           <button
-            onClick={() => fetchStocks(activeFilters, false, true)}
-            disabled={syncState === "synced"}
+            onClick={handleManualSync}
+            disabled={syncState === "synced" || syncCooldown > 0}
             className={`h-10 px-4 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-all shrink-0 ${
-              syncState === "synced"
+              syncState === "synced" || syncCooldown > 0
                 ? "bg-transparent border border-zinc-800/40 text-zinc-500 cursor-not-allowed opacity-40 pointer-events-none"
                 : syncState === "error"
                   ? "bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20"
@@ -336,11 +355,13 @@ const StockList = () => {
               className={syncState === "syncing" ? "animate-spin" : ""}
             />
             <span className="hidden sm:inline-block">
-              {syncState === "synced"
-                ? "Up to Date"
-                : syncState === "error"
-                  ? "Retry Fetch"
-                  : "Sync Required"}
+              {syncCooldown > 0
+                ? `Wait ${syncCooldown}s`
+                : syncState === "synced"
+                  ? "Up to Date"
+                  : syncState === "error"
+                    ? "Retry Fetch"
+                    : "Sync Required"}
             </span>
           </button>
 
@@ -725,7 +746,6 @@ const StockList = () => {
                 </div>
               </div>
               <div className="p-6 space-y-5">
-                {/* 🚀 OPTIMIZED EXPORT UI (No Date Picker Needed) */}
                 <div className="bg-[#151210] border border-amber-900/30 rounded-xl p-5 relative overflow-hidden shadow-inner">
                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500"></div>
                   <div className="pl-2">

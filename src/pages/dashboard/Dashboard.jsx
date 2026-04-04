@@ -8,14 +8,13 @@ import {
   Users,
   Activity,
   DollarSign,
+  Download,
   Plus,
   Factory,
   FileText,
   ChevronRight,
   ShoppingCart,
   Calendar,
-  RefreshCw,
-  Check,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -31,9 +30,7 @@ const Dashboard = () => {
   const { toast } = useUI();
   const location = useLocation();
   const navigate = useNavigate();
-
   const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState("syncing"); // 'syncing', 'synced', 'fallback', 'error'
   const [showQuickMenu, setShowQuickMenu] = useState(false);
 
   // 🔥 THEME HOOK
@@ -72,17 +69,13 @@ const Dashboard = () => {
     recentActivity: [],
   });
 
-  // Load Dashboard - Uses RAM Cache if available
   useEffect(() => {
     const loadDashboard = async () => {
-      setSyncStatus("syncing");
       try {
-        const response = await dashboardService.getStats(false);
+        const response = await dashboardService.getStats();
         setData(response.data);
-        setSyncStatus(response.status); // Will set to 'synced' or 'fallback'
       } catch (error) {
         toast.error("Failed to load dashboard metrics.");
-        setSyncStatus("error");
       } finally {
         setLoading(false);
       }
@@ -90,28 +83,53 @@ const Dashboard = () => {
     loadDashboard();
   }, [toast]);
 
-  // 🔄 Smart Sync Button Handler
-  const handleManualSync = async () => {
-    setSyncStatus("syncing");
+  // 🚀 EXPORT LOGIC WITH BOM
+  const handleExport = () => {
     try {
-      const response = await dashboardService.getStats(true); // Force bypass cache
-      setData(response.data);
-      setSyncStatus(response.status);
+      const headers = ["Section,Metric,Value,Date/Note"];
+      const rows = [];
+      rows.push(`OVERVIEW,Total Sales Revenue,${data.cards.balance},`);
+      rows.push(`OVERVIEW,Total Stock Value,${data.cards.stockValue},`);
+      rows.push(`OVERVIEW,Invoice Revenue,${data.cards.revenue},`);
+      rows.push(`OVERVIEW,Active Employees,${data.cards.activeEmployees},`);
+      rows.push(`OVERVIEW,Low Stock Items,${data.cards.lowStock},Alert`);
+      rows.push(
+        `OVERVIEW,Pending Invoices,${data.cards.pendingInvoices},Action Needed`,
+      );
 
-      if (response.status === "synced") {
-        toast.success("Dashboard synced and up to date");
-      } else if (response.status === "fallback") {
-        toast.error("Synced via Fallback (Check Database Indexes)");
+      data.charts.production.forEach((item) => {
+        rows.push(`PRODUCTION,Daily Output,${item.quantity},${item.date}`);
+      });
+      data.charts.sales.forEach((item) => {
+        rows.push(`SALES,Daily Sales,${item.amount},${item.date}`);
+      });
+
+      if (data.recentActivity && data.recentActivity.length > 0) {
+        rows.push(`\nRECENT ACTIVITY,Type,Details,Amount/Qty,Date`);
+        data.recentActivity.forEach((act) => {
+          rows.push(
+            `ACTIVITY,${act.activityType},"${act.productName || act.clientName || "N/A"}",${act.amount || act.grandTotal || act.quantity || 0},${new Date(act.date || act.createdAt).toLocaleDateString("en-GB")}`,
+          );
+        });
       }
+
+      const csvContent = "\uFEFF" + [headers, ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute(
+        "download",
+        `Enterprise_Report_${new Date().toISOString().split("T")[0]}.csv`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Dashboard report exported to Excel");
     } catch (error) {
-      toast.error("Failed to sync data.");
-      setSyncStatus("error");
+      toast.error("Failed to export data");
     }
   };
-
-  // UI Conditionals
-  const isUpToDate = syncStatus === "synced";
-  const isSyncing = syncStatus === "syncing";
 
   const productionChartData = {
     labels: data.charts.production.map((d) => d.date),
@@ -296,36 +314,14 @@ const Dashboard = () => {
             Real-time factory production & financial command center.
           </p>
         </div>
-
-        <div className="flex items-center gap-3 relative">
-          {/* 🔥 3-State Smart Sync Button */}
+        <div className="flex gap-3 relative">
           <Button
-            variant="secondary"
-            onClick={handleManualSync}
-            disabled={isSyncing || isUpToDate}
-            className={`text-xs h-11 px-4 gap-2 rounded-xl transition-all flex items-center border 
-              ${
-                isUpToDate
-                  ? "bg-white/[0.02] border-white/5 text-zinc-500 opacity-50 cursor-not-allowed"
-                  : "bg-zinc-900 border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 text-zinc-300"
-              }`}
+            variant="outline"
+            className="text-xs h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors"
+            onClick={handleExport}
           >
-            {isSyncing ? (
-              <RefreshCw size={14} className="animate-spin text-zinc-400" />
-            ) : isUpToDate ? (
-              <Check size={14} className="text-emerald-500/70" />
-            ) : (
-              <RefreshCw size={14} className="text-rose-400" />
-            )}
-            <span className="hidden sm:inline font-medium">
-              {isSyncing
-                ? "Syncing..."
-                : isUpToDate
-                  ? "Up to Date"
-                  : "Sync Required"}
-            </span>
+            <Download size={16} /> Export Report
           </Button>
-
           <div className="relative">
             <Button
               variant="primary"
@@ -537,6 +533,7 @@ const Dashboard = () => {
   );
 };
 
+// 🚀 CLICKABLE STAT CARD
 const StatCard = ({
   title,
   value,
@@ -579,13 +576,7 @@ const StatCard = ({
           <Icon size={22} />
         </div>
         <span
-          className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border backdrop-blur-sm ${
-            trendUp
-              ? isTransport
-                ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
-              : "bg-rose-500/10 text-rose-400 border-rose-500/20"
-          }`}
+          className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border backdrop-blur-sm ${trendUp ? (isTransport ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-indigo-500/10 text-indigo-400 border-indigo-500/20") : "bg-rose-500/10 text-rose-400 border-rose-500/20"}`}
         >
           {trend}
         </span>
@@ -602,6 +593,7 @@ const StatCard = ({
   );
 };
 
+// 🚀 CLICKABLE ACTIVITY ITEM WITH HIGHLIGHT PARAMS
 const ActivityItem = ({ data, isTransport, basePath }) => {
   const navigate = useNavigate();
 
@@ -612,6 +604,7 @@ const ActivityItem = ({ data, isTransport, basePath }) => {
   let title = `Production: ${data.productName || "Product"}`;
   let desc = `${Number(data.quantity || 0).toLocaleString()} Units Produced`;
   let amount = null;
+  // 🚀 Added ?highlight URL params so the list page knows which row to animate
   let linkUrl = `${basePath}/production/report?highlight=${data._id}`;
 
   if (data.activityType === "Sale") {

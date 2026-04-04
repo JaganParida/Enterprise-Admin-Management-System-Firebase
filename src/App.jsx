@@ -4,6 +4,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { UIProvider } from "./context/UIProvider";
 import AdminLayout from "./components/layout/AdminLayout";
 import PrivateRoute from "./routes/PrivateRoute";
+import LaunchOverlay from "./components/LaunchOverlay";
 
 import Splash from "./components/common/Splash";
 import Landing from "./pages/Landing";
@@ -55,6 +56,7 @@ function App() {
 
   return (
     <AuthProvider>
+      {/* <LaunchOverlay /> */}
       <UIProvider>
         <Router>
           <Routes>

@@ -1,25 +1,52 @@
-import { auth, googleProvider } from "../config/firebase";
+import { auth, googleProvider, db } from "../config/firebase"; // 👈 Import db
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
   sendPasswordResetEmail,
   signOut,
 } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore"; // 👈 Import Firestore functions
 
-// 🔒 STRICT SECURITY & ROLES: Yahan email ke sath role define karna hai
 export const ALLOWED_USERS = {
-  "jagan.parida.dev@gmail.com": "admin", // Admin ko sab access hai
-  "jaganparida39064@gmail.com": "manager", // Manager sirf view aur edit karega, delete nahi
+  "jagan.parida.dev@gmail.com": "admin",
+  "jaganparida39064@gmail.com": "manager",
 };
 
-// 🚀 EXPORTED Helper function: Email check karne aur role nikalne ke liye
 export const verifyAndGetRole = async (user) => {
   const role = ALLOWED_USERS[user.email];
   if (!role) {
-    await signOut(auth); // Unauthorized user ko turant bahar nikalo
+    await signOut(auth);
     throw new Error("Access Denied: You are not authorized.");
   }
   return role;
+};
+
+// 🚀 NEW LOGIC: Manage Max 2 Sessions
+const manageSessions = async (uid) => {
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+
+  let activeSessions = [];
+  if (userSnap.exists() && userSnap.data().activeSessions) {
+    activeSessions = userSnap.data().activeSessions;
+  }
+
+  // Generate a unique session ID for this login
+  const newSessionId = Math.random().toString(36).substring(2, 15);
+
+  // Add new session with a timestamp
+  activeSessions.push({ sessionId: newSessionId, timestamp: Date.now() });
+
+  // Sort by oldest first, and keep only the latest 2 sessions
+  activeSessions.sort((a, b) => a.timestamp - b.timestamp);
+  while (activeSessions.length > 2) {
+    activeSessions.shift(); // Removes the oldest session
+  }
+
+  // Save back to Firestore
+  await setDoc(userRef, { activeSessions }, { merge: true });
+
+  return newSessionId;
 };
 
 // 1. Login with Email & Password
@@ -30,15 +57,15 @@ export const loginAdmin = async (data) => {
     data.password,
   );
 
-  // Security Guard checks role
   const userRole = await verifyAndGetRole(userCredential.user);
+  const sessionId = await manageSessions(userCredential.user.uid); // 👈 Track Session
 
-  // User ke data ke sath uska role bhi return kar rahe hain
   return {
     data: {
       uid: userCredential.user.uid,
       email: userCredential.user.email,
       role: userRole,
+      sessionId: sessionId, // 👈 Return Session ID to Context
     },
   };
 };
@@ -47,19 +74,20 @@ export const loginAdmin = async (data) => {
 export const loginWithGoogle = async () => {
   const userCredential = await signInWithPopup(auth, googleProvider);
 
-  // Security Guard checks role
   const userRole = await verifyAndGetRole(userCredential.user);
+  const sessionId = await manageSessions(userCredential.user.uid); // 👈 Track Session
 
   return {
     data: {
       uid: userCredential.user.uid,
       email: userCredential.user.email,
       role: userRole,
+      sessionId: sessionId, // 👈 Return Session ID to Context
     },
   };
 };
 
-// 3. Forgot Password (Sends a secure reset link to email)
+// 3. Forgot Password
 export const forgotPassword = async (data) => {
   await sendPasswordResetEmail(auth, data.email);
   return { message: "Password reset link sent to your email!" };

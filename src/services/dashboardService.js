@@ -11,82 +11,86 @@ import {
   count,
 } from "firebase/firestore";
 
-const CACHE_KEY = "dashboard_data_cache";
-const CACHE_EXPIRATION = 30 * 60 * 1000; // 30 Minutes (Adjust as needed)
-
 const dashboardService = {
-  markDirty: () => {
-    localStorage.removeItem(CACHE_KEY);
-  },
-
-  getStats: async (forceSync = false) => {
-    const now = Date.now();
-    const localData = localStorage.getItem(CACHE_KEY);
-
-    // 🛡️ SHIELD 1: Check Local Storage Cache first
-    if (!forceSync && localData) {
-      const parsed = JSON.parse(localData);
-      if (now - parsed.timestamp < CACHE_EXPIRATION) {
-        console.log("🚀 Serving from Disk Cache (Zero Firebase Reads)");
-        return { data: parsed.data, status: "synced" };
-      }
-    }
-
-    console.log("📡 Fetching fresh data from Firebase...");
-
-    let activeEmployees = 0,
-      revenue = 0,
-      pendingInvoices = 0,
-      lowStock = 0,
-      stockValue = 0;
+  getStats: async () => {
+    let activeEmployees = 0;
+    let revenue = 0;
+    let pendingInvoices = 0;
 
     try {
-      // 🚀 SERVER-SIDE AGGREGATIONS (Cheapest Reads)
-      const [
-        empSnap,
-        paidInvSnap,
-        pendingInvSnap,
-        lowStockSnap,
-        totalStockSnap,
-      ] = await Promise.all([
-        getAggregateFromServer(
-          query(collection(db, "employees"), where("status", "==", "Active")),
-          { activeCount: count() },
-        ),
-        getAggregateFromServer(
-          query(collection(db, "invoices"), where("status", "==", "Paid")),
-          { totalRevenue: sum("grandTotal") },
-        ),
-        getAggregateFromServer(
-          query(collection(db, "invoices"), where("status", "==", "Pending")),
-          { pendingCount: count() },
-        ),
-        getAggregateFromServer(
-          query(collection(db, "stocks"), where("quantity", "<", 10)),
-          { lowCount: count() },
-        ),
-        getAggregateFromServer(collection(db, "stocks"), {
-          stockValueSum: sum("totalValue"),
-        }),
+      // 1. 🚀 FAST SERVER-SIDE AGGREGATIONS (Try this first)
+      const empQ = query(
+        collection(db, "employees"),
+        where("status", "==", "Active"),
+      );
+      const paidInvQ = query(
+        collection(db, "invoices"),
+        where("status", "==", "Paid"),
+      );
+      const pendingInvQ = query(
+        collection(db, "invoices"),
+        where("status", "==", "Pending"),
+      );
+
+      const [empSnap, paidInvSnap, pendingInvSnap] = await Promise.all([
+        getAggregateFromServer(empQ, { activeCount: count() }),
+        getAggregateFromServer(paidInvQ, { totalRevenue: sum("grandTotal") }),
+        getAggregateFromServer(pendingInvQ, { pendingCount: count() }),
       ]);
 
       activeEmployees = empSnap.data().activeCount || 0;
       revenue = paidInvSnap.data().totalRevenue || 0;
-      pendingInvoices = pendingInvoices =
-        pendingInvSnap.data().pendingCount || 0;
-      lowStock = lowStockSnap.data().lowCount || 0;
-      stockValue = totalStockSnap.data().stockValueSum || 0;
+      pendingInvoices = pendingInvSnap.data().pendingCount || 0;
+    } catch (aggError) {
+      console.warn(
+        "Aggregation missing index, falling back to client fetch:",
+        aggError,
+      );
 
-      // 📊 FETCH RECENT (Strict Limits to save reads)
+      // 🚀 ENTERPRISE FALLBACK: Agar Index missing hai, toh UI crash nahi hoga!
+      // Firebase fallback to fetch and calculate in browser until index is built.
+      const [empDocs, invDocs] = await Promise.all([
+        getDocs(collection(db, "employees")),
+        getDocs(collection(db, "invoices")),
+      ]);
+
+      empDocs.forEach((doc) => {
+        if (doc.data().status === "Active") activeEmployees++;
+      });
+
+      invDocs.forEach((doc) => {
+        const d = doc.data();
+        if (d.status === "Paid") revenue += Number(d.grandTotal) || 0;
+        if (d.status === "Pending") pendingInvoices++;
+      });
+    }
+
+    try {
+      // 2. 🚀 OPTIMIZED STOCK CALCULATION
+      const stockSnap = await getDocs(collection(db, "stocks"));
+      let stockValue = 0;
+      let lowStock = 0;
+      stockSnap.forEach((doc) => {
+        const d = doc.data();
+        stockValue += (Number(d.quantity) || 0) * (Number(d.price) || 0);
+        if (Number(d.quantity) < 10) lowStock++;
+      });
+
+      // 3. 🚀 OPTIMIZED RECENT ACTIVITY & CHARTS (Fetch ONLY what is needed)
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      // We limit to 20/10 to avoid huge document reads on every dashboard load
       const prodQuery = query(
         collection(db, "production"),
         orderBy("date", "desc"),
-        limit(15),
+        limit(20),
       );
       const salesQuery = query(
         collection(db, "sales"),
         orderBy("date", "desc"),
-        limit(15),
+        limit(20),
       );
       const invQuery = query(
         collection(db, "invoices"),
@@ -105,68 +109,78 @@ const dashboardService = {
       const salesData = [];
       let totalSalesRevenue = 0;
 
+      // Process Production
       prodSnap.forEach((doc) => {
         const d = doc.data();
         activities.push({ ...d, activityType: "Production", _id: doc.id });
-        productionData.push({
-          date: d.date,
-          quantity: Number(d.quantity) || 0,
-          productName: d.productName,
-        });
+        if (new Date(d.date) >= sevenDaysAgo) {
+          productionData.push({
+            date: new Date(d.date).toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+            }),
+            quantity: Number(d.quantity) || 0,
+            productName: d.productName || "Unknown",
+          });
+        }
       });
 
+      // Process Sales
       salesSnap.forEach((doc) => {
         const d = doc.data();
         totalSalesRevenue += Number(d.amount) || 0;
         activities.push({ ...d, activityType: "Sale", _id: doc.id });
-        salesData.push({
-          date: d.date,
-          amount: Number(d.amount) || 0,
-          productName: d.productName,
-        });
+        if (new Date(d.date) >= sevenDaysAgo) {
+          salesData.push({
+            date: new Date(d.date).toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+            }),
+            amount: Number(d.amount) || 0,
+            productName: d.productName || "Various Items",
+          });
+        }
       });
 
+      // Process Recent Invoices for Activity Feed
       recentInvSnap.forEach((doc) => {
+        const d = doc.data();
         activities.push({
-          ...doc.data(),
+          ...d,
           activityType: "Invoice",
           _id: doc.id,
+          date: d.date || d.createdAt,
         });
       });
 
-      const finalData = {
-        cards: {
-          balance: totalSalesRevenue,
-          revenue,
-          activeEmployees,
-          stockValue,
-          lowStock,
-          pendingInvoices,
+      // 4. 🚀 SORT & SLICE RECENT ACTIVITY (Merge & Sort the 3 collections)
+      activities.sort((a, b) => {
+        const dateA = new Date(a.createdAt || a.date || 0).getTime();
+        const dateB = new Date(b.createdAt || b.date || 0).getTime();
+        return dateB - dateA;
+      });
+
+      const recentActivity = activities.slice(0, 10);
+
+      return {
+        data: {
+          cards: {
+            balance: totalSalesRevenue,
+            revenue: revenue,
+            activeEmployees: activeEmployees,
+            stockValue: stockValue,
+            lowStock: lowStock,
+            pendingInvoices: pendingInvoices,
+          },
+          charts: {
+            production: productionData.reverse(),
+            sales: salesData.reverse(),
+          },
+          recentActivity,
         },
-        charts: {
-          production: productionData.reverse(),
-          sales: salesData.reverse(),
-        },
-        recentActivity: activities
-          .sort(
-            (a, b) =>
-              new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt),
-          )
-          .slice(0, 10),
       };
-
-      // 💾 SAVE TO DISK CACHE
-      localStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({ timestamp: now, data: finalData }),
-      );
-
-      return { data: finalData, status: "synced" };
     } catch (error) {
-      console.error("Critical Sync Error:", error);
-      // If error, try to return stale data from cache as emergency backup
-      if (localData)
-        return { data: JSON.parse(localData).data, status: "fallback" };
+      console.error("Dashboard Service Critical Error:", error);
       throw error;
     }
   },

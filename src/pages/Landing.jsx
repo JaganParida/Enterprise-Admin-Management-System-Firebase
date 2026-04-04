@@ -244,36 +244,38 @@ const TourTooltip = ({
 }) => {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+      initial={{ opacity: 0, scale: 0.95, y: 10 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.9, y: 10 }}
-      transition={{ type: "spring", stiffness: 350, damping: 25 }}
-      className={`absolute z-[100] w-72 md:w-80 bg-[#121214] border border-${themeColor}-500/30 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] p-5 ${customClasses}`}
+      exit={{ opacity: 0, scale: 0.95, y: 10 }}
+      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+      className={`z-[100] bg-[#18181B] border border-${themeColor}-500/50 shadow-[0_30px_60px_rgba(0,0,0,0.9)] p-5 
+        fixed bottom-4 left-4 w-[calc(100%_-_32px)] rounded-2xl
+        lg:absolute lg:w-[340px] lg:bottom-auto lg:left-auto lg:right-auto lg:top-auto ${customClasses}`}
     >
       <div className="relative z-10">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-3 mb-3">
           <div
-            className={`w-2 h-2 rounded-full bg-${themeColor}-400 animate-pulse`}
+            className={`w-2.5 h-2.5 rounded-full bg-${themeColor}-400 animate-pulse shadow-[0_0_10px_var(--tw-shadow-color)] shadow-${themeColor}-500/50`}
           />
-          <h4 className="text-white font-bold text-sm tracking-wide">
+          <h4 className="text-white font-bold text-base tracking-wide">
             {step.title}
           </h4>
         </div>
-        <p className="text-zinc-400 text-xs leading-relaxed mb-4">
+        <p className="text-zinc-300 text-sm leading-relaxed mb-4">
           {step.desc}
         </p>
 
         <div
-          className={`bg-${themeColor}-500/5 rounded-lg p-3 border border-${themeColor}-500/10 mb-4`}
+          className={`bg-${themeColor}-500/10 rounded-xl p-3 border border-${themeColor}-500/20 mb-5 hidden sm:block`}
         >
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {step.features.map((f, i) => (
               <li
                 key={i}
-                className="text-[11px] text-zinc-300 flex items-start gap-2"
+                className="text-xs text-zinc-200 flex items-start gap-2 font-medium"
               >
                 <CheckCircle2
-                  size={12}
+                  size={14}
                   className={`text-${themeColor}-400 shrink-0 mt-0.5`}
                 />
                 <span>{f}</span>
@@ -282,24 +284,24 @@ const TourTooltip = ({
           </ul>
         </div>
 
-        <div className="flex items-center justify-between pt-3 border-t border-white/5">
-          <span className="text-[10px] font-mono text-zinc-500 font-bold uppercase tracking-widest">
+        <div className="flex items-center justify-between pt-4 border-t border-white/10">
+          <span className="text-[11px] font-mono text-zinc-400 font-bold uppercase tracking-widest">
             Step {stepIndex + 1} of {totalSteps}
           </span>
           <div className="flex gap-2">
             <button
               onClick={onPrev}
               disabled={stepIndex === 0}
-              className="p-1.5 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-400 transition-colors"
+              className="p-2 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-400 transition-colors bg-white/5 hover:bg-white/10 rounded-lg"
             >
               <ChevronLeft size={16} />
             </button>
             <button
               onClick={onNext}
-              className={`px-3 py-1.5 bg-${themeColor}-500 hover:bg-${themeColor}-400 text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-${themeColor}-500/20 flex items-center gap-1`}
+              className={`px-4 py-2 bg-${themeColor}-500 hover:bg-${themeColor}-400 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-${themeColor}-500/20 flex items-center gap-1.5`}
             >
               {stepIndex === totalSteps - 1 ? "Finish" : "Next"}{" "}
-              <ChevronRight size={14} />
+              <ChevronRight size={16} />
             </button>
           </div>
         </div>
@@ -312,7 +314,7 @@ const TourTooltip = ({
 const HotspotPulse = ({ color }) => (
   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
     <span
-      className={`absolute w-[calc(100%+12px)] h-[calc(100%+12px)] rounded-xl border-2 border-${color}-500 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite] opacity-60`}
+      className={`absolute w-[calc(100%_+_12px)] h-[calc(100%_+_12px)] rounded-xl border-2 border-${color}-500 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite] opacity-60`}
     />
     <span
       className={`absolute w-full h-full rounded-lg border-2 border-${color}-400 shadow-[0_0_15px_var(--tw-shadow-color)] shadow-${color}-500/50`}
@@ -353,7 +355,7 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 md:p-12">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center lg:p-12">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -364,7 +366,7 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
             className="absolute inset-0 bg-[#09090B]/90 backdrop-blur-xl cursor-pointer"
           />
 
-          {/* CROSS BUTTON OUTSIDE POPUP */}
+          {/* CROSS BUTTON */}
           <motion.button
             initial={{ opacity: 0, scale: 0.5, rotate: -90 }}
             animate={{ opacity: 1, scale: 1, rotate: 0 }}
@@ -376,7 +378,7 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
               delay: 0.1,
             }}
             onClick={onClose}
-            className="fixed top-6 right-6 md:top-8 md:right-8 z-[110] p-3 md:p-4 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white rounded-full transition-all backdrop-blur-xl group hover:scale-110 shadow-2xl"
+            className="fixed top-4 right-4 lg:top-8 lg:right-8 z-[110] p-3 lg:p-4 bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-full transition-all backdrop-blur-xl group hover:scale-110 shadow-2xl"
           >
             <X size={24} strokeWidth={2} />
           </motion.button>
@@ -387,7 +389,7 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className={`relative w-full max-w-6xl aspect-[4/3] md:aspect-[16/9] max-h-[85vh] bg-[#09090b] border border-white/10 rounded-2xl md:rounded-[2rem] flex flex-col z-10 overflow-hidden shadow-[0_0_80px_rgba(0,0,0,0.5)]`}
+            className={`relative w-full h-[100dvh] lg:h-[85vh] lg:max-h-[900px] lg:max-w-6xl lg:aspect-[16/9] bg-[#09090b] lg:border border-white/10 rounded-none lg:rounded-[2rem] flex flex-col z-10 overflow-hidden shadow-[0_0_100px_rgba(0,0,0,0.8)]`}
           >
             {/* BACKGROUND AMBIENT GLOW */}
             {selectedPath && (
@@ -398,57 +400,57 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
 
             {/* SELECTION SCREEN */}
             {!selectedPath ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 relative z-10">
-                <div className="text-center mb-12">
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/5 border border-white/10 mb-6 text-white">
-                    <BookOpen size={32} />
+              <div className="flex-1 flex flex-col items-center justify-center p-6 lg:p-8 relative z-10 overflow-y-auto">
+                <div className="text-center mb-8 lg:mb-12 mt-12 lg:mt-0">
+                  <div className="inline-flex items-center justify-center w-14 h-14 lg:w-16 lg:h-16 rounded-2xl bg-white/5 border border-white/10 mb-6 text-white">
+                    <BookOpen size={28} className="lg:w-8 lg:h-8" />
                   </div>
-                  <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-3">
+                  <h2 className="text-2xl lg:text-4xl font-black text-white tracking-tight mb-3">
                     Interactive System Guide
                   </h2>
-                  <p className="text-zinc-400 max-w-md mx-auto">
+                  <p className="text-zinc-400 max-w-md mx-auto text-sm lg:text-base">
                     Select a module to begin the guided walkthrough. Learn how
                     to navigate your dashboards effectively.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 w-full max-w-3xl pb-8">
                   <button
                     onClick={() => setSelectedPath("enterprise")}
-                    className="group text-left p-8 rounded-3xl bg-[#121214] border border-white/5 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all duration-300 relative overflow-hidden"
+                    className="group text-left p-6 lg:p-8 rounded-3xl bg-[#121214] border border-white/5 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all duration-300 relative overflow-hidden"
                   >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-[50px] rounded-full group-hover:bg-indigo-500/20 transition-colors" />
-                    <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-6 group-hover:scale-110 transition-transform">
-                      <Factory size={28} />
+                    <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-6 group-hover:scale-110 transition-transform">
+                      <Factory size={24} className="lg:w-7 lg:h-7" />
                     </div>
-                    <h3 className="text-2xl font-black text-white mb-2">
+                    <h3 className="text-xl lg:text-2xl font-black text-white mb-2">
                       Enterprise Hub
                     </h3>
-                    <p className="text-sm text-zinc-400 leading-relaxed mb-8">
+                    <p className="text-xs lg:text-sm text-zinc-400 leading-relaxed mb-8">
                       Production cycles, inventory, invoicing, and workforce
                       tracking.
                     </p>
-                    <div className="flex items-center text-xs font-bold uppercase tracking-widest text-indigo-400 gap-2 group-hover:gap-4 transition-all">
+                    <div className="flex items-center text-[10px] lg:text-xs font-bold uppercase tracking-widest text-indigo-400 gap-2 group-hover:gap-4 transition-all">
                       Start Tour <ArrowRight size={16} />
                     </div>
                   </button>
 
                   <button
                     onClick={() => setSelectedPath("transport")}
-                    className="group text-left p-8 rounded-3xl bg-[#121214] border border-white/5 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all duration-300 relative overflow-hidden"
+                    className="group text-left p-6 lg:p-8 rounded-3xl bg-[#121214] border border-white/5 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all duration-300 relative overflow-hidden"
                   >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 blur-[50px] rounded-full group-hover:bg-cyan-500/20 transition-colors" />
-                    <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-6 group-hover:scale-110 transition-transform">
-                      <Truck size={28} />
+                    <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-6 group-hover:scale-110 transition-transform">
+                      <Truck size={24} className="lg:w-7 lg:h-7" />
                     </div>
-                    <h3 className="text-2xl font-black text-white mb-2">
+                    <h3 className="text-xl lg:text-2xl font-black text-white mb-2">
                       Transport Node
                     </h3>
-                    <p className="text-sm text-zinc-400 leading-relaxed mb-8">
+                    <p className="text-xs lg:text-sm text-zinc-400 leading-relaxed mb-8">
                       Fleet logistics, fuel analytics, JCB tracking, and
                       maintenance logs.
                     </p>
-                    <div className="flex items-center text-xs font-bold uppercase tracking-widest text-cyan-400 gap-2 group-hover:gap-4 transition-all">
+                    <div className="flex items-center text-[10px] lg:text-xs font-bold uppercase tracking-widest text-cyan-400 gap-2 group-hover:gap-4 transition-all">
                       Start Tour <ArrowRight size={16} />
                     </div>
                   </button>
@@ -456,16 +458,16 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
               </div>
             ) : (
               /* TOUR SCREEN (WIREFRAME) */
-              <div className="flex-1 flex flex-col h-full relative z-10">
+              <div className="flex-1 flex flex-col h-full relative z-10 overflow-hidden">
                 {/* Fake Browser Header */}
-                <div className="h-10 md:h-12 bg-[#121214] border-b border-white/5 flex items-center justify-between px-4 shrink-0">
+                <div className="h-12 lg:h-14 bg-[#121214] border-b border-white/5 flex items-center justify-between px-4 lg:px-6 shrink-0">
                   <div className="flex gap-2">
                     <div className="w-3 h-3 rounded-full bg-rose-500/50" />
                     <div className="w-3 h-3 rounded-full bg-amber-500/50" />
                     <div className="w-3 h-3 rounded-full bg-emerald-500/50" />
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="text-[10px] font-mono text-zinc-500 font-bold uppercase tracking-widest">
+                    <span className="text-[10px] lg:text-xs font-mono text-zinc-500 font-bold uppercase tracking-widest truncate max-w-[150px] lg:max-w-none">
                       {selectedPath === "enterprise"
                         ? "Enterprise OS Walkthrough"
                         : "Transport Node Walkthrough"}
@@ -476,16 +478,16 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
 
                 {/* Dashboard Layout Area */}
                 <div className="flex-1 flex overflow-hidden bg-[#09090b]">
-                  <div className="flex-1 flex min-w-[800px] h-full relative p-4 gap-4">
-                    {/* SIDEBAR */}
-                    <div className="w-56 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between p-3 relative shrink-0 hidden md:flex">
+                  <div className="flex-1 flex flex-col lg:flex-row w-full h-full relative p-3 lg:p-5 gap-4 lg:gap-6 overflow-y-auto lg:overflow-hidden pb-40 lg:pb-5">
+                    {/* SIDEBAR -> Horizontal Nav on Mobile, Vertical on Desktop */}
+                    <div className="w-full lg:w-64 rounded-xl bg-white/[0.02] border border-white/5 flex flex-row lg:flex-col justify-between p-2 lg:p-4 relative shrink-0">
                       {/* Sidebar Top Nav */}
-                      <div className="space-y-1 relative z-10">
+                      <div className="flex flex-row lg:flex-col gap-2 relative z-10 overflow-x-auto lg:overflow-visible no-scrollbar">
                         <div
-                          className={`h-10 rounded-lg flex items-center px-3 gap-3 ${currentView === "dashboard" ? `bg-${themeColor}-500/10 border border-${themeColor}-500/20` : ""}`}
+                          className={`h-10 lg:h-12 rounded-lg flex items-center justify-center lg:justify-start px-3 lg:px-4 gap-3 shrink-0 ${currentView === "dashboard" ? `bg-${themeColor}-500/10 border border-${themeColor}-500/20` : ""}`}
                         >
                           <Activity
-                            size={16}
+                            size={18}
                             className={
                               currentView === "dashboard"
                                 ? `text-${themeColor}-400`
@@ -493,14 +495,14 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                             }
                           />
                           <div
-                            className={`w-20 h-2 rounded ${currentView === "dashboard" ? "bg-white/30" : "bg-white/10"}`}
+                            className={`w-20 lg:w-28 h-2.5 rounded hidden lg:block ${currentView === "dashboard" ? "bg-white/30" : "bg-white/10"}`}
                           />
                         </div>
                         <div
-                          className={`h-10 rounded-lg flex items-center px-3 gap-3 ${currentView === "table" ? `bg-${themeColor}-500/10 border border-${themeColor}-500/20` : ""}`}
+                          className={`h-10 lg:h-12 rounded-lg flex items-center justify-center lg:justify-start px-3 lg:px-4 gap-3 shrink-0 ${currentView === "table" ? `bg-${themeColor}-500/10 border border-${themeColor}-500/20` : ""}`}
                         >
                           <FileText
-                            size={16}
+                            size={18}
                             className={
                               currentView === "table"
                                 ? `text-${themeColor}-400`
@@ -508,35 +510,32 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                             }
                           />
                           <div
-                            className={`w-24 h-2 rounded ${currentView === "table" ? "bg-white/30" : "bg-white/10"}`}
+                            className={`w-24 lg:w-32 h-2.5 rounded hidden lg:block ${currentView === "table" ? "bg-white/30" : "bg-white/10"}`}
                           />
                         </div>
-                        <div className="h-10 rounded-lg flex items-center px-3 gap-3">
-                          <Users size={16} className="text-zinc-500" />
-                          <div className="w-16 h-2 rounded bg-white/10" />
+                        <div className="h-10 lg:h-12 rounded-lg flex items-center justify-center lg:justify-start px-3 lg:px-4 gap-3 shrink-0">
+                          <Users size={18} className="text-zinc-500" />
+                          <div className="w-16 lg:w-24 h-2.5 rounded hidden lg:block bg-white/10" />
                         </div>
                       </div>
 
                       {/* Sidebar Bottom (Global Actions) */}
-                      <div className="relative pt-4 border-t border-white/5">
+                      <div
+                        className={`relative border-l lg:border-l-0 lg:border-t border-white/5 pl-2 lg:pl-0 lg:pt-4 ml-2 lg:ml-0 flex flex-row lg:flex-col gap-2 items-center lg:items-stretch transition-all duration-300 ${steps[activeStep].anchor === "sidebar-bottom" ? "z-50" : "z-10"}`}
+                      >
                         {steps[activeStep].anchor === "sidebar-bottom" && (
                           <HotspotPulse color={themeColor} />
                         )}
-                        <div className="space-y-1 relative z-10">
-                          <div className="h-10 rounded-lg flex items-center px-3 gap-3">
-                            <Languages size={16} className="text-zinc-500" />
-                            <div className="w-16 h-2 rounded bg-white/10" />
+                        <div className="flex flex-row lg:flex-col gap-2 relative z-10">
+                          <div className="h-10 lg:h-12 rounded-lg flex items-center justify-center lg:justify-start px-3 lg:px-4 gap-3">
+                            <Languages size={18} className="text-zinc-500" />
+                            <div className="w-16 lg:w-24 h-2.5 rounded hidden lg:block bg-white/10" />
                           </div>
-                          <div className="h-10 rounded-lg flex items-center px-3 gap-3">
-                            <ShieldCheck size={16} className="text-zinc-500" />
-                            <div className="w-16 h-2 rounded bg-white/10" />
-                          </div>
-                          <div className="h-10 rounded-lg flex items-center px-3 gap-3">
-                            <LogOut size={16} className="text-zinc-500" />
-                            <div className="w-16 h-2 rounded bg-white/10" />
+                          <div className="h-10 lg:h-12 rounded-lg flex items-center justify-center lg:justify-start px-3 lg:px-4 gap-3">
+                            <LogOut size={18} className="text-zinc-500" />
+                            <div className="w-16 lg:w-24 h-2.5 rounded hidden lg:block bg-white/10" />
                           </div>
                         </div>
-                        {/* Tooltip fixed position upward to prevent cutoff */}
                         <AnimatePresence>
                           {steps[activeStep].anchor === "sidebar-bottom" && (
                             <TourTooltip
@@ -546,7 +545,7 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                               onNext={handleNext}
                               onPrev={handlePrev}
                               themeColor={themeColor}
-                              customClasses="bottom-4 left-[calc(100%+16px)]"
+                              customClasses="lg:!bottom-0 lg:!left-[calc(100%_+_24px)]"
                             />
                           )}
                         </AnimatePresence>
@@ -554,8 +553,7 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                     </div>
 
                     {/* MAIN CONTENT AREA */}
-                    <div className="flex-1 flex flex-col gap-4 relative overflow-hidden">
-                      {/* DYNAMIC VIEWS */}
+                    <div className="flex-1 flex flex-col gap-4 lg:gap-6 relative lg:overflow-hidden">
                       <AnimatePresence mode="wait">
                         {/* VIEW 1: DASHBOARD */}
                         {currentView === "dashboard" && (
@@ -564,30 +562,32 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="flex-1 flex flex-col gap-4 absolute inset-0"
+                            className="flex-1 flex flex-col gap-4 lg:gap-6 lg:absolute inset-0"
                           >
-                            <div className="h-14 flex items-center justify-between shrink-0">
-                              <div className="w-48 h-6 bg-white/10 rounded" />
-                              <div className="flex items-center gap-3">
-                                <div className="w-24 h-8 bg-white/5 rounded-lg" />
+                            <div className="h-10 lg:h-16 flex items-center justify-between shrink-0">
+                              <div className="w-32 lg:w-64 h-5 lg:h-8 bg-white/10 rounded" />
+                              <div className="flex items-center gap-2 lg:gap-4">
+                                <div className="w-16 lg:w-32 h-8 lg:h-10 bg-white/5 rounded-lg" />
                                 <div
-                                  className={`w-24 h-8 bg-${themeColor}-500/20 rounded-lg`}
+                                  className={`w-16 lg:w-32 h-8 lg:h-10 bg-${themeColor}-500/20 rounded-lg`}
                                 />
                               </div>
                             </div>
 
                             {/* Top Stats Cards */}
-                            <div className="grid grid-cols-4 gap-4 relative shrink-0">
+                            <div
+                              className={`grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6 relative shrink-0 transition-all duration-300 ${steps[activeStep].anchor === "top-stats" ? "z-50" : "z-10"}`}
+                            >
                               {steps[activeStep].anchor === "top-stats" && (
                                 <HotspotPulse color={themeColor} />
                               )}
                               {[1, 2, 3, 4].map((i) => (
                                 <div
                                   key={i}
-                                  className="h-24 rounded-xl bg-white/[0.02] border border-white/5 p-4 flex flex-col justify-between"
+                                  className="h-20 lg:h-32 rounded-xl bg-white/[0.02] border border-white/5 p-3 lg:p-5 flex flex-col justify-between"
                                 >
-                                  <div className="w-8 h-8 rounded-lg bg-white/5" />
-                                  <div className="w-1/2 h-4 bg-white/10 rounded" />
+                                  <div className="w-6 h-6 lg:w-10 lg:h-10 rounded-lg bg-white/5" />
+                                  <div className="w-full lg:w-1/2 h-3 lg:h-4 bg-white/10 rounded" />
                                 </div>
                               ))}
 
@@ -600,48 +600,49 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                                     onNext={handleNext}
                                     onPrev={handlePrev}
                                     themeColor={themeColor}
-                                    customClasses="top-[calc(100%+20px)] left-1/2 -translate-x-1/2"
+                                    customClasses="lg:!top-[calc(100%_+_24px)] lg:!left-0 lg:!right-0 lg:mx-auto"
                                   />
                                 )}
                               </AnimatePresence>
                             </div>
 
                             {/* Chart & List */}
-                            <div className="flex-1 flex gap-4 min-h-0">
+                            <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-0">
                               {/* Chart */}
-                              <div className="flex-[2] rounded-xl bg-white/[0.01] border border-white/5 p-4 flex flex-col gap-4">
-                                <div className="w-32 h-4 bg-white/10 rounded" />
-                                <div className="flex-1 flex items-end justify-between gap-2 px-8">
+                              <div className="flex-[2] rounded-xl bg-white/[0.01] border border-white/5 p-4 lg:p-6 flex flex-col gap-4 min-h-[180px] lg:min-h-0">
+                                <div className="w-32 lg:w-48 h-4 lg:h-5 bg-white/10 rounded" />
+                                <div className="flex-1 flex items-end justify-between gap-1 lg:gap-4 px-2 lg:px-12">
                                   {[40, 70, 45, 90, 65, 80].map((h, i) => (
                                     <div
                                       key={i}
                                       style={{ height: `${h}%` }}
-                                      className={`w-12 rounded-t-sm bg-${themeColor}-500/20 border-t border-${themeColor}-500/50`}
+                                      className={`w-8 lg:w-16 rounded-t-sm lg:rounded-t-md bg-${themeColor}-500/20 border-t-2 border-${themeColor}-500/50`}
                                     />
                                   ))}
                                 </div>
                               </div>
 
                               {/* Right List */}
-                              <div className="flex-1 rounded-xl bg-white/[0.02] border border-white/5 p-4 flex flex-col gap-3 relative">
+                              <div
+                                className={`flex-1 rounded-xl bg-white/[0.02] border border-white/5 p-4 lg:p-6 flex flex-col gap-3 lg:gap-4 relative min-h-[200px] lg:min-h-0 transition-all duration-300 ${steps[activeStep].anchor === "right-list" ? "z-50" : "z-10"}`}
+                              >
                                 {steps[activeStep].anchor === "right-list" && (
                                   <HotspotPulse color={themeColor} />
                                 )}
-                                <div className="w-32 h-4 bg-white/10 rounded mb-2" />
+                                <div className="w-32 lg:w-40 h-4 lg:h-5 bg-white/10 rounded mb-2" />
                                 {[1, 2, 3].map((i) => (
                                   <div
                                     key={i}
-                                    className="h-[60px] rounded-lg bg-white/5 flex items-center px-3 gap-3"
+                                    className="h-[50px] lg:h-[72px] rounded-lg bg-white/5 flex items-center px-3 lg:px-4 gap-3 lg:gap-4"
                                   >
-                                    <div className="w-8 h-8 rounded-md bg-white/10 shrink-0" />
+                                    <div className="w-6 h-6 lg:w-10 lg:h-10 rounded-md bg-white/10 shrink-0" />
                                     <div className="flex-1 space-y-2">
-                                      <div className="w-full h-2 bg-white/10 rounded" />
-                                      <div className="w-1/2 h-2 bg-white/5 rounded" />
+                                      <div className="w-full h-2 lg:h-3 bg-white/10 rounded" />
+                                      <div className="w-1/2 h-2 lg:h-3 bg-white/5 rounded" />
                                     </div>
                                   </div>
                                 ))}
 
-                                {/* Fix: Anchor tooltip to bottom-left of the list pointing left, growing upwards */}
                                 <AnimatePresence>
                                   {steps[activeStep].anchor ===
                                     "right-list" && (
@@ -652,7 +653,7 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                                       onNext={handleNext}
                                       onPrev={handlePrev}
                                       themeColor={themeColor}
-                                      customClasses="bottom-0 right-[calc(100%+20px)]"
+                                      customClasses="lg:!top-0 lg:!bottom-0 lg:my-auto lg:!right-[calc(100%_+_24px)] lg:!left-auto lg:h-fit"
                                     />
                                   )}
                                 </AnimatePresence>
@@ -668,21 +669,22 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="flex-1 flex flex-col gap-4 absolute inset-0"
+                            className="flex-1 flex flex-col gap-4 lg:gap-6 lg:absolute inset-0"
                           >
                             {/* Table Controls */}
-                            <div className="flex items-center justify-between shrink-0">
-                              <div className="relative w-72 h-10 bg-white/5 border border-white/10 rounded-lg flex items-center px-3 z-10">
+                            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 shrink-0">
+                              <div
+                                className={`relative w-full lg:w-96 h-10 lg:h-12 bg-white/5 border border-white/10 rounded-lg flex items-center px-3 lg:px-4 transition-all duration-300 ${steps[activeStep].anchor === "table-search" ? "z-50" : "z-10"}`}
+                              >
                                 <Search
-                                  size={16}
-                                  className="text-zinc-500 mr-2"
+                                  size={18}
+                                  className="text-zinc-500 mr-3"
                                 />
-                                <div className="w-24 h-2 bg-white/20 rounded" />
+                                <div className="w-32 lg:w-40 h-2.5 bg-white/20 rounded" />
                                 {steps[activeStep].anchor ===
                                   "table-search" && (
                                   <HotspotPulse color={themeColor} />
                                 )}
-
                                 <AnimatePresence>
                                   {steps[activeStep].anchor ===
                                     "table-search" && (
@@ -693,25 +695,25 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                                       onNext={handleNext}
                                       onPrev={handlePrev}
                                       themeColor={themeColor}
-                                      customClasses="top-[calc(100%+16px)] left-0"
+                                      customClasses="lg:!top-[calc(100%_+_20px)] lg:!left-0 lg:!right-auto lg:!bottom-auto"
                                     />
                                   )}
                                 </AnimatePresence>
                               </div>
 
-                              <div className="flex gap-3">
-                                <div className="relative w-10 h-10 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center">
-                                  <Filter size={16} className="text-zinc-400" />
+                              <div className="flex gap-2 lg:gap-4 w-full lg:w-auto">
+                                <div className="relative w-10 h-10 lg:w-12 lg:h-12 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center shrink-0">
+                                  <Filter size={18} className="text-zinc-400" />
                                 </div>
                                 <div
-                                  className={`relative px-4 h-10 bg-${themeColor}-500/20 border border-${themeColor}-500/30 rounded-lg flex items-center justify-center z-10`}
+                                  className={`relative flex-1 lg:flex-none px-4 lg:px-6 h-10 lg:h-12 bg-${themeColor}-500/20 border border-${themeColor}-500/30 rounded-lg flex items-center justify-center transition-all duration-300 ${steps[activeStep].anchor === "table-export" ? "z-50" : "z-10"}`}
                                 >
                                   <Download
-                                    size={16}
+                                    size={18}
                                     className={`text-${themeColor}-400 mr-2`}
                                   />
                                   <div
-                                    className={`w-12 h-2 bg-${themeColor}-400/50 rounded`}
+                                    className={`w-8 lg:w-16 h-2.5 bg-${themeColor}-400/50 rounded`}
                                   />
                                   {steps[activeStep].anchor ===
                                     "table-export" && (
@@ -727,17 +729,19 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                                         onNext={handleNext}
                                         onPrev={handlePrev}
                                         themeColor={themeColor}
-                                        customClasses="top-[calc(100%+16px)] right-0"
+                                        customClasses="lg:!top-[calc(100%_+_20px)] lg:!right-0 lg:!left-auto lg:!bottom-auto"
                                       />
                                     )}
                                   </AnimatePresence>
                                 </div>
-                                <div className="relative px-4 h-10 bg-rose-500/20 border border-rose-500/30 rounded-lg flex items-center justify-center z-10">
+                                <div
+                                  className={`relative flex-1 lg:flex-none px-4 lg:px-6 h-10 lg:h-12 bg-rose-500/20 border border-rose-500/30 rounded-lg flex items-center justify-center transition-all duration-300 ${steps[activeStep].anchor === "table-wipe" ? "z-50" : "z-10"}`}
+                                >
                                   <Trash2
-                                    size={16}
+                                    size={18}
                                     className="text-rose-400 mr-2"
                                   />
-                                  <div className="w-16 h-2 bg-rose-400/50 rounded" />
+                                  <div className="w-12 lg:w-20 h-2.5 bg-rose-400/50 rounded" />
                                   {steps[activeStep].anchor ===
                                     "table-wipe" && (
                                     <HotspotPulse color="rose" />
@@ -752,7 +756,7 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                                         onNext={handleNext}
                                         onPrev={handlePrev}
                                         themeColor="rose"
-                                        customClasses="top-[calc(100%+16px)] right-0"
+                                        customClasses="lg:!top-[calc(100%_+_20px)] lg:!right-0 lg:!left-auto lg:!bottom-auto"
                                       />
                                     )}
                                   </AnimatePresence>
@@ -761,26 +765,26 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
                             </div>
 
                             {/* Table Body */}
-                            <div className="flex-1 bg-white/[0.02] border border-white/5 rounded-xl flex flex-col overflow-hidden min-h-0">
-                              <div className="h-12 border-b border-white/5 flex items-center px-4 gap-4 bg-white/[0.01] shrink-0">
-                                <div className="w-8 h-3 bg-white/10 rounded" />
-                                <div className="w-32 h-3 bg-white/10 rounded" />
-                                <div className="w-24 h-3 bg-white/10 rounded hidden sm:block" />
+                            <div className="flex-1 bg-white/[0.02] border border-white/5 rounded-xl flex flex-col overflow-hidden min-h-[300px] lg:min-h-0">
+                              <div className="h-10 lg:h-14 border-b border-white/5 flex items-center px-4 lg:px-6 gap-4 lg:gap-6 bg-white/[0.01] shrink-0">
+                                <div className="w-6 lg:w-10 h-2 lg:h-3 bg-white/10 rounded" />
+                                <div className="w-20 lg:w-48 h-2 lg:h-3 bg-white/10 rounded" />
+                                <div className="w-16 lg:w-32 h-2 lg:h-3 bg-white/10 rounded hidden sm:block" />
                                 <div className="flex-1" />
-                                <div className="w-20 h-3 bg-white/10 rounded" />
+                                <div className="w-12 lg:w-24 h-2 lg:h-3 bg-white/10 rounded" />
                               </div>
-                              <div className="p-4 space-y-2 overflow-y-auto custom-scrollbar">
+                              <div className="p-2 lg:p-6 space-y-2 lg:space-y-3 overflow-y-auto custom-scrollbar">
                                 {[1, 2, 3, 4, 5, 6].map((i) => (
                                   <div
                                     key={i}
-                                    className="h-14 bg-white/5 hover:bg-white/10 transition-colors border border-white/5 rounded-lg flex items-center px-4 gap-4"
+                                    className="h-12 lg:h-16 bg-white/5 border border-white/5 rounded-lg flex items-center px-4 lg:px-6 gap-4 lg:gap-6"
                                   >
-                                    <div className="w-8 h-3 bg-white/10 rounded" />
-                                    <div className="w-32 h-3 bg-white/20 rounded" />
-                                    <div className="w-24 h-3 bg-white/10 rounded hidden sm:block" />
+                                    <div className="w-6 lg:w-10 h-2 lg:h-3 bg-white/10 rounded" />
+                                    <div className="w-20 lg:w-48 h-2 lg:h-3 bg-white/20 rounded" />
+                                    <div className="w-16 lg:w-32 h-2 lg:h-3 bg-white/10 rounded hidden sm:block" />
                                     <div className="flex-1" />
                                     <div
-                                      className={`w-20 h-5 bg-${themeColor}-500/20 rounded-full`}
+                                      className={`w-12 lg:w-24 h-4 lg:h-6 bg-${themeColor}-500/20 rounded-full`}
                                     />
                                   </div>
                                 ))}
@@ -798,6 +802,220 @@ const AdminGuideModal = ({ isOpen, onClose }) => {
         </div>
       )}
     </AnimatePresence>
+  );
+};
+
+// --- ANIMATED DASHBOARD COMPONENT ---
+const AnimatedDashboard = () => {
+  const [activeTab, setActiveTab] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveTab((prev) => (prev + 1) % 4);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, []);
+
+  const tabs = [
+    { id: 0, width: "w-16" },
+    { id: 1, width: "w-20" },
+    { id: 2, width: "w-24" },
+    { id: 3, width: "w-16" },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 40 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      className="w-full max-w-5xl mx-auto mb-32 relative perspective-1000"
+    >
+      <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/10 to-transparent rounded-3xl blur-2xl" />
+      <div className="relative bg-[#18181B]/80 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden h-[500px] lg:h-auto lg:aspect-[21/9] flex flex-col">
+        {/* Browser Mockup Header */}
+        <div className="h-10 lg:h-12 border-b border-white/5 flex items-center px-4 lg:px-6 gap-4 bg-white/[0.02] shrink-0">
+          <div className="flex gap-2">
+            <div className="w-2.5 h-2.5 lg:w-3 lg:h-3 rounded-full bg-rose-500/50" />
+            <div className="w-2.5 h-2.5 lg:w-3 lg:h-3 rounded-full bg-amber-500/50" />
+            <div className="w-2.5 h-2.5 lg:w-3 lg:h-3 rounded-full bg-emerald-500/50" />
+          </div>
+          <div className="flex-1" />
+          <div className="w-40 lg:w-64 h-5 lg:h-6 bg-white/5 rounded-md" />
+          <div className="w-6 h-6 lg:w-8 lg:h-8 rounded-full bg-white/10 ml-2 lg:ml-4" />
+        </div>
+
+        {/* Dashboard Layout */}
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 flex flex-col lg:flex-row gap-4 lg:gap-6 overflow-hidden">
+          {/* Navigation - Top horizontal row on mobile, left sidebar on desktop */}
+          <div className="flex lg:w-48 flex-row lg:flex-col gap-2 border-b lg:border-b-0 lg:border-r border-white/5 pb-3 lg:pb-0 lg:pr-6 overflow-x-auto no-scrollbar shrink-0">
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className="relative h-10 rounded-lg flex items-center justify-center lg:justify-start px-4 lg:px-3 gap-3 cursor-default shrink-0"
+              >
+                {activeTab === tab.id && (
+                  <motion.div
+                    layoutId="dashboardActiveTab"
+                    className="absolute inset-0 bg-indigo-500/20 border border-indigo-500/30 rounded-lg"
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  />
+                )}
+                <div
+                  className={`w-4 h-4 rounded shadow-sm relative z-10 transition-colors duration-300 ${activeTab === tab.id ? "bg-indigo-400" : "bg-white/10"}`}
+                />
+                <div
+                  className={`h-2.5 rounded-full relative z-10 transition-colors duration-300 hidden lg:block ${tab.width} ${activeTab === tab.id ? "bg-indigo-100" : "bg-white/20"}`}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex-1 relative">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="absolute inset-0 flex flex-col gap-4 lg:gap-6"
+              >
+                {/* VIEW 0: Stats & Chart */}
+                {activeTab === 0 && (
+                  <>
+                    <div className="flex gap-3 lg:gap-4 h-24 shrink-0">
+                      {[
+                        { color: "bg-indigo-500/20", delay: 0 },
+                        { color: "bg-blue-500/20", delay: 0.1 },
+                        {
+                          color: "bg-emerald-500/20",
+                          delay: 0.2,
+                          hideSm: true,
+                        },
+                      ].map((card, i) => (
+                        <motion.div
+                          key={i}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: card.delay }}
+                          className={`flex-1 bg-white/5 rounded-xl border border-white/5 p-3 lg:p-4 flex flex-col justify-between ${card.hideSm ? "hidden sm:flex" : ""}`}
+                        >
+                          <div
+                            className={`w-6 h-6 lg:w-8 lg:h-8 rounded-lg ${card.color} mb-2`}
+                          />
+                          <div className="w-1/2 h-2 lg:h-3 bg-white/10 rounded" />
+                        </motion.div>
+                      ))}
+                    </div>
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.3 }}
+                      className="flex-1 bg-white/5 rounded-xl border border-white/5 p-4 lg:p-5 flex flex-col gap-4 overflow-hidden"
+                    >
+                      <div className="w-24 lg:w-32 h-3 lg:h-4 bg-white/10 rounded shrink-0" />
+                      <div className="flex-1 border-t border-white/5 pt-4 flex items-end gap-2 lg:gap-3">
+                        {[30, 50, 40, 70, 60, 90, 80].map((h, i) => (
+                          <motion.div
+                            key={i}
+                            initial={{ height: 0 }}
+                            animate={{ height: `${h}%` }}
+                            transition={{ delay: 0.4 + i * 0.05 }}
+                            className="flex-1 bg-gradient-to-t from-indigo-500/40 to-indigo-400/10 rounded-t-md border-t border-indigo-400/50"
+                          />
+                        ))}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+
+                {/* VIEW 1: List View */}
+                {activeTab === 1 && (
+                  <div className="flex-1 bg-white/5 rounded-xl border border-white/5 p-4 lg:p-5 flex flex-col gap-4 overflow-hidden">
+                    <div className="w-32 lg:w-40 h-4 lg:h-5 bg-white/10 rounded mb-2 shrink-0" />
+                    <div className="flex flex-col gap-3 overflow-y-auto no-scrollbar">
+                      {[1, 2, 3, 4].map((row, i) => (
+                        <motion.div
+                          key={row}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: i * 0.1 }}
+                          className="h-12 lg:h-14 rounded-lg bg-white/5 border border-white/5 flex items-center px-3 lg:px-4 gap-3 lg:gap-4 shrink-0"
+                        >
+                          <div className="w-6 h-6 lg:w-8 lg:h-8 rounded-full bg-white/10 shrink-0" />
+                          <div className="w-24 lg:w-32 h-2 lg:h-3 bg-white/10 rounded" />
+                          <div className="flex-1" />
+                          <div className="w-12 lg:w-16 h-3 lg:h-4 bg-emerald-500/20 border border-emerald-500/30 rounded-full shrink-0" />
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* VIEW 2: Kanban Board */}
+                {activeTab === 2 && (
+                  <div className="flex-1 flex gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-2">
+                    {[1, 2, 3].map((col, i) => (
+                      <motion.div
+                        key={col}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.1 }}
+                        className="min-w-[85%] sm:min-w-[calc(50%-8px)] lg:min-w-0 flex-1 bg-white/5 rounded-xl border border-white/5 p-3 lg:p-4 flex flex-col gap-3 snap-center shrink-0"
+                      >
+                        <div className="w-16 lg:w-20 h-3 lg:h-4 bg-white/10 rounded mb-2 shrink-0" />
+                        {[1, 2].map((card) => (
+                          <div
+                            key={card}
+                            className="h-20 lg:h-24 bg-white/5 rounded-lg border border-white/5 p-3 flex flex-col gap-2 shrink-0"
+                          >
+                            <div className="w-full h-2.5 lg:h-3 bg-white/10 rounded" />
+                            <div className="w-2/3 h-2.5 lg:h-3 bg-white/10 rounded" />
+                            <div className="mt-auto flex justify-between items-center">
+                              <div className="w-5 h-5 lg:w-6 lg:h-6 rounded-full bg-white/10" />
+                              <div className="w-10 lg:w-12 h-3 lg:h-4 bg-white/5 rounded" />
+                            </div>
+                          </div>
+                        ))}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+
+                {/* VIEW 3: Settings/Profile */}
+                {activeTab === 3 && (
+                  <div className="flex-1 flex gap-6 overflow-hidden">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="w-1/3 bg-white/5 rounded-xl border border-white/5 p-6 flex flex-col items-center gap-4 hidden sm:flex"
+                    >
+                      <div className="w-20 h-20 lg:w-24 lg:h-24 rounded-full bg-indigo-500/20 border-4 border-white/5 mt-4" />
+                      <div className="w-24 lg:w-32 h-3 lg:h-4 bg-white/10 rounded" />
+                      <div className="w-16 lg:w-20 h-2 lg:h-3 bg-white/5 rounded" />
+                    </motion.div>
+                    <motion.div
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="flex-1 bg-white/5 rounded-xl border border-white/5 p-4 lg:p-6 flex flex-col gap-4 lg:gap-6"
+                    >
+                      <div className="w-32 lg:w-40 h-4 lg:h-5 bg-white/10 rounded shrink-0" />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4 overflow-y-auto no-scrollbar">
+                        <div className="h-10 lg:h-12 bg-white/5 rounded-lg border border-white/5 shrink-0" />
+                        <div className="h-10 lg:h-12 bg-white/5 rounded-lg border border-white/5 shrink-0" />
+                        <div className="h-10 lg:h-12 bg-white/5 rounded-lg border border-white/5 md:col-span-2 shrink-0" />
+                      </div>
+                      <div className="mt-auto h-10 w-full lg:w-32 bg-indigo-500/20 border border-indigo-500/30 rounded-lg lg:self-end shrink-0" />
+                    </motion.div>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+        <div className="absolute bottom-0 inset-x-0 h-16 lg:h-24 bg-gradient-to-t from-[#09090B] to-transparent pointer-events-none" />
+      </div>
+    </motion.div>
   );
 };
 
@@ -957,213 +1175,6 @@ const PublicNavbar = () => {
         </AnimatePresence>
       </div>
     </nav>
-  );
-};
-
-// --- ANIMATED DASHBOARD COMPONENT ---
-const AnimatedDashboard = () => {
-  const [activeTab, setActiveTab] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveTab((prev) => (prev + 1) % 4);
-    }, 2500);
-    return () => clearInterval(interval);
-  }, []);
-
-  const tabs = [
-    { id: 0, width: "w-16" },
-    { id: 1, width: "w-20" },
-    { id: 2, width: "w-24" },
-    { id: 3, width: "w-16" },
-  ];
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 40 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full max-w-5xl mx-auto mb-32 relative perspective-1000"
-    >
-      <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/10 to-transparent rounded-3xl blur-2xl" />
-      <div className="relative bg-[#18181B]/80 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden aspect-[16/9] md:aspect-[21/9] flex flex-col">
-        <div className="h-12 border-b border-white/5 flex items-center px-6 gap-4 bg-white/[0.02]">
-          <div className="flex gap-2">
-            <div className="w-3 h-3 rounded-full bg-rose-500/50" />
-            <div className="w-3 h-3 rounded-full bg-amber-500/50" />
-            <div className="w-3 h-3 rounded-full bg-emerald-500/50" />
-          </div>
-          <div className="flex-1" />
-          <div className="w-64 h-6 bg-white/5 rounded-md" />
-          <div className="w-8 h-8 rounded-full bg-white/10 ml-4" />
-        </div>
-
-        <div className="flex-1 p-6 flex gap-6 overflow-hidden">
-          <div className="w-48 hidden md:flex flex-col gap-2 border-r border-white/5 pr-6">
-            {tabs.map((tab) => (
-              <div
-                key={tab.id}
-                className="relative h-10 rounded-lg flex items-center px-3 gap-3 cursor-default"
-              >
-                {activeTab === tab.id && (
-                  <motion.div
-                    layoutId="sidebarActive"
-                    className="absolute inset-0 bg-indigo-500/20 border border-indigo-500/30 rounded-lg"
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                  />
-                )}
-                <div
-                  className={`w-4 h-4 rounded shadow-sm relative z-10 transition-colors duration-300 ${activeTab === tab.id ? "bg-indigo-400" : "bg-white/10"}`}
-                />
-                <div
-                  className={`h-2.5 rounded-full relative z-10 transition-colors duration-300 ${tab.width} ${activeTab === tab.id ? "bg-indigo-100" : "bg-white/20"}`}
-                />
-              </div>
-            ))}
-          </div>
-
-          <div className="flex-1 relative">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.3 }}
-                className="absolute inset-0 flex flex-col gap-6"
-              >
-                {activeTab === 0 && (
-                  <>
-                    <div className="flex gap-4 h-24 shrink-0">
-                      {[
-                        { color: "bg-indigo-500/20", delay: 0 },
-                        { color: "bg-blue-500/20", delay: 0.1 },
-                        {
-                          color: "bg-emerald-500/20",
-                          delay: 0.2,
-                          hideSm: true,
-                        },
-                      ].map((card, i) => (
-                        <motion.div
-                          key={i}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: card.delay }}
-                          className={`flex-1 bg-white/5 rounded-xl border border-white/5 p-4 flex flex-col justify-between ${card.hideSm ? "hidden sm:flex" : ""}`}
-                        >
-                          <div
-                            className={`w-8 h-8 rounded-lg ${card.color} mb-2`}
-                          />
-                          <div className="w-1/2 h-3 bg-white/10 rounded" />
-                        </motion.div>
-                      ))}
-                    </div>
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.3 }}
-                      className="flex-1 bg-white/5 rounded-xl border border-white/5 p-5 flex flex-col gap-4 overflow-hidden"
-                    >
-                      <div className="w-32 h-4 bg-white/10 rounded shrink-0" />
-                      <div className="flex-1 border-t border-white/5 pt-4 flex items-end gap-3">
-                        {[30, 50, 40, 70, 60, 90, 80].map((h, i) => (
-                          <motion.div
-                            key={i}
-                            initial={{ height: 0 }}
-                            animate={{ height: `${h}%` }}
-                            transition={{ delay: 0.4 + i * 0.05 }}
-                            className="flex-1 bg-gradient-to-t from-indigo-500/40 to-indigo-400/10 rounded-t-md border-t border-indigo-400/50"
-                          />
-                        ))}
-                      </div>
-                    </motion.div>
-                  </>
-                )}
-
-                {activeTab === 1 && (
-                  <div className="flex-1 bg-white/5 rounded-xl border border-white/5 p-5 flex flex-col gap-4 overflow-hidden">
-                    <div className="w-40 h-5 bg-white/10 rounded mb-2 shrink-0" />
-                    <div className="flex flex-col gap-3">
-                      {[1, 2, 3, 4].map((row, i) => (
-                        <motion.div
-                          key={row}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.1 }}
-                          className="h-14 rounded-lg bg-white/5 border border-white/5 flex items-center px-4 gap-4 shrink-0"
-                        >
-                          <div className="w-8 h-8 rounded-full bg-white/10" />
-                          <div className="w-32 h-3 bg-white/10 rounded" />
-                          <div className="flex-1" />
-                          <div className="w-16 h-4 bg-emerald-500/20 border border-emerald-500/30 rounded-full" />
-                        </motion.div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === 2 && (
-                  <div className="flex-1 flex gap-4 overflow-hidden">
-                    {[1, 2, 3].map((col, i) => (
-                      <motion.div
-                        key={col}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.1 }}
-                        className={`flex-1 bg-white/5 rounded-xl border border-white/5 p-4 flex flex-col gap-3 ${i === 2 ? "hidden sm:flex" : ""}`}
-                      >
-                        <div className="w-20 h-4 bg-white/10 rounded mb-2 shrink-0" />
-                        {[1, 2].map((card) => (
-                          <div
-                            key={card}
-                            className="h-24 bg-white/5 rounded-lg border border-white/5 p-3 flex flex-col gap-2 shrink-0"
-                          >
-                            <div className="w-full h-3 bg-white/10 rounded" />
-                            <div className="w-2/3 h-3 bg-white/10 rounded" />
-                            <div className="mt-auto flex justify-between">
-                              <div className="w-6 h-6 rounded-full bg-white/10" />
-                              <div className="w-12 h-4 bg-white/5 rounded" />
-                            </div>
-                          </div>
-                        ))}
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-
-                {activeTab === 3 && (
-                  <div className="flex-1 flex gap-6 overflow-hidden">
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="w-1/3 bg-white/5 rounded-xl border border-white/5 p-6 flex flex-col items-center gap-4 hidden sm:flex"
-                    >
-                      <div className="w-24 h-24 rounded-full bg-indigo-500/20 border-4 border-white/5 mt-4" />
-                      <div className="w-32 h-4 bg-white/10 rounded" />
-                      <div className="w-20 h-3 bg-white/5 rounded" />
-                    </motion.div>
-                    <motion.div
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="flex-1 bg-white/5 rounded-xl border border-white/5 p-6 flex flex-col gap-6"
-                    >
-                      <div className="w-40 h-5 bg-white/10 rounded shrink-0" />
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="h-10 bg-white/5 rounded-lg border border-white/5" />
-                        <div className="h-10 bg-white/5 rounded-lg border border-white/5" />
-                        <div className="h-10 bg-white/5 rounded-lg border border-white/5 col-span-2" />
-                      </div>
-                      <div className="mt-auto h-10 w-32 bg-indigo-500/20 border border-indigo-500/30 rounded-lg self-end shrink-0" />
-                    </motion.div>
-                  </div>
-                )}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </div>
-        <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-[#09090B] to-transparent pointer-events-none" />
-      </div>
-    </motion.div>
   );
 };
 

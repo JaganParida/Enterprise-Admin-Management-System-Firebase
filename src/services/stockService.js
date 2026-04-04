@@ -21,13 +21,13 @@ const stockCollection = collection(db, "stocks");
 const METADATA_COLLECTION = "_system_metadata";
 const WIPE_STATE_KEY = "daily_wipe_state";
 
-// 🚀 CONCEPT 1: GLOBAL MEMORY CACHE (UPGRADED)
+// GLOBAL MEMORY CACHE
 export let memoryCache = {
   data: [],
   lastDoc: null,
   hasMore: true,
   isDirty: true,
-  fullDBLoaded: false, // Tracks if we can do 100% free local searches
+  fullDBLoaded: false,
 };
 
 const applyLocalFilters = (data, filters) => {
@@ -89,7 +89,7 @@ const stockService = {
         memoryCache.fullDBLoaded = false;
       }
 
-      // 🚀 ZERO-READ: Return from RAM if no filters and not dirty
+      // ZERO-READ: Return from RAM if no filters and not dirty
       if (!memoryCache.isDirty && isInitialLoad && noFilters) {
         return {
           data: memoryCache.data.slice(0, limitCount),
@@ -99,10 +99,9 @@ const stockService = {
         };
       }
 
-      // 🚀 SUPER-OPTIMIZATION: 0-Read Local Search if full DB is in RAM
+      // SUPER-OPTIMIZATION: 0-Read Local Search if full DB is in RAM
       if (memoryCache.fullDBLoaded && !forceRefresh) {
         const localFiltered = applyLocalFilters(memoryCache.data, filters);
-        // Simulate pagination locally to prevent UI crash
         const startIndex = lastDoc
           ? memoryCache.data.findIndex((d) => d._id === lastDoc.id) + 1
           : 0;
@@ -124,7 +123,7 @@ const stockService = {
         };
       }
 
-      // Firebase Query Construction (Fallback if not locally filtered)
+      // Server Fetch Construction
       let constraints = [];
       let hasInequality = false;
 
@@ -174,12 +173,10 @@ const stockService = {
       const lastVisible = snapshot.docs[snapshot.docs.length - 1];
       const hasMore = snapshot.docs.length === limitCount;
 
-      // Update RAM Cache ONLY on initial unfiltered load or load-more
       if (noFilters) {
         if (isInitialLoad) {
           memoryCache.data = data;
         } else {
-          // Prevent duplicates
           const existingIds = new Set(memoryCache.data.map((d) => d._id));
           const newUniqueData = data.filter((d) => !existingIds.has(d._id));
           memoryCache.data = [...memoryCache.data, ...newUniqueData];
@@ -187,7 +184,7 @@ const stockService = {
         memoryCache.lastDoc = lastVisible;
         memoryCache.hasMore = hasMore;
         memoryCache.isDirty = false;
-        if (!hasMore) memoryCache.fullDBLoaded = true; // DB is completely in RAM!
+        if (!hasMore) memoryCache.fullDBLoaded = true;
       }
 
       return { data, lastVisible, hasMore, source: "server" };
@@ -209,7 +206,6 @@ const stockService = {
     const docRef = await addDoc(stockCollection, payload);
     const newItem = { _id: docRef.id, id: docRef.id, ...payload };
 
-    // 🚀 CACHE INJECTION: 0 Reads on redirect
     memoryCache.data.unshift(newItem);
     memoryCache.isDirty = false;
 
@@ -217,7 +213,6 @@ const stockService = {
   },
 
   getStockById: async (id) => {
-    // 🚀 ZERO-READ FALLBACK: Check RAM first
     const cachedItem = memoryCache.data.find((item) => item._id === id);
     if (cachedItem) return { data: cachedItem };
 
@@ -230,7 +225,6 @@ const stockService = {
 
   updateStock: async (id, updateData, user) => {
     const docRef = doc(db, "stocks", id);
-    // Since we limit history to 2, we can just grab current state from RAM or force 1 read
     let currentHistory = [];
     const cachedItem = memoryCache.data.find((item) => item._id === id);
 
@@ -264,7 +258,6 @@ const stockService = {
 
     await updateDoc(docRef, payload);
 
-    // 🚀 CACHE INJECTION: Update RAM, avoid server refresh
     memoryCache.data = memoryCache.data.map((item) =>
       item._id === id ? { ...item, ...payload } : item,
     );
@@ -279,16 +272,99 @@ const stockService = {
 
     await deleteDoc(doc(db, "stocks", id));
 
-    // 🚀 CACHE INJECTION: Remove from RAM
     memoryCache.data = memoryCache.data.filter((item) => item._id !== id);
     memoryCache.isDirty = false;
 
     return { message: "Item deleted successfully" };
   },
 
+  // 🚀 FIXED WIPE AUTHENTICATION & BATCHING
   deleteAllStocks: async ({ password, email, user }) => {
-    // Keep exact same logic for Wipe as it inherently needs to query batches to delete
-    // ... [YOUR EXISTING deleteAllStocks CODE HERE] ...
+    try {
+      // 1. Secure Authentication Verification
+      const currentUser = auth.currentUser;
+      if (!currentUser || currentUser.email !== email) {
+        throw new Error("Authentication mismatch. Please log out and back in.");
+      }
+
+      // Re-authenticate to ensure it's actually the admin
+      const credential = EmailAuthProvider.credential(email, password);
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // 2. Daily Limit Guard (10,000 Deletes max per day)
+      const todayString = new Date().toDateString();
+      let wipeState = (await stockService.getWipeState()) || {
+        count: 0,
+        date: todayString,
+        lockedUntil: null,
+      };
+
+      // Reset count if it is a new day
+      if (wipeState.date !== todayString) {
+        wipeState = { count: 0, date: todayString, lockedUntil: null };
+      }
+
+      if (wipeState.lockedUntil && Date.now() < wipeState.lockedUntil) {
+        return {
+          locked: true,
+          message: "Action Locked. 24-hour limit reached.",
+        };
+      }
+
+      if (wipeState.count >= 10000) {
+        wipeState.lockedUntil = Date.now() + 24 * 60 * 60 * 1000;
+        await stockService.setWipeState(wipeState);
+        return {
+          locked: true,
+          message:
+            "10k Daily delete limit hit. Locked for 24h to prevent billing.",
+        };
+      }
+
+      // 3. Batch Deletion Logic
+      let totalDeleted = 0;
+      let hasMore = true;
+      const MAX_UI_SAFE_DELETE = Math.min(10000 - wipeState.count, 5000);
+
+      while (hasMore && totalDeleted < MAX_UI_SAFE_DELETE) {
+        const q = query(stockCollection, limit(500)); // Firebase max batch size is 500
+        const snapshot = await getDocs(q);
+
+        if (snapshot.size === 0) {
+          hasMore = false;
+          break;
+        }
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((document) => {
+          batch.delete(document.ref);
+        });
+
+        await batch.commit();
+        totalDeleted += snapshot.size;
+      }
+
+      // 4. Update Wipe State Quota
+      wipeState.count += totalDeleted;
+      await stockService.setWipeState(wipeState);
+
+      // 5. Clear Memory Cache
+      memoryCache.data = [];
+      memoryCache.lastDoc = null;
+      memoryCache.hasMore = false;
+      memoryCache.isDirty = true;
+      memoryCache.fullDBLoaded = true;
+
+      return { message: `Wiped ${totalDeleted} records securely.` };
+    } catch (error) {
+      if (
+        error.code === "auth/wrong-password" ||
+        error.code === "auth/invalid-credential"
+      ) {
+        throw new Error("Incorrect Admin Password.");
+      }
+      throw new Error("Wipe operation failed: " + error.message);
+    }
   },
 };
 

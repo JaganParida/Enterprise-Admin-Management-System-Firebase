@@ -1001,14 +1001,10 @@ const ProductionReport = () => {
         >
           {/* SEARCH INPUT */}
           <div className="relative w-full xl:w-[320px] group shrink-0">
-            <Search
-              size={14}
-              className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-300 ${localFilters?.search ? "text-indigo-400" : "text-zinc-500 group-hover:text-zinc-400"}`}
-            />
             <input
               type="text"
               placeholder={`Search ${activeTab === "production" ? "product" : "buyer"}...`}
-              className="w-full bg-[#111116] border border-zinc-800/80 rounded-full pl-10 pr-4 py-2 text-xs text-white outline-none transition-all focus:border-indigo-500/50 hover:border-zinc-700/80 placeholder:text-zinc-600 shadow-sm"
+              className="w-full bg-[#111116] border border-zinc-800/80 rounded-full pl-4 pr-10 py-2 text-xs text-white outline-none transition-all focus:border-indigo-500/50 hover:border-zinc-700/80 placeholder:text-zinc-600 shadow-sm"
               value={localFilters?.search || ""}
               onChange={(e) =>
                 setLocalFilters({
@@ -1020,6 +1016,18 @@ const ProductionReport = () => {
                 })
               }
             />
+            <button
+              type="submit"
+              onClick={handleApplyFilters}
+              disabled={!(localFilters?.search || "").trim()}
+              className={`absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-all duration-300 flex items-center justify-center ${
+                (localFilters?.search || "").trim()
+                  ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm"
+                  : "text-zinc-500 opacity-40 cursor-not-allowed pointer-events-none"
+              }`}
+            >
+              <Search size={14} />
+            </button>
           </div>
 
           {/* FILTERS - PILL SHAPES */}
@@ -1130,9 +1138,24 @@ const ProductionReport = () => {
             {/* ✅ MANUAL APPLY BUTTON */}
             <button
               type="submit"
-              className="shrink-0 px-4 py-2 text-[11px] md:text-xs rounded-full flex items-center gap-1 text-white bg-indigo-600 hover:bg-indigo-500 transition-colors font-bold shadow-sm ml-auto xl:ml-0"
+              onClick={handleApplyFilters}
+              disabled={
+                (localFilters?.product || "All") === "All" &&
+                (localFilters?.quantity || "All") === "All" &&
+                (localFilters?.date || "All") === "All" &&
+                !(localFilters?.exactDate || "")
+              }
+              className={`shrink-0 px-4 py-2 text-[11px] md:text-xs rounded-full flex items-center gap-1 font-bold shadow-sm ml-auto xl:ml-0 transition-all duration-300 ${
+                (localFilters?.product || "All") !== "All" ||
+                (localFilters?.quantity || "All") !== "All" ||
+                (localFilters?.date || "All") !== "All" ||
+                localFilters?.exactDate ||
+                ""
+                  ? "text-white bg-indigo-600 hover:bg-indigo-500"
+                  : "text-zinc-500 bg-zinc-800/50 border border-zinc-800/80 opacity-40 cursor-not-allowed pointer-events-none"
+              }`}
             >
-              Apply
+              <Filter size={12} /> Apply Filter
             </button>
 
             {hasActiveFilters && (
