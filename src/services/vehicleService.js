@@ -19,12 +19,19 @@ import {
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
+// 🚀 FIXED: Helper to generate pure local date strings to avoid UTC shifting
+const getLocalDateString = (dateObj) => {
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const day = String(dateObj.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const tripCollection = collection(db, "trips");
 const expenseCollection = collection(db, "expenses");
 
-// 🚀 GLOBAL ZERO-READ CACHE
+// 🚀 GLOBAL RAM CACHE
 let localCache = {
-  stats: null,
   trips: { data: null, lastVisible: null, filtersKey: "" },
   expenses: { data: null, lastVisible: null, filtersKey: "" },
   isDirty: true,
@@ -34,27 +41,19 @@ let localCache = {
 const markDirty = () => {
   localCache.isDirty = true;
   localStorage.setItem("vehicle_last_update", Date.now().toString());
+  localStorage.removeItem("vehicle_stats_cache");
 };
 
 const vehicleService = {
   getLastFetchTime: () => localCache.lastFetchTime,
-  getCachedStats: () => (!localCache.isDirty ? localCache.stats : null),
-  getCachedLogs: (type, filters) => {
-    const key = JSON.stringify(filters);
-    if (
-      !localCache.isDirty &&
-      localCache[type].filtersKey === key &&
-      localCache[type].data
-    ) {
-      return localCache[type].data;
-    }
-    return null;
-  },
 
-  // 1. 🚀 ATOMIC SERVER-SIDE STATS (100% RISK FREE)
   getStats: async (force = false) => {
-    if (!force && !localCache.isDirty && localCache.stats) {
-      return localCache.stats; // 0 Reads!
+    const cachedStatsStr = localStorage.getItem("vehicle_stats_cache");
+    if (!force && !localCache.isDirty && cachedStatsStr) {
+      const parsed = JSON.parse(cachedStatsStr);
+      if (Date.now() - parsed.timestamp < 3600000) {
+        return parsed.data;
+      }
     }
 
     try {
@@ -82,29 +81,46 @@ const vehicleService = {
           count: expSnap.data().expensesCount || 0,
         },
       };
-      localCache.stats = result;
+
+      localStorage.setItem(
+        "vehicle_stats_cache",
+        JSON.stringify({
+          timestamp: Date.now(),
+          data: result,
+        }),
+      );
+
       return result;
     } catch (error) {
-      // 🚨 FIXED: No more fallback `getDocs` that reads the whole database.
-      // Gracefully return cached stats or zeros to protect the Free Tier quota.
       console.warn(
-        "Atomic Aggregation failed. Returning cached stats to protect read limits.",
+        "Stats fetch failed. Returning cached/zero to protect limits.",
       );
-      return (
-        localCache.stats || {
-          trips: { total: 0, paid: 0, due: 0, count: 0 },
-          expenses: { total: 0, count: 0 },
-          error: "Failed to load live stats.",
-        }
-      );
+      const fallback = cachedStatsStr
+        ? JSON.parse(cachedStatsStr).data
+        : {
+            trips: { total: 0, paid: 0, due: 0, count: 0 },
+            expenses: { total: 0, count: 0 },
+          };
+      return fallback;
     }
   },
 
-  // 2. 🚀 PAGINATED & CACHED TRIPS
+  getCachedLogs: (type, filters) => {
+    const key = JSON.stringify(filters);
+    if (
+      !localCache.isDirty &&
+      localCache[type].filtersKey === key &&
+      localCache[type].data
+    ) {
+      return localCache[type].data;
+    }
+    return null;
+  },
+
   getLogs: async (
     filters = {},
     lastVisibleDoc = null,
-    pageSize = 50,
+    pageSize = 25,
     force = false,
   ) => {
     const filterKey = JSON.stringify(filters);
@@ -124,18 +140,36 @@ const vehicleService = {
     }
 
     let constraints = [];
-    let hasInequality = false;
 
-    if (filters.exactDate)
+    if (filters.exactDate) {
       constraints.push(where("date", "==", filters.exactDate));
+    }
 
     if (filters.search) {
       constraints.push(
-        where("vehicleNo", ">=", filters.search),
-        where("vehicleNo", "<=", filters.search + "\uf8ff"),
+        where("vehicleNo", ">=", filters.search.toUpperCase()),
+        where("vehicleNo", "<=", filters.search.toUpperCase() + "\uf8ff"),
         orderBy("vehicleNo"),
       );
-      hasInequality = true;
+    } else if (
+      filters.dateFilter &&
+      filters.dateFilter !== "All" &&
+      !filters.exactDate
+    ) {
+      const today = new Date();
+      let targetDate = new Date();
+
+      // 🚀 FIXED: Date calculation bugs
+      if (filters.dateFilter === "Today")
+        targetDate.setDate(today.getDate() - 0);
+      if (filters.dateFilter === "Last7Days")
+        targetDate.setDate(today.getDate() - 7);
+      if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
+
+      constraints.push(
+        where("date", ">=", getLocalDateString(targetDate)),
+        orderBy("date", "desc"),
+      );
     } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
       if (filters.amountFilter === "Under ₹10k")
         constraints.push(where("totalAmount", "<", 10000));
@@ -147,33 +181,16 @@ const vehicleService = {
       else if (filters.amountFilter === "Over ₹50k")
         constraints.push(where("totalAmount", ">", 50000));
       constraints.push(orderBy("totalAmount", "desc"));
-      hasInequality = true;
-    } else if (
-      filters.dateFilter &&
-      filters.dateFilter !== "All" &&
-      !filters.exactDate
-    ) {
-      const today = new Date();
-      let targetDate = new Date();
-      if (filters.dateFilter === "Today")
-        targetDate.setDate(today.getDate() - 1);
-      if (filters.dateFilter === "Last7Days")
-        targetDate.setDate(today.getDate() - 7);
-      if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
-      constraints.push(
-        where("date", ">=", targetDate.toISOString().split("T")[0]),
-        orderBy("date", "desc"),
-      );
-      hasInequality = true;
+    } else if (!filters.exactDate) {
+      constraints.push(orderBy("date", "desc"));
     }
 
-    if (!hasInequality && !filters.exactDate)
-      constraints.push(orderBy("date", "desc"));
     constraints.push(limit(pageSize));
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
     const q = query(tripCollection, ...constraints);
     const snapshot = await getDocs(q);
+
     const fetchedData = snapshot.docs.map((doc) => ({
       _id: doc.id,
       ...doc.data(),
@@ -190,11 +207,10 @@ const vehicleService = {
     return { data: fetchedData, lastVisible: newLastVisible };
   },
 
-  // 3. 🚀 PAGINATED & CACHED EXPENSES
   getExpenses: async (
     filters = {},
     lastVisibleDoc = null,
-    pageSize = 50,
+    pageSize = 25,
     force = false,
   ) => {
     const filterKey = JSON.stringify(filters);
@@ -214,10 +230,10 @@ const vehicleService = {
     }
 
     let constraints = [];
-    let hasInequality = false;
 
-    if (filters.exactDate)
+    if (filters.exactDate) {
       constraints.push(where("date", "==", filters.exactDate));
+    }
 
     if (filters.search) {
       constraints.push(
@@ -225,7 +241,25 @@ const vehicleService = {
         where("reason", "<=", filters.search + "\uf8ff"),
         orderBy("reason"),
       );
-      hasInequality = true;
+    } else if (
+      filters.dateFilter &&
+      filters.dateFilter !== "All" &&
+      !filters.exactDate
+    ) {
+      const today = new Date();
+      let targetDate = new Date();
+
+      // 🚀 FIXED: Date calculation bugs
+      if (filters.dateFilter === "Today")
+        targetDate.setDate(today.getDate() - 0);
+      if (filters.dateFilter === "Last7Days")
+        targetDate.setDate(today.getDate() - 7);
+      if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
+
+      constraints.push(
+        where("date", ">=", getLocalDateString(targetDate)),
+        orderBy("date", "desc"),
+      );
     } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
       if (filters.amountFilter === "Under ₹10k")
         constraints.push(where("amount", "<", 10000));
@@ -237,33 +271,16 @@ const vehicleService = {
       else if (filters.amountFilter === "Over ₹50k")
         constraints.push(where("amount", ">", 50000));
       constraints.push(orderBy("amount", "desc"));
-      hasInequality = true;
-    } else if (
-      filters.dateFilter &&
-      filters.dateFilter !== "All" &&
-      !filters.exactDate
-    ) {
-      const today = new Date();
-      let targetDate = new Date();
-      if (filters.dateFilter === "Today")
-        targetDate.setDate(today.getDate() - 1);
-      if (filters.dateFilter === "Last7Days")
-        targetDate.setDate(today.getDate() - 7);
-      if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
-      constraints.push(
-        where("date", ">=", targetDate.toISOString().split("T")[0]),
-        orderBy("date", "desc"),
-      );
-      hasInequality = true;
+    } else if (!filters.exactDate) {
+      constraints.push(orderBy("date", "desc"));
     }
 
-    if (!hasInequality && !filters.exactDate)
-      constraints.push(orderBy("date", "desc"));
     constraints.push(limit(pageSize));
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
     const q = query(expenseCollection, ...constraints);
     const snapshot = await getDocs(q);
+
     const fetchedData = snapshot.docs.map((doc) => ({
       _id: doc.id,
       ...doc.data(),
@@ -280,7 +297,6 @@ const vehicleService = {
     return { data: fetchedData, lastVisible: newLastVisible };
   },
 
-  // 4. 🚀 SECURE BACKUP CHUNKER (Max 2,000 Limit for Safety)
   getBackupChunk: async (monthToFetch, type, maxAllowed) => {
     const collectionRef = type === "trips" ? tripCollection : expenseCollection;
     const storedLastDocId = localStorage.getItem(
@@ -291,7 +307,6 @@ const vehicleService = {
       where("date", ">=", monthToFetch),
       where("date", "<=", monthToFetch + "\uf8ff"),
       orderBy("date", "asc"),
-      // 🚨 FIXED: Hard capped at 2,000 reads to prevent API abuse
       limit(Math.min(maxAllowed, 2000)),
     ];
 
@@ -357,7 +372,7 @@ const vehicleService = {
       at: new Date().toISOString(),
     };
     currentHistory.push(currentEdit);
-    if (currentHistory.length > 2) currentHistory = currentHistory.slice(-2); // 🚀 TOP 2 LIMIT
+    if (currentHistory.length > 2) currentHistory = currentHistory.slice(-2);
 
     const qty = Number(payload.quantity) || 0;
     const rate = Number(payload.rate) || 0;
@@ -414,7 +429,7 @@ const vehicleService = {
       at: new Date().toISOString(),
     };
     currentHistory.push(currentEdit);
-    if (currentHistory.length > 2) currentHistory = currentHistory.slice(-2); // 🚀 TOP 2 LIMIT
+    if (currentHistory.length > 2) currentHistory = currentHistory.slice(-2);
 
     await updateDoc(docRef, {
       ...payload,
@@ -443,7 +458,6 @@ const vehicleService = {
     return { message: "Deleted" };
   },
 
-  // 5. 🚀 ATOMIC CHUNKED DELETE (Max 5,000 daily limit for safety)
   deleteAllLogs: async ({ password, type = "trips", email }) => {
     const today = new Date().toISOString().split("T")[0];
     const wipeKey = `vehicle_wipe_meta_${type}`;
@@ -451,7 +465,6 @@ const vehicleService = {
       localStorage.getItem(wipeKey) || '{"date":"","count":0}',
     );
 
-    // 🚨 FIXED: Lowered limits to 5,000 for strict safety
     if (wipeMeta.date === today && wipeMeta.count >= 5000) {
       throw new Error(
         "Daily Wipe Limit Reached (5,000 records). Action locked for 24 hours to protect database limits.",
@@ -475,7 +488,7 @@ const vehicleService = {
 
     let totalDeleted = 0;
     let hasMore = true;
-    const maxAllowed = 5000 - wipeMeta.count; // 🚨 Safe Cap
+    const maxAllowed = 5000 - wipeMeta.count;
     const targetCollection =
       type === "expenses" ? expenseCollection : tripCollection;
 
