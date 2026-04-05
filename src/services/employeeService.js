@@ -24,7 +24,7 @@ import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 const empCollection = collection(db, "employees");
 const salaryCollection = collection(db, "salaryPayments");
 const statsDocRef = doc(db, "systemStats", "employees");
-const dailyLimitsRef = doc(db, "systemStats", "dailyLimits"); // 🚀 GLOBAL LIMIT TRACKER
+const dailyLimitsRef = doc(db, "systemStats", "dailyLimits");
 
 const getLocalISTDate = () => {
   const date = new Date();
@@ -32,11 +32,9 @@ const getLocalISTDate = () => {
   return new Date(date.getTime() - offset).toISOString();
 };
 
-// 🚀 GLOBAL ZERO-READ CACHE
 let memoryCache = {
   stats: null,
-  employees: null,
-  empFiltersKey: "",
+  queries: {},
   salaryLogs: null,
   isDirty: true,
   lastFetchTime: 0,
@@ -48,24 +46,19 @@ const markDirty = () => {
 };
 
 const silentCacheUpdate = (target, action, payloadObj) => {
-  if (target === "EMPLOYEE" && memoryCache.employees) {
-    if (action === "ADD") {
-      memoryCache.employees.unshift(payloadObj);
-      if (memoryCache.employees.length > 50) memoryCache.employees.pop();
-    } else if (action === "EDIT") {
-      const idx = memoryCache.employees.findIndex(
-        (e) => e._id === payloadObj._id,
-      );
-      if (idx > -1)
-        memoryCache.employees[idx] = {
-          ...memoryCache.employees[idx],
-          ...payloadObj,
-        };
-    } else if (action === "DELETE") {
-      memoryCache.employees = memoryCache.employees.filter(
-        (e) => e._id !== payloadObj._id,
-      );
-    }
+  if (target === "EMPLOYEE") {
+    Object.keys(memoryCache.queries).forEach((key) => {
+      let list = memoryCache.queries[key];
+      if (action === "ADD") {
+        list.unshift(payloadObj);
+        if (list.length > 50) list.pop();
+      } else if (action === "EDIT") {
+        const idx = list.findIndex((e) => e._id === payloadObj._id);
+        if (idx > -1) list[idx] = { ...list[idx], ...payloadObj };
+      } else if (action === "DELETE") {
+        memoryCache.queries[key] = list.filter((e) => e._id !== payloadObj._id);
+      }
+    });
   }
 
   if (target === "SALARY" && memoryCache.salaryLogs) {
@@ -79,7 +72,6 @@ const silentCacheUpdate = (target, action, payloadObj) => {
   localStorage.setItem("emp_last_update", Date.now().toString());
 };
 
-// 🚀 HELPER: Check Global Limits to prevent multiple admins bypassing limits
 const checkGlobalLimits = async (type, requestedAmount) => {
   const today = new Date().toISOString().split("T")[0];
   const snap = await getDoc(dailyLimitsRef);
@@ -88,16 +80,15 @@ const checkGlobalLimits = async (type, requestedAmount) => {
     : { date: today, wipeCount: 0, backupCount: 0 };
 
   if (data.date !== today) {
-    data = { date: today, wipeCount: 0, backupCount: 0 }; // Reset for new day
+    data = { date: today, wipeCount: 0, backupCount: 0 };
   }
 
   const currentCount = type === "WIPE" ? data.wipeCount : data.backupCount;
-  // Limit Wipes to 5k (5k reads + 5k deletes) and Backups to 10k (10k reads) globally per day
-  const maxAllowed = type === "WIPE" ? 5000 : 10000;
+  const maxAllowed = type === "WIPE" ? 500 : 1000;
 
   if (currentCount + requestedAmount > maxAllowed) {
     throw new Error(
-      `Global daily limit reached for ${type}. Try again tomorrow to protect Free Tier limits.`,
+      `Global daily limit reached for ${type} (${maxAllowed} ops). Try again tomorrow.`,
     );
   }
 
@@ -114,16 +105,15 @@ const updateGlobalLimits = async (type, amountAdded, today) => {
 const employeeService = {
   getLastFetchTime: () => memoryCache.lastFetchTime,
   getCachedStats: () => (!memoryCache.isDirty ? memoryCache.stats : null),
+
   getCachedEmployees: (filters) => {
     const key = JSON.stringify(filters);
-    if (
-      !memoryCache.isDirty &&
-      memoryCache.empFiltersKey === key &&
-      memoryCache.employees
-    )
-      return memoryCache.employees;
+    if (!memoryCache.isDirty && memoryCache.queries[key]) {
+      return memoryCache.queries[key];
+    }
     return null;
   },
+
   getCachedSalaryLogs: () =>
     !memoryCache.isDirty ? memoryCache.salaryLogs : null,
 
@@ -140,10 +130,9 @@ const employeeService = {
       !forceRefresh &&
       !memoryCache.isDirty &&
       !isLoadMore &&
-      memoryCache.employees &&
-      memoryCache.empFiltersKey === filterKey
+      memoryCache.queries[filterKey]
     ) {
-      return { data: memoryCache.employees, lastVisible: null };
+      return { data: memoryCache.queries[filterKey], lastVisible: null };
     }
 
     let constraints = [];
@@ -151,8 +140,12 @@ const employeeService = {
 
     if (filters.status && filters.status !== "All")
       constraints.push(where("status", "==", filters.status));
-    if (filters.salary === "No Salary Taken")
-      constraints.push(where("salaryTaken", "==", 0));
+
+    // 🟢 FIXED: Now catches 0 (Number), "0" (String), "" (Empty String), and null.
+    if (filters.salary === "No Salary Taken") {
+      constraints.push(where("salaryTaken", "in", [0, "0", "", null]));
+      hasInequality = true;
+    }
 
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
@@ -193,14 +186,13 @@ const employeeService = {
       const q = query(empCollection, ...constraints);
       let snapshot;
 
-      // 🚀 AGGRESSIVE CACHE: Attempt cache first if fetched within last 5 mins and not forcing
       const timeSinceFetch = Date.now() - memoryCache.lastFetchTime;
       if (!forceRefresh && timeSinceFetch < 300000) {
         try {
           snapshot = await getDocsFromCache(q);
           if (snapshot.empty && !isLoadMore) throw new Error("Cache Empty");
         } catch (err) {
-          snapshot = await getDocsFromServer(q); // Fallback to server
+          snapshot = await getDocsFromServer(q);
         }
       } else {
         snapshot = await getDocsFromServer(q);
@@ -210,8 +202,7 @@ const employeeService = {
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
       if (!isLoadMore) {
-        memoryCache.employees = data;
-        memoryCache.empFiltersKey = filterKey;
+        memoryCache.queries[filterKey] = data;
         memoryCache.isDirty = false;
         memoryCache.lastFetchTime = Date.now();
       }
@@ -226,8 +217,10 @@ const employeeService = {
     let constraints = [];
     if (filters.status && filters.status !== "All")
       constraints.push(where("status", "==", filters.status));
+
+    // 🟢 FIXED for Dashboard Stats too
     if (filters.salary === "No Salary Taken")
-      constraints.push(where("salaryTaken", "==", 0));
+      constraints.push(where("salaryTaken", "in", [0, "0", "", null]));
 
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
@@ -251,11 +244,6 @@ const employeeService = {
         salaryTakenSum: snapshot.data().totalSalaryTaken,
       };
     } catch (error) {
-      // 🚀 RISK ELIMINATED: No more manual getDocs() fallback.
-      // If aggregation fails, return null. Safe & Zero Reads.
-      console.warn(
-        "Aggregation failed. Safe mode: Returning null to protect read quota.",
-      );
       return null;
     }
   },
@@ -352,7 +340,6 @@ const employeeService = {
       throw new Error("Incorrect Admin Password.");
     }
 
-    // 🚀 GLOBAL LIMIT CHECK (Max 5000 wipes per day globally to save 10k ops)
     const { today, currentCount, maxAllowed } = await checkGlobalLimits(
       "WIPE",
       500,
@@ -367,7 +354,7 @@ const employeeService = {
         empCollection,
         limit(Math.min(500, remainingQuota - totalDeleted)),
       );
-      const snapshot = await getDocsFromServer(q); // Force server to ensure exact sync
+      const snapshot = await getDocsFromServer(q);
       if (snapshot.empty) break;
 
       const batch = writeBatch(db);
@@ -385,7 +372,7 @@ const employeeService = {
     if (totalDeleted >= remainingQuota && hasMore) {
       return {
         isPartial: true,
-        message: `Global Free Tier limit reached. ${totalDeleted} deleted. Remaining ops locked until tomorrow.`,
+        message: `Wiped ${totalDeleted}. Strict 500/day limit reached to protect Firebase Quota.`,
       };
     }
 
@@ -397,16 +384,14 @@ const employeeService = {
   },
 
   getBackupChunk: async (monthToFetch, limitCount, lastDocId = null) => {
-    // 🚀 GLOBAL LIMIT CHECK for Backups
     const { today, currentCount, maxAllowed } = await checkGlobalLimits(
       "BACKUP",
       limitCount,
     );
 
-    // Adjust requested limit if approaching daily quota
     const safeLimitCount = Math.min(limitCount, maxAllowed - currentCount);
     if (safeLimitCount <= 0)
-      throw new Error("Global 10k backup limit reached for today.");
+      throw new Error("Global 1,000 backup limit reached for today.");
 
     let constraints = [
       where("createdAt", ">=", `${monthToFetch}-01`),
@@ -429,7 +414,6 @@ const employeeService = {
     const snapshot = await getDocsFromServer(q);
     const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
 
-    // Record usage globally
     if (data.length > 0) {
       await updateGlobalLimits("BACKUP", data.length, today);
     }
@@ -472,15 +456,18 @@ const employeeService = {
       },
     });
 
-    if (paymentData.employeeId && memoryCache.employees) {
-      const targetEmp = memoryCache.employees.find(
-        (e) => e._id === paymentData.employeeId,
-      );
-      if (targetEmp)
-        silentCacheUpdate("EMPLOYEE", "EDIT", {
-          ...targetEmp,
-          salaryTaken: targetEmp.salaryTaken + Number(paymentData.amount),
-        });
+    if (paymentData.employeeId) {
+      Object.keys(memoryCache.queries).forEach((key) => {
+        const targetEmp = memoryCache.queries[key].find(
+          (e) => e._id === paymentData.employeeId,
+        );
+        if (targetEmp) {
+          silentCacheUpdate("EMPLOYEE", "EDIT", {
+            ...targetEmp,
+            salaryTaken: targetEmp.salaryTaken + Number(paymentData.amount),
+          });
+        }
+      });
     }
     return { data: newObj };
   },
