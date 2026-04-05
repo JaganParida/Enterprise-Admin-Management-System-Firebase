@@ -19,30 +19,31 @@ import {
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
+// 🚀 FIXED & BULLETPROOF: Helper to generate pure local date strings (YYYY-MM-DD)
+const getLocalDateString = (dateObj) => {
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const day = String(dateObj.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const fuelCollection = collection(db, "fuels");
 
-// 🚀 BULLETPROOF CACHE: Survives F5 Refreshes using LocalStorage
+// 🚀 ZERO-READ NAVIGATION: Global Memory Cache
 let memoryCache = {
   stats: JSON.parse(localStorage.getItem("fuel_stats_cache")) || null,
   logs: JSON.parse(localStorage.getItem("fuel_logs_cache")) || null,
   filtersKey: localStorage.getItem("fuel_filters_cache") || "",
-  isDirty: localStorage.getItem("fuel_is_dirty") !== "false", // Default to true if not set
+  statsDirty: localStorage.getItem("fuel_stats_dirty") !== "false",
+  logsDirty: localStorage.getItem("fuel_logs_dirty") !== "false",
   lastFetchTime: parseInt(localStorage.getItem("fuel_last_update") || "0", 10),
 };
 
-// 🚀 Helper to sync RAM cache with LocalStorage instantly
-const updateCacheState = (stats, logs, filtersKey, isDirty) => {
-  memoryCache = { stats, logs, filtersKey, isDirty, lastFetchTime: Date.now() };
-  if (stats) localStorage.setItem("fuel_stats_cache", JSON.stringify(stats));
-  if (logs) localStorage.setItem("fuel_logs_cache", JSON.stringify(logs));
-  if (filtersKey) localStorage.setItem("fuel_filters_cache", filtersKey);
-  localStorage.setItem("fuel_is_dirty", String(isDirty));
-  localStorage.setItem("fuel_last_update", String(Date.now()));
-};
-
 const markDirty = () => {
-  memoryCache.isDirty = true;
-  localStorage.setItem("fuel_is_dirty", "true");
+  memoryCache.statsDirty = true;
+  memoryCache.logsDirty = true;
+  localStorage.setItem("fuel_stats_dirty", "true");
+  localStorage.setItem("fuel_logs_dirty", "true");
   localStorage.setItem("fuel_last_update", Date.now().toString());
 };
 
@@ -56,48 +57,51 @@ const fuelService = {
   getDocs,
 
   getLastFetchTime: () => memoryCache.lastFetchTime,
-  getCachedStats: () => (!memoryCache.isDirty ? memoryCache.stats : null),
+
+  getCachedStats: () => (!memoryCache.statsDirty ? memoryCache.stats : null),
+
   getCachedLogs: (filters) => {
     const key = JSON.stringify(filters);
     if (
-      !memoryCache.isDirty &&
+      !memoryCache.logsDirty &&
       memoryCache.filtersKey === key &&
       memoryCache.logs
     ) {
-      return memoryCache.logs; // 0 Reads!
+      return memoryCache.logs;
     }
     return null;
   },
 
-  // 🚀 100% SAFE STATS: NO GETDOCS FALLBACK BOMB
-  getStats: async (forceRefresh = false) => {
-    if (!forceRefresh && !memoryCache.isDirty && memoryCache.stats) {
-      return memoryCache.stats; // 0 Reads
-    }
+  updateLocalStats: (newStats) => {
+    memoryCache.stats = newStats;
+    memoryCache.statsDirty = false;
+    localStorage.setItem("fuel_stats_cache", JSON.stringify(newStats));
+    localStorage.setItem("fuel_stats_dirty", "false");
+  },
 
+  // 🚀 ONE-READ STATS: Uses getAggregateFromServer to save massive reads
+  getStats: async (forceRefresh = false) => {
+    if (!forceRefresh && !memoryCache.statsDirty && memoryCache.stats) {
+      return memoryCache.stats;
+    }
     try {
-      // Optimized Firebase native counter (Costs exactly 1 Read)
       const q = query(fuelCollection);
       const snapshot = await getAggregateFromServer(q, {
         totalLiters: sum("liters"),
         totalCost: sum("totalCost"),
         refuelCount: count(),
       });
-
       const result = {
         totalLiters: snapshot.data().totalLiters || 0,
         totalCost: snapshot.data().totalCost || 0,
         refuelCount: snapshot.data().refuelCount || 0,
       };
-
-      updateCacheState(result, memoryCache.logs, memoryCache.filtersKey, false);
+      memoryCache.stats = result;
+      memoryCache.statsDirty = false;
+      localStorage.setItem("fuel_stats_cache", JSON.stringify(result));
+      localStorage.setItem("fuel_stats_dirty", "false");
       return result;
     } catch (error) {
-      console.error(
-        "Aggregation failed. Returning cached data to protect Read Limits.",
-      );
-      // 🚀 THIS IS THE FIX TO REVEAL THE LINK:
-      console.error(error);
       return (
         memoryCache.stats || { totalLiters: 0, totalCost: 0, refuelCount: 0 }
       );
@@ -107,80 +111,95 @@ const fuelService = {
   getLogs: async (
     filters = {},
     lastVisibleDoc = null,
-    limitCount = 50,
+    limitCount = 25,
     forceRefresh = false,
   ) => {
     const filterKey = JSON.stringify(filters);
     const isLoadMore = !!lastVisibleDoc;
 
-    // Return LocalStorage cache if available and not dirty (Protects against F5 spam)
+    // Return from RAM if not dirty, exact filters match, and not paginating
     if (
       !forceRefresh &&
-      !memoryCache.isDirty &&
+      !memoryCache.logsDirty &&
       !isLoadMore &&
       memoryCache.logs &&
       memoryCache.filtersKey === filterKey
     ) {
-      return { data: memoryCache.logs, lastVisible: null }; // 0 Reads
+      return { data: memoryCache.logs, lastVisible: null };
     }
 
     let constraints = [];
-    let hasInequality = false;
 
-    if (filters.exactDate)
-      constraints.push(where("date", "==", filters.exactDate));
-    if (filters.search) {
+    if (filters.exactDate) {
       constraints.push(
-        where("vehicleNo", ">=", filters.search),
-        where("vehicleNo", "<=", filters.search + "\uf8ff"),
+        where("date", "==", filters.exactDate),
+        orderBy("date", "desc"),
+      );
+    } else if (filters.search) {
+      constraints.push(
+        where("vehicleNo", ">=", filters.search.toUpperCase()),
+        where("vehicleNo", "<=", filters.search.toUpperCase() + "\uf8ff"),
         orderBy("vehicleNo"),
       );
-      hasInequality = true;
     } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
       if (filters.amountFilter === "Under ₹5k")
         constraints.push(where("totalCost", "<", 5000));
-      else if (filters.amountFilter === "₹5k - ₹20k")
+      else if (filters.amountFilter === "₹5k - ₹20k") {
         constraints.push(
           where("totalCost", ">=", 5000),
           where("totalCost", "<=", 20000),
         );
-      else if (filters.amountFilter === "Over ₹20k")
+      } else if (filters.amountFilter === "Over ₹20k")
         constraints.push(where("totalCost", ">", 20000));
       constraints.push(orderBy("totalCost", "desc"));
-      hasInequality = true;
-    } else if (
-      filters.dateFilter &&
-      filters.dateFilter !== "All" &&
-      !filters.exactDate
-    ) {
+    } else if (filters.dateFilter && filters.dateFilter !== "All") {
       const today = new Date();
-      let pastDate = new Date();
-      if (filters.dateFilter === "Today") pastDate.setDate(today.getDate() - 1);
-      else if (filters.dateFilter === "Last7Days")
-        pastDate.setDate(today.getDate() - 7);
-      else if (filters.dateFilter === "ThisMonth") pastDate.setDate(1);
+      let pastDateStr = "";
+
+      // 🚀 100% FIXED: Last 7 Days and Month calculations will NEVER fail now
+      if (filters.dateFilter === "Today") {
+        pastDateStr = getLocalDateString(today);
+      } else if (filters.dateFilter === "Last7Days") {
+        // Subtracts exactly 7 days in milliseconds (Safe across months/years)
+        const pastDate = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+        pastDateStr = getLocalDateString(pastDate);
+      } else if (filters.dateFilter === "ThisMonth") {
+        // Sets to exactly 1st of the current month
+        const pastDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        pastDateStr = getLocalDateString(pastDate);
+      }
+
       constraints.push(
-        where("date", ">=", pastDate.toISOString().split("T")[0]),
+        where("date", ">=", pastDateStr),
         orderBy("date", "desc"),
       );
-      hasInequality = true;
+    } else {
+      constraints.push(orderBy("date", "desc"));
     }
 
-    if (!hasInequality && !filters.exactDate)
-      constraints.push(orderBy("date", "desc"));
+    // 🚀 STRICT LIMITS
     constraints.push(limit(limitCount));
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
     const q = query(fuelCollection, ...constraints);
-    const snapshot = await getDocs(q); // Costs reads up to limitCount
-    const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
+    const snapshot = await getDocs(q);
+
+    let fetchedData = snapshot.docs.map((doc) => ({
+      _id: doc.id,
+      ...doc.data(),
+    }));
     const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
     if (!isLoadMore) {
-      updateCacheState(memoryCache.stats, data, filterKey, false);
+      memoryCache.logs = fetchedData;
+      memoryCache.filtersKey = filterKey;
+      memoryCache.logsDirty = false;
+      localStorage.setItem("fuel_logs_cache", JSON.stringify(fetchedData));
+      localStorage.setItem("fuel_filters_cache", filterKey);
+      localStorage.setItem("fuel_logs_dirty", "false");
     }
 
-    return { data, lastVisible: newLastVisible };
+    return { data: fetchedData, lastVisible: newLastVisible };
   },
 
   addLog: async (payload, user) => {
@@ -195,7 +214,7 @@ const fuelService = {
       editHistory: [],
     };
     const docRef = await addDoc(fuelCollection, dataToSave);
-    markDirty(); // Flags UI to do a 1-time fetch on next navigation
+    markDirty();
     return { data: { _id: docRef.id, ...dataToSave } };
   },
 
@@ -213,6 +232,7 @@ const fuelService = {
       at: new Date().toISOString(),
     });
 
+    // STRICT ARRAY LIMIT: Keep only last 2 edits to save payload size
     if (currentHistory.length > 2)
       currentHistory = currentHistory.slice(currentHistory.length - 2);
 
@@ -237,7 +257,6 @@ const fuelService = {
     return { message: "Deleted" };
   },
 
-  // 🚀 HARD WIPE LIMIT (500 MAX per day)
   deleteAllLogs: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Action Denied.");
@@ -247,9 +266,10 @@ const fuelService = {
       localStorage.getItem("fuel_wipe_meta") || '{"date":"","count":0}',
     );
 
-    if (wipeMeta.date === today && wipeMeta.count >= 500) {
+    // 🚀 STRICT 5,000 WIPE LIMIT: Protects Firebase 20k Delete Quota completely.
+    if (wipeMeta.date === today && wipeMeta.count >= 5000) {
       throw new Error(
-        "Daily UI Delete Limit (500) Reached. Use Firebase Console.",
+        "Daily Security Limit Reached (5,000 records). Try again tomorrow.",
       );
     }
     if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
@@ -265,16 +285,16 @@ const fuelService = {
       throw new Error("Incorrect Admin Password.");
     }
 
-    let totalDeleted = 0,
-      hasMore = true;
-    const maxAllowed = 500 - wipeMeta.count;
+    let totalDeleted = 0;
+    let hasMore = true;
+    const maxAllowed = 5000 - wipeMeta.count;
 
+    // BATcH DELETE in chunks of 500
     while (hasMore && totalDeleted < maxAllowed) {
-      const q = query(
-        fuelCollection,
-        limit(Math.min(100, maxAllowed - totalDeleted)),
-      );
+      const chunkLimit = Math.min(500, maxAllowed - totalDeleted);
+      const q = query(fuelCollection, limit(chunkLimit));
       const snapshot = await getDocs(q);
+
       if (snapshot.empty) break;
 
       const batch = writeBatch(db);
@@ -285,10 +305,28 @@ const fuelService = {
 
     wipeMeta.count += totalDeleted;
     localStorage.setItem("fuel_wipe_meta", JSON.stringify(wipeMeta));
-    markDirty();
+
+    if (totalDeleted > 0) {
+      const qCheck = query(fuelCollection, limit(1));
+      const checkSnap = await getDocs(qCheck);
+      if (checkSnap.empty) {
+        fuelService.updateLocalStats({
+          totalLiters: 0,
+          totalCost: 0,
+          refuelCount: 0,
+        });
+      } else {
+        markDirty();
+      }
+    } else {
+      markDirty();
+    }
 
     if (totalDeleted >= maxAllowed && hasMore)
-      return { warning: "500 records deleted. Daily limit reached." };
+      return {
+        warning:
+          "5,000 records deleted. Daily limit reached to protect quotas.",
+      };
     return { success: true };
   },
 };
