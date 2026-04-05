@@ -1,17 +1,14 @@
 import React from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import Loader from "../components/common/Loader"; // 👈 1. Loader import kiya
 
 const PrivateRoute = () => {
   const { admin, loading } = useAuth();
 
-  // 1. If Auth is still loading, show nothing (or a spinner) instead of crashing
+  // 1. If Auth is still loading, show our premium futuristic loader
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#020403] flex items-center justify-center text-emerald-500">
-        Loading...
-      </div>
-    );
+    return <Loader fullScreen={true} text="AUTHENTICATING SESSION" />; // 👈 2. Green div hata kar apna dark theme loader laga diya
   }
 
   // 2. If no admin is found, kick them back to login
