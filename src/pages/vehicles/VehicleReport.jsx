@@ -29,9 +29,10 @@ import {
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { db } from "../../config/firebase";
 
 const MAX_RECORDS_LIMIT = 5000;
-const PAGE_SIZE = 25;
 
 const getPreviousMonthString = () => {
   const d = new Date();
@@ -53,7 +54,10 @@ const VehicleReport = () => {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState("trips");
 
+  // 🚀 ACTUAL DB QUERY FILTERS
   const [filters, setFilters] = useState(defaultFilters);
+
+  // 🚀 LOCAL UI STATES (Decoupled from DB queries until clicked)
   const [localSearch, setLocalSearch] = useState("");
   const [localFilters, setLocalFilters] = useState({
     amountFilter: "Any Amount",
@@ -61,6 +65,7 @@ const VehicleReport = () => {
     exactDate: "",
   });
 
+  // 🚀 SYNCHRONOUS CACHE INITIALIZATION
   const [logs, setLogs] = useState(
     () => vehicleService.getCachedLogs("trips", defaultFilters) || [],
   );
@@ -133,6 +138,7 @@ const VehicleReport = () => {
   const [wiping, setWiping] = useState(false);
 
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
+  const [showBackupWarning, setShowBackupWarning] = useState(null);
 
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
@@ -151,6 +157,28 @@ const VehicleReport = () => {
   }, []);
 
   useEffect(() => {
+    const checkBackupNeeded = async () => {
+      const prevMonth = getPreviousMonthString();
+      if (!localStorage.getItem(`backup_vehicle_${prevMonth}`)) {
+        try {
+          const q = query(
+            collection(db, "trips"),
+            where("date", ">=", prevMonth),
+            where("date", "<=", prevMonth + "\uf8ff"),
+            limit(1),
+          );
+          const snap = await getDocs(q);
+          if (!snap.empty) setShowBackupWarning(prevMonth);
+        } catch (error) {
+          console.error("Failed to check backup status:", error);
+        }
+      }
+    };
+    checkBackupNeeded();
+  }, []);
+
+  // 🚀 TAB CHANGE RESETS FILTERS
+  useEffect(() => {
     setLocalSearch("");
     setLocalFilters({
       amountFilter: "Any Amount",
@@ -160,6 +188,7 @@ const VehicleReport = () => {
     setFilters(defaultFilters);
   }, [activeTab]);
 
+  // 🚀 STRICT MANUAL FETCH (No Debounce)
   useEffect(() => {
     const fetchLogsAsync = async (isLoadMore = false, forceSync = false) => {
       if (isLoadMore) setLoadingMore(true);
@@ -181,7 +210,7 @@ const VehicleReport = () => {
           const res = await vehicleService.getLogs(
             filters,
             isLoadMore ? lastDocTrip : null,
-            PAGE_SIZE,
+            50,
             forceSync,
           );
           if (isLoadMore) {
@@ -192,12 +221,12 @@ const VehicleReport = () => {
             setLoadedCountTrip(res.data?.length || 0);
           }
           setLastDocTrip(res.lastVisible || null);
-          setHasMoreTrip(res.data && res.data.length === PAGE_SIZE);
+          setHasMoreTrip(res.data && res.data.length === 50);
         } else {
           const res = await vehicleService.getExpenses(
             filters,
             isLoadMore ? lastDocExp : null,
-            PAGE_SIZE,
+            50,
             forceSync,
           );
           if (isLoadMore) {
@@ -208,7 +237,7 @@ const VehicleReport = () => {
             setLoadedCountExp(res.data?.length || 0);
           }
           setLastDocExp(res.lastVisible || null);
-          setHasMoreExp(res.data && res.data.length === PAGE_SIZE);
+          setHasMoreExp(res.data && res.data.length === 50);
         }
         setSyncStatus("up-to-date");
       } catch (error) {
@@ -224,23 +253,24 @@ const VehicleReport = () => {
   }, [filters, activeTab]);
 
   const handleManualRefresh = () => {
-    setFilters({ ...filters });
+    // Soft reload: Forces Firebase fetch without refreshing browser
+    setFilters({ ...filters }); // Re-triggers the useEffect
     setSyncStatus("syncing");
     setTimeout(() => {
-      vehicleService.getLogs(filters, null, PAGE_SIZE, true).then(() => {
-        setFilters({ ...filters });
+      // Small timeout to ensure state cycle processes
+      vehicleService.getLogs(filters, null, 50, true).then(() => {
+        setFilters({ ...filters }); // Trigger UI update
         toast.success("Section reloaded successfully!");
       });
     }, 100);
   };
 
-  // 🚀 FIXED: Absolute State Overwrite to prevent Filter freezing
+  // 🚀 MANUAL TRIGGER HANDLERS
   const handleSearchClick = () => {
+    if (!localSearch.trim()) return;
     setFilters({
-      search: localSearch.trim(),
-      amountFilter: "Any Amount",
-      dateFilter: "All",
-      exactDate: "",
+      ...defaultFilters,
+      search: localSearch,
     });
     setLocalFilters({
       amountFilter: "Any Amount",
@@ -249,7 +279,6 @@ const VehicleReport = () => {
     });
   };
 
-  // 🚀 FIXED: Absolute State Overwrite to prevent Search freezing
   const handleApplyFiltersClick = () => {
     setFilters({
       search: "",
@@ -396,6 +425,8 @@ const VehicleReport = () => {
         toast.warning("2,000 Limit reached. Download the next batch tomorrow.");
       else {
         toast.success(`Securely downloaded ${res.data.length} records!`);
+        localStorage.setItem(`backup_vehicle_${monthToFetch}`, "true");
+        if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
       }
     } catch (error) {
       toast.error("Failed to generate backup chunk.");
@@ -525,12 +556,46 @@ const VehicleReport = () => {
         </div>
       </div>
 
+      {showBackupWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
+                Monthly Data Backup Required
+              </h4>
+              <p className="text-amber-100/60 text-xs mt-0.5">
+                You haven't downloaded the{" "}
+                {activeTab === "trips" ? "trip logs" : "expenses"} backup for{" "}
+                <strong>
+                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </strong>
+                . Download it now to keep records secure.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => handleFullBackup(showBackupWarning)}
+            variant="outline"
+            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
+          >
+            <Download size={14} className="mr-2" /> Download Backup
+          </Button>
+        </div>
+      )}
+
       <div
         className={`bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl transition-colors duration-300 ${activeTab === "trips" ? "border-zinc-800/60" : "border-rose-900/30"}`}
       >
         <div
           className={`p-5 border-b flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5 rounded-t-3xl ${activeTab === "trips" ? "border-zinc-800/60 bg-zinc-900/10" : "border-rose-900/20 bg-rose-950/10"}`}
         >
+          {/* 🚀 MANUAL SEARCH TRIGGER */}
           <div className="flex gap-2 w-full xl:w-[28rem]">
             <div className="relative flex-1 group">
               <Search
@@ -546,28 +611,24 @@ const VehicleReport = () => {
                 }
                 className={`w-full bg-[#09090B] border rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-100 outline-none transition-all shadow-inner focus:ring-2 ${activeTab === "trips" ? "border-zinc-800 focus:border-zinc-700 focus:ring-zinc-800/50" : "border-rose-900/40 focus:ring-rose-500/50"}`}
                 value={localSearch}
-                onChange={(e) => {
-                  setLocalSearch(e.target.value);
-                  if (e.target.value.trim() !== "") {
-                    setLocalFilters({
-                      amountFilter: "Any Amount",
-                      dateFilter: "All",
-                      exactDate: "",
-                    });
-                  }
-                }}
+                onChange={(e) => setLocalSearch(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearchClick()}
               />
             </div>
             <button
               onClick={handleSearchClick}
               disabled={!localSearch.trim()}
-              className={`px-5 rounded-xl font-bold text-xs tracking-wider transition-all duration-300 border ${localSearch.trim() ? `${activeTab === "trips" ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}` : "bg-rose-500/10 text-rose-400 border-rose-500/30"}` : "bg-zinc-800/30 text-zinc-600 border-transparent opacity-50 cursor-not-allowed"}`}
+              className={`px-5 rounded-xl font-bold text-xs tracking-wider transition-all duration-300 border ${
+                localSearch.trim()
+                  ? `${activeTab === "trips" ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}` : "bg-rose-500/10 text-rose-400 border-rose-500/30"}`
+                  : "bg-zinc-800/30 text-zinc-600 border-transparent opacity-50 cursor-not-allowed"
+              }`}
             >
               Search
             </button>
           </div>
 
+          {/* 🚀 DEDICATED SECTION REFRESH BUTTON */}
           <div className="flex items-center gap-3 w-full xl:w-auto">
             {hasActiveFilters && (
               <button
@@ -582,7 +643,7 @@ const VehicleReport = () => {
               variant="outline"
               className="h-10 px-4 text-xs font-bold rounded-xl flex items-center justify-center gap-2 text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:text-white transition-all w-full xl:w-auto"
             >
-              <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />{" "}
+              <RefreshCcw size={14} className={loading ? "animate-spin" : ""} />
               Reload Section
             </Button>
           </div>
@@ -600,21 +661,13 @@ const VehicleReport = () => {
           <div className="relative group">
             <select
               value={localFilters.amountFilter}
-              onChange={(e) => {
+              onChange={(e) =>
                 setLocalFilters({
                   ...localFilters,
                   amountFilter: e.target.value,
-                  dateFilter: "All",
-                  exactDate: "",
-                });
-                setLocalSearch("");
-              }}
-              disabled={
-                !!localSearch ||
-                localFilters.dateFilter !== "All" ||
-                !!localFilters.exactDate
+                })
               }
-              className={`appearance-none bg-[#09090B] border rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium outline-none transition-all disabled:opacity-40 disabled:cursor-not-allowed ${activeTab === "trips" ? `border-zinc-800 text-zinc-400 ${theme.primaryFocus}` : "border-rose-900/40 text-rose-200 focus:border-rose-500/50"}`}
+              className={`appearance-none bg-[#09090B] border rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${activeTab === "trips" ? `border-zinc-800 text-zinc-400 ${theme.primaryFocus}` : "border-rose-900/40 text-rose-200 focus:border-rose-500/50"}`}
             >
               <option value="Any Amount">Any Amount</option>
               <option value="Under ₹10k">&lt; ₹10,000</option>
@@ -623,28 +676,21 @@ const VehicleReport = () => {
             </select>
             <ChevronDown
               size={14}
-              className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${activeTab === "trips" ? "text-zinc-500" : "text-rose-500/50"}`}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${activeTab === "trips" ? "text-zinc-500 group-hover:text-zinc-300" : "text-rose-500/50 group-hover:text-rose-400"}`}
             />
           </div>
 
           <div className="relative group">
             <select
               value={localFilters.dateFilter}
-              onChange={(e) => {
+              onChange={(e) =>
                 setLocalFilters({
                   ...localFilters,
                   dateFilter: e.target.value,
-                  amountFilter: "Any Amount",
                   exactDate: "",
-                });
-                setLocalSearch("");
-              }}
-              disabled={
-                !!localSearch ||
-                localFilters.amountFilter !== "Any Amount" ||
-                !!localFilters.exactDate
+                })
               }
-              className={`appearance-none bg-[#09090B] border rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium outline-none transition-all disabled:opacity-40 disabled:cursor-not-allowed ${activeTab === "trips" ? `border-zinc-800 text-zinc-400 ${theme.primaryFocus}` : "border-rose-900/40 text-rose-200 focus:border-rose-500/50"}`}
+              className={`appearance-none bg-[#09090B] border rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${activeTab === "trips" ? `border-zinc-800 text-zinc-400 ${theme.primaryFocus}` : "border-rose-900/40 text-rose-200 focus:border-rose-500/50"}`}
             >
               <option value="All">Timeline: All</option>
               <option value="Today">Today</option>
@@ -653,7 +699,7 @@ const VehicleReport = () => {
             </select>
             <ChevronDown
               size={14}
-              className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${activeTab === "trips" ? "text-zinc-500" : "text-rose-500/50"}`}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${activeTab === "trips" ? "text-zinc-500 group-hover:text-zinc-300" : "text-rose-500/50 group-hover:text-rose-400"}`}
             />
           </div>
 
@@ -666,39 +712,30 @@ const VehicleReport = () => {
             <input
               type="date"
               value={localFilters.exactDate}
-              onChange={(e) => {
+              onChange={(e) =>
                 setLocalFilters({
                   ...localFilters,
                   exactDate: e.target.value,
                   dateFilter: "All",
-                  amountFilter: "Any Amount",
-                });
-                setLocalSearch("");
-              }}
-              disabled={
-                !!localSearch ||
-                localFilters.amountFilter !== "Any Amount" ||
-                localFilters.dateFilter !== "All"
+                })
               }
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none transition-all disabled:opacity-40 disabled:cursor-not-allowed ${activeTab === "trips" ? `border-zinc-800 ${theme.primaryFocus}` : "border-rose-900/40 focus:border-rose-500/50"} ${localFilters.exactDate ? "text-white" : "text-zinc-500"}`}
+              className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${activeTab === "trips" ? `border-zinc-800 ${theme.primaryFocus}` : "border-rose-900/40 focus:border-rose-500/50"} ${localFilters.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
 
+          {/* 🚀 MANUAL APPLY BUTTON */}
           <button
             onClick={handleApplyFiltersClick}
             disabled={!isFilterChanged}
-            className={`px-5 py-2.5 rounded-xl font-bold text-xs tracking-wider transition-all duration-300 border ${isFilterChanged ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20" : "bg-zinc-800/30 text-zinc-600 border-transparent opacity-50 cursor-not-allowed"}`}
+            className={`px-5 py-2.5 rounded-xl font-bold text-xs tracking-wider transition-all duration-300 border ${
+              isFilterChanged
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+                : "bg-zinc-800/30 text-zinc-600 border-transparent opacity-50 cursor-not-allowed"
+            }`}
           >
             Apply Filters
           </button>
-
-          {(!!localSearch || isFilterChanged) && (
-            <span className="text-[10px] text-zinc-500 italic ml-auto hidden sm:block">
-              *Only one advanced filter allowed at a time to ensure optimal
-              database performance.
-            </span>
-          )}
         </div>
 
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
@@ -974,6 +1011,7 @@ const VehicleReport = () => {
             </table>
           )}
 
+          {/* 🚀 LOAD MORE WITH LIMITS */}
           {((activeTab === "trips" &&
             hasMoreTrip &&
             loadedCountTrip < MAX_RECORDS_LIMIT) ||
@@ -983,7 +1021,7 @@ const VehicleReport = () => {
             currentDataList.length > 0 && (
               <div className="flex justify-center p-6 border-t border-zinc-800/60">
                 <Button
-                  onClick={() => fetchLogsAsync(true)}
+                  onClick={() => fetchLogs(true)}
                   disabled={loadingMore}
                   variant="outline"
                   className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
@@ -993,7 +1031,7 @@ const VehicleReport = () => {
                   ) : null}{" "}
                   {loadingMore
                     ? "Loading..."
-                    : `Load Next ${PAGE_SIZE} Records (Loaded: ${currentLoadedCount})`}
+                    : `Load Next 50 Records (Loaded: ${currentLoadedCount})`}
                 </Button>
               </div>
             )}
@@ -1022,6 +1060,7 @@ const VehicleReport = () => {
         isDestructive={true}
       />
 
+      {/* 🚀 SECURE WIPE MODAL */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
           <div

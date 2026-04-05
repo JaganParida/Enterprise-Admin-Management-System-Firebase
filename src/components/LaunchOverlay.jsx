@@ -11,7 +11,7 @@ import {
 
 const MaintenanceOverlay = () => {
   // Target Time Configuration
-  const MAINTENANCE_END_TIME = "2026-04-05T20:26:00";
+  const MAINTENANCE_END_TIME = "2026-04-05T20:45:00";
   const [targetTime] = useState(new Date(MAINTENANCE_END_TIME));
 
   const [timeLeft, setTimeLeft] = useState({

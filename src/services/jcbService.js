@@ -19,6 +19,20 @@ import {
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
+// 🚀 SAFE DATE HELPERS — avoids UTC offset issues for IST (+5:30) and any timezone
+const getTodayStr = () => {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+};
+
+const getDateStrDaysAgo = (daysAgo) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 const jcbCollection = collection(db, "jcb_logs");
 
 // 🚀 RAM Cache
@@ -102,8 +116,8 @@ const jcbService = {
 
     try {
       let constraints = [];
-      let dbFilteredField = null;
 
+      // Vehicle filter can combine with others — add first as equality (no inequality)
       if (filters.vehicleFilter && filters.vehicleFilter !== "All") {
         constraints.push(
           where("vehicleNo", "==", filters.vehicleFilter.trim()),
@@ -111,58 +125,47 @@ const jcbService = {
       }
 
       if (filters.exactDate) {
-        constraints.push(where("date", "==", filters.exactDate));
-      }
-
-      const today = new Date();
-      const offset = today.getTimezoneOffset() * 60000;
-      const localToday = new Date(today.getTime() - offset);
-      const todayStr = localToday.toISOString().split("T")[0];
-
-      let startDateStr = null;
-      let endDateStr = todayStr;
-
-      if (
-        filters.dateFilter &&
-        filters.dateFilter !== "All" &&
-        !filters.exactDate
-      ) {
-        if (filters.dateFilter === "Today") {
-          startDateStr = todayStr;
-        } else if (filters.dateFilter === "Last7Days") {
-          const d = new Date(localToday.getTime());
-          d.setDate(d.getDate() - 7);
-          startDateStr = d.toISOString().split("T")[0];
-        } else if (filters.dateFilter === "ThisMonth") {
-          const d = new Date(localToday.getTime());
-          d.setDate(1);
-          startDateStr = d.toISOString().split("T")[0];
-          const endD = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-          endDateStr = endD.toISOString().split("T")[0];
-        }
-      }
-
-      if (filters.search) {
+        // Exact date: equality + orderBy same field for stable pagination
         constraints.push(
-          where("customerName", ">=", filters.search),
-          where("customerName", "<=", filters.search + "\uf8ff"),
-          orderBy("customerName"),
+          where("date", "==", filters.exactDate),
+          orderBy("date", "asc"),
         );
-        dbFilteredField = "search";
-      } else if (startDateStr) {
-        if (startDateStr === endDateStr) {
-          constraints.push(where("date", "==", startDateStr));
-        } else {
+      } else if (filters.search && filters.search.trim()) {
+        const searchVal = filters.search.trim();
+        constraints.push(
+          where("customerName", ">=", searchVal),
+          where("customerName", "<=", searchVal + "\uf8ff"),
+          orderBy("customerName", "asc"),
+        );
+      } else if (filters.dateFilter && filters.dateFilter !== "All") {
+        const todayStr = getTodayStr();
+
+        if (filters.dateFilter === "Today") {
+          // >= AND <= today so only exactly today's records are returned
           constraints.push(
-            where("date", ">=", startDateStr),
-            where("date", "<=", endDateStr),
+            where("date", ">=", todayStr),
+            where("date", "<=", todayStr),
             orderBy("date", "desc"),
           );
-          dbFilteredField = "date";
+        } else if (filters.dateFilter === "Last7Days") {
+          // today inclusive going back 6 prior days = 7 days total
+          const startStr = getDateStrDaysAgo(6);
+          constraints.push(
+            where("date", ">=", startStr),
+            where("date", "<=", todayStr),
+            orderBy("date", "desc"),
+          );
+        } else if (filters.dateFilter === "ThisMonth") {
+          const now = new Date();
+          const pad = (n) => String(n).padStart(2, "0");
+          const startStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+          constraints.push(
+            where("date", ">=", startStr),
+            where("date", "<=", todayStr),
+            orderBy("date", "desc"),
+          );
         }
-      }
-
-      if (!dbFilteredField && !filters.exactDate) {
+      } else {
         constraints.push(orderBy("date", "desc"));
       }
 
@@ -172,26 +175,11 @@ const jcbService = {
       const q = query(jcbCollection, ...constraints);
       const snapshot = await getDocs(q);
 
-      let fetchedData = snapshot.docs.map((doc) => ({
+      const fetchedData = snapshot.docs.map((doc) => ({
         _id: doc.id,
         ...doc.data(),
       }));
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
-
-      if (dbFilteredField !== "search" && filters.search) {
-        const searchStr = filters.search.toLowerCase();
-        fetchedData = fetchedData.filter(
-          (d) =>
-            d.customerName && d.customerName.toLowerCase().includes(searchStr),
-        );
-      }
-      if (dbFilteredField === "search" && startDateStr) {
-        fetchedData = fetchedData.filter(
-          (d) => d.date >= startDateStr && d.date <= endDateStr,
-        );
-      }
-
-      fetchedData = fetchedData.slice(0, pageSize);
 
       if (!isLoadMore) {
         memoryCache.logs = fetchedData;
@@ -258,7 +246,6 @@ const jcbService = {
     return { message: "Deleted" };
   },
 
-  // 🚨 24-HOUR STRICT LOCK WIPE LOGIC
   deleteAllLogs: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Action Denied.");
@@ -267,7 +254,6 @@ const jcbService = {
     const LOCK_KEY = "jcb_wipe_lock";
     const META_KEY = "jcb_wipe_meta";
 
-    // 1. Check Strict 24-Hour Lock First
     const lockTime = parseInt(localStorage.getItem(LOCK_KEY) || "0", 10);
     const now = Date.now();
 
@@ -278,7 +264,6 @@ const jcbService = {
       );
     }
 
-    // 2. Regular Daily Count Logic
     const today = new Date().toISOString().split("T")[0];
     let wipeMeta = JSON.parse(
       localStorage.getItem(META_KEY) || '{"date":"","count":0}',
@@ -286,7 +271,6 @@ const jcbService = {
 
     if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
 
-    // 3. Admin Authentication
     const currentUser = auth.currentUser;
     try {
       const credential = EmailAuthProvider.credential(
@@ -298,7 +282,6 @@ const jcbService = {
       throw new Error("Access Denied: Incorrect Admin Password.");
     }
 
-    // 4. Execute Deletion
     let totalDeleted = 0,
       hasMore = true;
     const maxAllowed = MAX_DAILY_WIPE - wipeMeta.count;
@@ -317,13 +300,11 @@ const jcbService = {
       totalDeleted += snapshot.size;
     }
 
-    // 5. Update Meta & Apply 24-Hour Lock if Limit Hit
     wipeMeta.count += totalDeleted;
     localStorage.setItem(META_KEY, JSON.stringify(wipeMeta));
     markDirty();
 
     if (wipeMeta.count >= MAX_DAILY_WIPE) {
-      // Lock exactly for 24 hours
       const unlockTime = Date.now() + 24 * 60 * 60 * 1000;
       localStorage.setItem(LOCK_KEY, unlockTime.toString());
       return {

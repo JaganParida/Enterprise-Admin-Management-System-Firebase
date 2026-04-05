@@ -12,20 +12,21 @@ const SalaryManagement = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
-  const [employees, setEmployees] = useState(
-    () => employeeService.getCachedEmployees({ status: "All" }) || [],
-  );
-  const [history, setHistory] = useState(
-    () => employeeService.getCachedSalaryLogs() || [],
-  );
-  const [loading, setLoading] = useState(
-    () =>
-      !employeeService.getCachedEmployees({ status: "All" }) ||
-      !employeeService.getCachedSalaryLogs(),
-  );
+
+  // ─── CONCEPT 1: Initialize from RAM cache — zero reads on re-navigation ──────
+  const cachedEmployees = employeeService.getCachedEmployees({ status: "All" });
+  const cachedLogs = employeeService.getCachedSalaryLogs();
+
+  const [employees, setEmployees] = useState(() => cachedEmployees || []);
+  const [history, setHistory] = useState(() => cachedLogs || []);
+
+  // Only show full-page loader if BOTH caches are cold (true first-ever load)
+  const [loading, setLoading] = useState(() => !cachedEmployees || !cachedLogs);
   const [paying, setPaying] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const isFirstMount = useRef(true);
+
+  // ── FIXED: useRef prevents double-fetch in React StrictMode and re-renders ──
+  const hasFetched = useRef(false);
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
 
@@ -55,38 +56,50 @@ const SalaryManagement = () => {
     remarks: "",
   });
 
+  // ─── CONCEPT 1: fetchData respects cache — only hits server when needed ───────
   const fetchData = useCallback(async () => {
     try {
-      const empReq = employeeService.getAllEmployees({ status: "All" });
-      const histReq = employeeService.getSalaryHistory();
-      const [empRes, histRes] = await Promise.all([empReq, histReq]);
-
+      const [empRes, histRes] = await Promise.all([
+        employeeService.getAllEmployees({ status: "All" }),
+        employeeService.getSalaryHistory(),
+      ]);
       setEmployees(empRes.data);
       setHistory(histRes.data);
       setLastDoc(histRes.lastVisible || null);
-      setHasMore(histRes.data && histRes.data.length === 50);
-    } catch (error) {
-      toast.error("Failed to load initial data");
+      setHasMore(!!(histRes.data && histRes.data.length === 50));
+    } catch {
+      toast.error("Failed to load salary data");
     } finally {
       setLoading(false);
     }
   }, [toast]);
 
   useEffect(() => {
-    if (isFirstMount.current && loading) {
-      fetchData();
-      isFirstMount.current = false;
-    }
-  }, [fetchData, loading]);
+    // ── FIXED: Only fetch once. If cache was warm, skip the fetch entirely.
+    // This implements zero-read navigation from Concept 1.
+    if (hasFetched.current) return;
+    hasFetched.current = true;
 
+    if (cachedEmployees && cachedLogs) {
+      // Both caches are warm — no server read needed
+      setLoading(false);
+      return;
+    }
+
+    // At least one cache is cold — fetch from server
+    fetchData();
+  }, [fetchData, cachedEmployees, cachedLogs]);
+
+  // ─── CONCEPT 4: Load More for salary history ─────────────────────────────────
   const loadMoreHistory = async () => {
+    if (!lastDoc) return;
     setLoadingMore(true);
     try {
       const response = await employeeService.getSalaryHistory(lastDoc);
       setHistory((prev) => [...prev, ...(response.data || [])]);
       setLastDoc(response.lastVisible || null);
-      setHasMore(response.data && response.data.length === 50);
-    } catch (error) {
+      setHasMore(!!(response.data && response.data.length === 50));
+    } catch {
       toast.error("Failed to load more history");
     } finally {
       setLoadingMore(false);
@@ -97,9 +110,8 @@ const SalaryManagement = () => {
     if (highlightId && !loading) {
       setTimeout(() => {
         const element = document.getElementById(highlightId);
-        if (element) {
+        if (element)
           element.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
       }, 500);
     }
   }, [highlightId, loading]);
@@ -108,6 +120,8 @@ const SalaryManagement = () => {
     e.preventDefault();
     if (!paymentData.employeeId)
       return toast.error("Please select an employee");
+    if (!paymentData.amount || Number(paymentData.amount) <= 0)
+      return toast.error("Please enter a valid amount");
 
     setPaying(true);
     try {
@@ -119,6 +133,7 @@ const SalaryManagement = () => {
 
       const payloadToSave = {
         ...paymentData,
+        amount: Number(paymentData.amount),
         employeeName: selectedEmp?.name || "Unknown",
         employeePosition: selectedEmp?.position || "-",
       };
@@ -128,6 +143,7 @@ const SalaryManagement = () => {
         currentUser,
       );
 
+      // ── CONCEPT 2: Optimistic UI — prepend to history without re-fetching ──
       const newRecord = {
         _id: res.data._id,
         ...payloadToSave,
@@ -138,10 +154,25 @@ const SalaryManagement = () => {
       };
 
       setHistory((prev) => [newRecord, ...prev].slice(0, 50));
+
+      // ── CONCEPT 2: Optimistic update of employee's salaryTaken in local state ──
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          emp._id === paymentData.employeeId
+            ? {
+                ...emp,
+                salaryTaken:
+                  Number(emp.salaryTaken || 0) + Number(paymentData.amount),
+              }
+            : emp,
+        ),
+      );
+
       toast.success("Payment recorded & Salary updated!");
       setPaymentData((prev) => ({ ...prev, amount: "", remarks: "" }));
-    } catch (error) {
+    } catch {
       toast.error("Failed to record payment");
+      // On error, re-fetch to ensure consistency
       fetchData();
     } finally {
       setPaying(false);
@@ -161,6 +192,7 @@ const SalaryManagement = () => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* ── Record Payment Form ── */}
       <div className="lg:col-span-1">
         <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 p-6 md:p-8 sticky top-24">
           <div className="flex items-center gap-3 mb-8">
@@ -275,13 +307,14 @@ const SalaryManagement = () => {
               className="w-full mt-4 rounded-xl"
               disabled={paying}
             >
-              <Plus size={18} className="mr-2" />{" "}
+              <Plus size={18} className="mr-2" />
               {paying ? "Recording..." : "Record Payment"}
             </Button>
           </form>
         </div>
       </div>
 
+      {/* ── Payment History Table ── */}
       <div className="lg:col-span-2">
         <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden h-full">
           <div className="p-6 border-b border-zinc-800/60 flex items-center justify-between">
@@ -290,7 +323,7 @@ const SalaryManagement = () => {
                 className={`p-2 rounded-lg border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
               >
                 <History size={20} />
-              </div>{" "}
+              </div>
               Payment History
             </h2>
           </div>
@@ -307,40 +340,57 @@ const SalaryManagement = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
-                {history.map((record) => (
-                  <tr
-                    key={record._id}
-                    id={record._id}
-                    className={`transition-all duration-700 group ${highlightId === record._id ? `bg-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.05)] border-l-4 ${isTransport ? "border-cyan-500" : "border-indigo-500"}` : "hover:bg-zinc-800/30"}`}
-                  >
-                    <td className="p-5 md:pl-6 align-middle">
-                      <div className="flex items-center gap-2 text-zinc-400 font-mono text-xs whitespace-nowrap">
-                        <Calendar size={14} className="text-zinc-600" />
-                        {new Date(record.date).toLocaleDateString("en-GB")}
-                      </div>
-                    </td>
-                    <td className="p-5 align-middle">
-                      <div className="font-bold text-white whitespace-nowrap">
-                        {record.employee ? record.employee.name : "Unknown"}
-                        <span className="block text-[10px] text-zinc-500 font-normal mt-0.5">
-                          {record.employee ? record.employee.position : "-"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-5 align-middle whitespace-nowrap">
-                      <span
-                        className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${record.type === "Advance" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}`}
-                      >
-                        {record.type}
-                      </span>
-                    </td>
-                    <td className="p-5 md:pr-6 text-right font-mono font-bold text-white align-middle whitespace-nowrap">
-                      ₹ {Number(record.amount).toLocaleString("en-IN")}
+                {history.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="p-10 text-center text-zinc-500 text-sm"
+                    >
+                      No payment records yet.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  history.map((record) => (
+                    <tr
+                      key={record._id}
+                      id={record._id}
+                      className={`transition-all duration-700 group ${
+                        highlightId === record._id
+                          ? `bg-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.05)] border-l-4 ${isTransport ? "border-cyan-500" : "border-indigo-500"}`
+                          : "hover:bg-zinc-800/30"
+                      }`}
+                    >
+                      <td className="p-5 md:pl-6 align-middle">
+                        <div className="flex items-center gap-2 text-zinc-400 font-mono text-xs whitespace-nowrap">
+                          <Calendar size={14} className="text-zinc-600" />
+                          {new Date(record.date).toLocaleDateString("en-GB")}
+                        </div>
+                      </td>
+                      <td className="p-5 align-middle">
+                        <div className="font-bold text-white whitespace-nowrap">
+                          {record.employee ? record.employee.name : "Unknown"}
+                          <span className="block text-[10px] text-zinc-500 font-normal mt-0.5">
+                            {record.employee ? record.employee.position : "-"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-5 align-middle whitespace-nowrap">
+                        <span
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${record.type === "Advance" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}`}
+                        >
+                          {record.type}
+                        </span>
+                      </td>
+                      <td className="p-5 md:pr-6 text-right font-mono font-bold text-white align-middle whitespace-nowrap">
+                        ₹ {Number(record.amount).toLocaleString("en-IN")}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
+
+            {/* ── CONCEPT 4: Load More for history ── */}
             {hasMore && history.length > 0 && (
               <div className="flex justify-center p-6 border-t border-zinc-800/60">
                 <Button
@@ -351,7 +401,7 @@ const SalaryManagement = () => {
                 >
                   {loadingMore ? (
                     <RefreshCcw size={16} className="animate-spin mr-2" />
-                  ) : null}{" "}
+                  ) : null}
                   {loadingMore ? "Loading..." : "Load Older Records"}
                 </Button>
               </div>

@@ -19,12 +19,18 @@ import {
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
-// 🚀 FIXED & BULLETPROOF: Helper to generate pure local date strings (YYYY-MM-DD)
-const getLocalDateString = (dateObj) => {
-  const year = dateObj.getFullYear();
-  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
-  const day = String(dateObj.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+// 🚀 SAFE DATE HELPER — avoids UTC offset issues for IST (+5:30) and any timezone
+const getTodayStr = () => {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+};
+
+const getDateStrDaysAgo = (daysAgo) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
 const fuelCollection = collection(db, "fuels");
@@ -131,60 +137,69 @@ const fuelService = {
     let constraints = [];
 
     if (filters.exactDate) {
+      // Exact date: equality + orderBy same field for stable pagination
       constraints.push(
         where("date", "==", filters.exactDate),
-        orderBy("date", "desc"),
+        orderBy("date", "asc"),
       );
-    } else if (filters.search) {
+    } else if (filters.search && filters.search.trim()) {
+      const searchVal = filters.search.trim().toUpperCase();
       constraints.push(
-        where("vehicleNo", ">=", filters.search.toUpperCase()),
-        where("vehicleNo", "<=", filters.search.toUpperCase() + "\uf8ff"),
-        orderBy("vehicleNo"),
+        where("vehicleNo", ">=", searchVal),
+        where("vehicleNo", "<=", searchVal + "\uf8ff"),
+        orderBy("vehicleNo", "asc"),
       );
     } else if (filters.amountFilter && filters.amountFilter !== "Any Amount") {
-      if (filters.amountFilter === "Under ₹5k")
+      if (filters.amountFilter === "Under ₹5k") {
         constraints.push(where("totalCost", "<", 5000));
-      else if (filters.amountFilter === "₹5k - ₹20k") {
+      } else if (filters.amountFilter === "₹5k - ₹20k") {
         constraints.push(
           where("totalCost", ">=", 5000),
           where("totalCost", "<=", 20000),
         );
-      } else if (filters.amountFilter === "Over ₹20k")
+      } else if (filters.amountFilter === "Over ₹20k") {
         constraints.push(where("totalCost", ">", 20000));
+      }
       constraints.push(orderBy("totalCost", "desc"));
     } else if (filters.dateFilter && filters.dateFilter !== "All") {
-      const today = new Date();
-      let pastDateStr = "";
+      const todayStr = getTodayStr();
 
-      // 🚀 100% FIXED: Last 7 Days and Month calculations will NEVER fail now
       if (filters.dateFilter === "Today") {
-        pastDateStr = getLocalDateString(today);
+        // >= AND <= today so only exactly today's records are returned
+        constraints.push(
+          where("date", ">=", todayStr),
+          where("date", "<=", todayStr),
+          orderBy("date", "desc"),
+        );
       } else if (filters.dateFilter === "Last7Days") {
-        // Subtracts exactly 7 days in milliseconds (Safe across months/years)
-        const pastDate = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-        pastDateStr = getLocalDateString(pastDate);
+        // today inclusive going back 6 prior days = 7 days total
+        const startStr = getDateStrDaysAgo(6);
+        constraints.push(
+          where("date", ">=", startStr),
+          where("date", "<=", todayStr),
+          orderBy("date", "desc"),
+        );
       } else if (filters.dateFilter === "ThisMonth") {
-        // Sets to exactly 1st of the current month
-        const pastDate = new Date(today.getFullYear(), today.getMonth(), 1);
-        pastDateStr = getLocalDateString(pastDate);
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const startStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+        constraints.push(
+          where("date", ">=", startStr),
+          where("date", "<=", todayStr),
+          orderBy("date", "desc"),
+        );
       }
-
-      constraints.push(
-        where("date", ">=", pastDateStr),
-        orderBy("date", "desc"),
-      );
     } else {
       constraints.push(orderBy("date", "desc"));
     }
 
-    // 🚀 STRICT LIMITS
     constraints.push(limit(limitCount));
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
     const q = query(fuelCollection, ...constraints);
     const snapshot = await getDocs(q);
 
-    let fetchedData = snapshot.docs.map((doc) => ({
+    const fetchedData = snapshot.docs.map((doc) => ({
       _id: doc.id,
       ...doc.data(),
     }));
@@ -232,7 +247,6 @@ const fuelService = {
       at: new Date().toISOString(),
     });
 
-    // STRICT ARRAY LIMIT: Keep only last 2 edits to save payload size
     if (currentHistory.length > 2)
       currentHistory = currentHistory.slice(currentHistory.length - 2);
 
@@ -266,7 +280,6 @@ const fuelService = {
       localStorage.getItem("fuel_wipe_meta") || '{"date":"","count":0}',
     );
 
-    // 🚀 STRICT 5,000 WIPE LIMIT: Protects Firebase 20k Delete Quota completely.
     if (wipeMeta.date === today && wipeMeta.count >= 5000) {
       throw new Error(
         "Daily Security Limit Reached (5,000 records). Try again tomorrow.",
@@ -289,7 +302,6 @@ const fuelService = {
     let hasMore = true;
     const maxAllowed = 5000 - wipeMeta.count;
 
-    // BATcH DELETE in chunks of 500
     while (hasMore && totalDeleted < maxAllowed) {
       const chunkLimit = Math.min(500, maxAllowed - totalDeleted);
       const q = query(fuelCollection, limit(chunkLimit));

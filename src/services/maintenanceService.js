@@ -19,12 +19,26 @@ import {
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
+// 🚀 SAFE DATE HELPERS — avoids UTC offset issues for IST (+5:30) and any timezone
+const getTodayStr = () => {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+};
+
+const getDateStrDaysAgo = (daysAgo) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 const maintCollection = collection(db, "maintenances");
 
 // 🚀 BULLETPROOF CACHE: RAM Only for Logs (Prevents 5MB LocalStorage Crash)
 let memoryCache = {
   stats: JSON.parse(localStorage.getItem("maint_stats_cache")) || null,
-  logs: null, // 🔥 Keep logs strictly in RAM. IndexedDB will handle offline via Firebase.
+  logs: null,
   filtersKey: localStorage.getItem("maint_filters_cache") || "",
   isDirty: localStorage.getItem("maint_is_dirty") !== "false",
   lastFetchTime: parseInt(localStorage.getItem("maint_last_update") || "0", 10),
@@ -54,7 +68,6 @@ const maintenanceService = {
   getDocs,
 
   getLastFetchTime: () => memoryCache.lastFetchTime,
-  // 🔥 FIX: Hamesha optimistic stats return karega (No null fallback on dirty)
   getCachedStats: () => memoryCache.stats,
   getCachedLogs: (filters) => {
     const key = JSON.stringify(filters);
@@ -74,7 +87,6 @@ const maintenanceService = {
 
     try {
       const q = query(maintCollection);
-      // 🚀 1 READ ATOMIC BUNCHER FROM SERVER
       const snapshot = await getAggregateFromServer(q, {
         totalCost: sum("cost"),
         serviceCount: count(),
@@ -83,7 +95,6 @@ const maintenanceService = {
         totalCost: snapshot.data().totalCost || 0,
         serviceCount: snapshot.data().serviceCount || 0,
       };
-
       updateCacheState(result, memoryCache.logs, memoryCache.filtersKey, false);
       return result;
     } catch (error) {
@@ -112,96 +123,80 @@ const maintenanceService = {
     }
 
     try {
-      let queryConstraints = [];
-      let dbFilteredField = null;
+      let constraints = [];
 
       if (filters.exactDate) {
-        queryConstraints.push(where("date", "==", filters.exactDate));
-      }
-
-      if (
-        filters.dateFilter &&
-        filters.dateFilter !== "All" &&
-        !filters.exactDate
-      ) {
-        const today = new Date();
-        let targetDate = new Date();
-        if (filters.dateFilter === "Today")
-          targetDate.setDate(today.getDate() - 1);
-        if (filters.dateFilter === "Last7Days")
-          targetDate.setDate(today.getDate() - 7);
-        if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
-
-        queryConstraints.push(
-          where("date", ">=", targetDate.toISOString().split("T")[0]),
-          orderBy("date", "desc"),
+        // Exact date: equality + orderBy same field for stable pagination
+        constraints.push(
+          where("date", "==", filters.exactDate),
+          orderBy("date", "asc"),
         );
-        dbFilteredField = "date";
-      } else if (filters.search) {
-        queryConstraints.push(
-          where("vehicleNo", ">=", filters.search.toUpperCase()),
-          where("vehicleNo", "<=", filters.search.toUpperCase() + "\uf8ff"),
-          orderBy("vehicleNo"),
+      } else if (filters.search && filters.search.trim()) {
+        const searchVal = filters.search.trim().toUpperCase();
+        constraints.push(
+          where("vehicleNo", ">=", searchVal),
+          where("vehicleNo", "<=", searchVal + "\uf8ff"),
+          orderBy("vehicleNo", "asc"),
         );
-        dbFilteredField = "search";
       } else if (
         filters.amountFilter &&
         filters.amountFilter !== "Any Amount"
       ) {
         if (filters.amountFilter === "Under ₹10k")
-          queryConstraints.push(where("cost", "<", 10000));
+          constraints.push(where("cost", "<", 10000));
         else if (filters.amountFilter === "₹10k - ₹50k")
-          queryConstraints.push(
+          constraints.push(
             where("cost", ">=", 10000),
             where("cost", "<=", 50000),
           );
         else if (filters.amountFilter === "Over ₹50k")
-          queryConstraints.push(where("cost", ">", 50000));
+          constraints.push(where("cost", ">", 50000));
+        constraints.push(orderBy("cost", "desc"));
+      } else if (filters.dateFilter && filters.dateFilter !== "All") {
+        const todayStr = getTodayStr();
 
-        queryConstraints.push(orderBy("cost", "desc"));
-        dbFilteredField = "amount";
+        if (filters.dateFilter === "Today") {
+          // >= AND <= today so only exactly today's records are returned
+          constraints.push(
+            where("date", ">=", todayStr),
+            where("date", "<=", todayStr),
+            orderBy("date", "desc"),
+          );
+        } else if (filters.dateFilter === "Last7Days") {
+          // today inclusive going back 6 prior days = 7 days total
+          const startStr = getDateStrDaysAgo(6);
+          constraints.push(
+            where("date", ">=", startStr),
+            where("date", "<=", todayStr),
+            orderBy("date", "desc"),
+          );
+        } else if (filters.dateFilter === "ThisMonth") {
+          const now = new Date();
+          const pad = (n) => String(n).padStart(2, "0");
+          const startStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+          constraints.push(
+            where("date", ">=", startStr),
+            where("date", "<=", todayStr),
+            orderBy("date", "desc"),
+          );
+        }
+      } else {
+        constraints.push(orderBy("date", "desc"));
       }
 
-      if (!dbFilteredField && !filters.exactDate) {
-        queryConstraints.push(orderBy("date", "desc"));
-      }
+      constraints.push(limit(pageSize));
+      if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
-      queryConstraints.push(limit(pageSize));
-      if (lastVisibleDoc) queryConstraints.push(startAfter(lastVisibleDoc));
-
-      const q = query(maintCollection, ...queryConstraints);
+      const q = query(maintCollection, ...constraints);
       const snapshot = await getDocs(q);
 
-      let fetchedData = snapshot.docs.map((doc) => ({
+      const fetchedData = snapshot.docs.map((doc) => ({
         _id: doc.id,
         ...doc.data(),
       }));
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
-      // CLIENT-SIDE FILTERING FOR THE REMAINDER
-      if (dbFilteredField !== "search" && filters.search) {
-        const searchStr = filters.search.toUpperCase();
-        fetchedData = fetchedData.filter(
-          (d) => d.vehicleNo && d.vehicleNo.toUpperCase().includes(searchStr),
-        );
-      }
-      if (
-        dbFilteredField !== "amount" &&
-        filters.amountFilter &&
-        filters.amountFilter !== "Any Amount"
-      ) {
-        fetchedData = fetchedData.filter((d) => {
-          const amt = d.cost || 0;
-          if (filters.amountFilter === "Under ₹10k") return amt < 10000;
-          if (filters.amountFilter === "₹10k - ₹50k")
-            return amt >= 10000 && amt <= 50000;
-          if (filters.amountFilter === "Over ₹50k") return amt > 50000;
-          return true;
-        });
-      }
-
       if (!isLoadMore) {
-        // Only saving into memoryCache (RAM), not localStorage
         updateCacheState(memoryCache.stats, fetchedData, filterKey, false);
       }
       return { data: fetchedData, lastVisible: newLastVisible };
@@ -222,7 +217,6 @@ const maintenanceService = {
     };
     const docRef = await addDoc(maintCollection, dataToSave);
 
-    // 🚀 TRUE OPTIMISTIC UI CACHE UPDATE (Zero extra reads)
     if (!memoryCache.stats)
       memoryCache.stats = { totalCost: 0, serviceCount: 0 };
     memoryCache.stats.totalCost += dataToSave.cost;
@@ -264,7 +258,6 @@ const maintenanceService = {
     };
     await updateDoc(docRef, dataToUpdate);
 
-    // 🚀 TRUE OPTIMISTIC UI CACHE UPDATE
     if (!memoryCache.stats)
       memoryCache.stats = { totalCost: 0, serviceCount: 0 };
     memoryCache.stats.totalCost += newCost - oldCost;
@@ -282,7 +275,6 @@ const maintenanceService = {
       throw new Error("Action Denied.");
     await deleteDoc(doc(db, "maintenances", logObj._id));
 
-    // 🚀 TRUE OPTIMISTIC UI CACHE UPDATE
     if (memoryCache.stats && logObj.cost !== undefined) {
       memoryCache.stats.totalCost -= Number(logObj.cost) || 0;
       memoryCache.stats.serviceCount -= 1;
@@ -338,7 +330,6 @@ const maintenanceService = {
     wipeMeta.count += totalDeleted;
     localStorage.setItem("maintenance_wipe_meta", JSON.stringify(wipeMeta));
 
-    // 🚀 RESET CACHE
     memoryCache.stats = { totalCost: 0, serviceCount: 0 };
     localStorage.setItem(
       "maint_stats_cache",
@@ -353,4 +344,5 @@ const maintenanceService = {
     return { success: true };
   },
 };
+
 export default maintenanceService;
