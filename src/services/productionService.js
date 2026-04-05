@@ -1,11 +1,9 @@
 import {
   collection,
-  addDoc,
   getDocs,
   getDoc,
   setDoc,
   doc,
-  updateDoc,
   deleteDoc,
   query,
   orderBy,
@@ -13,7 +11,6 @@ import {
   where,
   startAfter,
   writeBatch,
-  increment,
   getAggregateFromServer,
   sum,
 } from "firebase/firestore";
@@ -37,6 +34,7 @@ const productionService = {
     }
   },
 
+  // 🚀 NO getDocs() USED HERE. Uses Server-side Aggregation.
   syncAllStats: async () => {
     try {
       const prodQ = collection(db, PROD_COLLECTION);
@@ -61,8 +59,6 @@ const productionService = {
       await setDoc(doc(db, METADATA_COLLECTION, STATS_DOC), newStats);
       return newStats;
     } catch (error) {
-      // ✅ FIX 1: FALLBACK BOMB REMOVED
-      // We no longer fallback to getDocs() which would burn all daily reads.
       console.error(
         "Aggregation failed. Server error or indexing delay.",
         error,
@@ -119,16 +115,22 @@ const productionService = {
       constraints.push(orderBy("quantity", "desc"));
     } else if (filters.date && filters.date !== "All" && !filters.exactDate) {
       const today = new Date();
-      let pastDate = new Date();
-      if (filters.date === "Last7Days") pastDate.setDate(today.getDate() - 7);
-      else if (filters.date === "Last30Days")
-        pastDate.setDate(today.getDate() - 30);
-      else if (filters.date === "ThisMonth") pastDate.setDate(1);
+      const todayStr = today.toISOString().split("T")[0];
 
-      constraints.push(
-        where("date", ">=", pastDate.toISOString().split("T")[0]),
-      );
-      constraints.push(orderBy("date", "desc"));
+      if (filters.date === "Today") {
+        constraints.push(where("date", "==", todayStr));
+      } else {
+        let pastDate = new Date();
+        if (filters.date === "Last7Days") pastDate.setDate(today.getDate() - 7);
+        else if (filters.date === "Last30Days")
+          pastDate.setDate(today.getDate() - 30);
+        else if (filters.date === "ThisMonth") pastDate.setDate(1);
+
+        constraints.push(
+          where("date", ">=", pastDate.toISOString().split("T")[0]),
+          orderBy("date", "desc"),
+        );
+      }
     } else {
       constraints.push(orderBy("date", "desc"));
     }
@@ -175,16 +177,22 @@ const productionService = {
       );
     } else if (filters.date && filters.date !== "All" && !filters.exactDate) {
       const today = new Date();
-      let pastDate = new Date();
-      if (filters.date === "Last7Days") pastDate.setDate(today.getDate() - 7);
-      else if (filters.date === "Last30Days")
-        pastDate.setDate(today.getDate() - 30);
-      else if (filters.date === "ThisMonth") pastDate.setDate(1);
+      const todayStr = today.toISOString().split("T")[0];
 
-      constraints.push(
-        where("date", ">=", pastDate.toISOString().split("T")[0]),
-        orderBy("date", "desc"),
-      );
+      if (filters.date === "Today") {
+        constraints.push(where("date", "==", todayStr));
+      } else {
+        let pastDate = new Date();
+        if (filters.date === "Last7Days") pastDate.setDate(today.getDate() - 7);
+        else if (filters.date === "Last30Days")
+          pastDate.setDate(today.getDate() - 30);
+        else if (filters.date === "ThisMonth") pastDate.setDate(1);
+
+        constraints.push(
+          where("date", ">=", pastDate.toISOString().split("T")[0]),
+          orderBy("date", "desc"),
+        );
+      }
     } else {
       constraints.push(orderBy("date", "desc"));
     }
@@ -211,6 +219,7 @@ const productionService = {
     }
   },
 
+  // 🚀 OPTIMIZED: 1 READ FOR STATS MATH (NO INCREMENT)
   addProduction: async (data, user) => {
     const batch = writeBatch(db);
     const newDocRef = doc(collection(db, PROD_COLLECTION));
@@ -227,8 +236,22 @@ const productionService = {
     };
 
     batch.set(newDocRef, payload);
+
+    // EXACTLY 1 READ
     const statsRef = doc(db, METADATA_COLLECTION, STATS_DOC);
-    batch.set(statsRef, { output: increment(qty) }, { merge: true });
+    const statsSnap = await getDoc(statsRef);
+    const currentStats = statsSnap.exists()
+      ? statsSnap.data()
+      : { output: 0, paid: 0, due: 0 };
+
+    batch.set(
+      statsRef,
+      {
+        ...currentStats,
+        output: (currentStats.output || 0) + qty,
+      },
+      { merge: true },
+    );
 
     await batch.commit();
     return newDocRef;
@@ -241,6 +264,7 @@ const productionService = {
     throw new Error("Not found");
   },
 
+  // 🚀 OPTIMIZED: 1 READ FOR STATS MATH (NO INCREMENT)
   updateProduction: async (id, data, user) => {
     const docRef = doc(db, PROD_COLLECTION, id);
     const docSnap = await getDoc(docRef);
@@ -268,26 +292,57 @@ const productionService = {
     });
 
     if (diff !== 0) {
+      // EXACTLY 1 READ
       const statsRef = doc(db, METADATA_COLLECTION, STATS_DOC);
-      batch.set(statsRef, { output: increment(diff) }, { merge: true });
+      const statsSnap = await getDoc(statsRef);
+      const currentStats = statsSnap.exists()
+        ? statsSnap.data()
+        : { output: 0, paid: 0, due: 0 };
+
+      batch.set(
+        statsRef,
+        {
+          ...currentStats,
+          output: (currentStats.output || 0) + diff,
+        },
+        { merge: true },
+      );
     }
     await batch.commit();
   },
 
+  // 🚀 OPTIMIZED: 1 READ FOR STATS MATH (NO INCREMENT)
   deleteProduction: async (id, user) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Managers cannot delete.");
     const docRef = doc(db, PROD_COLLECTION, id);
     const docSnap = await getDoc(docRef);
     if (!docSnap.exists()) return;
+
     const qtyToRemove = Number(docSnap.data().quantity) || 0;
     const batch = writeBatch(db);
     batch.delete(docRef);
+
+    // EXACTLY 1 READ
     const statsRef = doc(db, METADATA_COLLECTION, STATS_DOC);
-    batch.set(statsRef, { output: increment(-qtyToRemove) }, { merge: true });
+    const statsSnap = await getDoc(statsRef);
+    const currentStats = statsSnap.exists()
+      ? statsSnap.data()
+      : { output: 0, paid: 0, due: 0 };
+
+    batch.set(
+      statsRef,
+      {
+        ...currentStats,
+        output: Math.max(0, (currentStats.output || 0) - qtyToRemove),
+      },
+      { merge: true },
+    );
+
     await batch.commit();
   },
 
+  // 🚀 OPTIMIZED: 1 READ FOR STATS MATH (NO INCREMENT)
   addLabourPayout: async (data, user) => {
     const batch = writeBatch(db);
     const newDocRef = doc(collection(db, LABOUR_COLLECTION));
@@ -308,12 +363,24 @@ const productionService = {
     };
 
     batch.set(newDocRef, payload);
+
+    // EXACTLY 1 READ
     const statsRef = doc(db, METADATA_COLLECTION, STATS_DOC);
+    const statsSnap = await getDoc(statsRef);
+    const currentStats = statsSnap.exists()
+      ? statsSnap.data()
+      : { output: 0, paid: 0, due: 0 };
+
     batch.set(
       statsRef,
-      { paid: increment(paid), due: increment(due) },
+      {
+        ...currentStats,
+        paid: (currentStats.paid || 0) + paid,
+        due: (currentStats.due || 0) + due,
+      },
       { merge: true },
     );
+
     await batch.commit();
     return newDocRef;
   },
@@ -325,6 +392,7 @@ const productionService = {
     throw new Error("Not found");
   },
 
+  // 🚀 OPTIMIZED: 1 READ FOR STATS MATH (NO INCREMENT)
   updateLabourPayout: async (id, data, user) => {
     const docRef = doc(db, LABOUR_COLLECTION, id);
     const docSnap = await getDoc(docRef);
@@ -334,6 +402,9 @@ const productionService = {
     const oldDue = Number(docSnap.data().amountDue) || 0;
     const newPaid = Number(data.amountPaid) || 0;
     const newDue = Number(data.amountDue) || 0;
+
+    const paidDiff = newPaid - oldPaid;
+    const dueDiff = newDue - oldDue;
 
     let history = docSnap.data().editHistory || [];
     history.push({
@@ -355,17 +426,28 @@ const productionService = {
       editHistory: history,
     });
 
-    if (newPaid - oldPaid !== 0 || newDue - oldDue !== 0) {
+    if (paidDiff !== 0 || dueDiff !== 0) {
+      // EXACTLY 1 READ
       const statsRef = doc(db, METADATA_COLLECTION, STATS_DOC);
+      const statsSnap = await getDoc(statsRef);
+      const currentStats = statsSnap.exists()
+        ? statsSnap.data()
+        : { output: 0, paid: 0, due: 0 };
+
       batch.set(
         statsRef,
-        { paid: increment(newPaid - oldPaid), due: increment(newDue - oldDue) },
+        {
+          ...currentStats,
+          paid: Math.max(0, (currentStats.paid || 0) + paidDiff),
+          due: Math.max(0, (currentStats.due || 0) + dueDiff),
+        },
         { merge: true },
       );
     }
     await batch.commit();
   },
 
+  // 🚀 OPTIMIZED: 1 READ FOR STATS MATH (NO INCREMENT)
   deleteLabourPayout: async (id, user) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Managers cannot delete.");
@@ -375,18 +457,30 @@ const productionService = {
 
     const paidToRemove = Number(docSnap.data().amountPaid) || 0;
     const dueToRemove = Number(docSnap.data().amountDue) || 0;
+
     const batch = writeBatch(db);
     batch.delete(docRef);
+
+    // EXACTLY 1 READ
     const statsRef = doc(db, METADATA_COLLECTION, STATS_DOC);
+    const statsSnap = await getDoc(statsRef);
+    const currentStats = statsSnap.exists()
+      ? statsSnap.data()
+      : { output: 0, paid: 0, due: 0 };
+
     batch.set(
       statsRef,
-      { paid: increment(-paidToRemove), due: increment(-dueToRemove) },
+      {
+        ...currentStats,
+        paid: Math.max(0, (currentStats.paid || 0) - paidToRemove),
+        due: Math.max(0, (currentStats.due || 0) - dueToRemove),
+      },
       { merge: true },
     );
+
     await batch.commit();
   },
 
-  // 🚀 ✅ FIX 2: BATCH WIPE SAFE LIMIT (2k instead of 10k)
   deleteAllProduction: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Only Admins can wipe.");
@@ -417,7 +511,7 @@ const productionService = {
       }
     }
 
-    const DAILY_LIMIT = 2000; // REDUCED FROM 10,000 to protect Firebase Free Tier
+    const DAILY_LIMIT = 2000;
     let totalDeleted = 0;
 
     const wipeInChunks = async (collectionName) => {
@@ -449,7 +543,6 @@ const productionService = {
       }
 
       if (totalDeleted >= DAILY_LIMIT) {
-        // ENFORCE 24 HOUR LOCK IF LIMIT REACHED
         await setDoc(doc(db, METADATA_COLLECTION, "wipe_lock"), {
           lockedUntil: Date.now() + 24 * 60 * 60 * 1000,
         });
@@ -458,13 +551,12 @@ const productionService = {
             "Wiped 2k records. Daily safe limit reached and system locked.",
         };
       } else {
-        // FULLY WIPED - RESET STATS AND CLEAR LOCK
         await setDoc(doc(db, METADATA_COLLECTION, STATS_DOC), {
           output: 0,
           paid: 0,
           due: 0,
         });
-        await deleteDoc(doc(db, METADATA_COLLECTION, "wipe_lock")); // clear lock if expired
+        await deleteDoc(doc(db, METADATA_COLLECTION, "wipe_lock"));
         return { message: "Database wiped safely" };
       }
     } catch (error) {
