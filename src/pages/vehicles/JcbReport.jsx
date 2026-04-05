@@ -42,8 +42,8 @@ import {
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
 
-const MAX_RECORDS_LIMIT = 5000;
-const SAFE_BACKUP_LIMIT = 2500;
+// 🚨 SAFETY LIMITS
+const MAX_RECORDS_LIMIT = 1000;
 
 const getPreviousMonthString = () => {
   const d = new Date();
@@ -65,10 +65,7 @@ const JcbReport = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // 🚀 ACTIVE FILTERS (Used for DB Fetch)
   const [activeFilters, setActiveFilters] = useState(defaultFilters);
-
-  // 🚀 LOCAL INPUT STATES (Decoupled from DB Fetch)
   const [localSearch, setLocalSearch] = useState("");
   const [pendingFilters, setPendingFilters] = useState({
     vehicleFilter: "All",
@@ -156,7 +153,7 @@ const JcbReport = () => {
           const snap = await getDocs(q);
           if (!snap.empty) setShowBackupWarning(prevMonth);
         } catch (error) {
-          console.error("Failed to check backup status:", error);
+          console.error("Failed to check backup status");
         }
       }
     };
@@ -176,12 +173,10 @@ const JcbReport = () => {
     }
   }, [urlHighlightId, logs.length]);
 
-  // 🚀 OPTIMIZED FETCH: Uses activeFilters directly
   const fetchLogs = useCallback(
     async (isLoadMore = false, forceSync = false) => {
       if (isLoadMore) setLoadingMore(true);
       else if (forceSync || logs.length === 0) setSyncStatus("syncing");
-
       if (logs.length === 0 && !isLoadMore && !forceSync) setLoading(true);
 
       try {
@@ -191,7 +186,6 @@ const JcbReport = () => {
           50,
           forceSync,
         );
-
         if (isLoadMore) {
           setLogs((prev) => [...prev, ...(response.data || [])]);
           setLoadedCount((prev) => prev + (response.data?.length || 0));
@@ -213,27 +207,15 @@ const JcbReport = () => {
     [activeFilters, lastDoc, logs.length],
   );
 
-  // 🚀 MANUAL TRIGGERS: Replaces Debounce
-  const executeSearch = () => {
-    setActiveFilters({
-      ...defaultFilters,
-      search: localSearch,
-    });
-    setPendingFilters({
-      vehicleFilter: "All",
-      dateFilter: "All",
-      exactDate: "",
-    });
-  };
-
-  const executeApplyFilters = () => {
-    setActiveFilters({
-      search: "",
-      ...pendingFilters,
-    });
-    setLocalSearch("");
-  };
-
+  const executeSearch = () =>
+    setActiveFilters((prev) => ({ ...prev, search: localSearch.trim() }));
+  const executeApplyFilters = () =>
+    setActiveFilters((prev) => ({
+      ...prev,
+      vehicleFilter: pendingFilters.vehicleFilter,
+      dateFilter: pendingFilters.dateFilter,
+      exactDate: pendingFilters.exactDate,
+    }));
   const executeClearAll = () => {
     setLocalSearch("");
     setPendingFilters({
@@ -244,7 +226,6 @@ const JcbReport = () => {
     setActiveFilters(defaultFilters);
   };
 
-  // Fetch only when activeFilters change (triggered by manual buttons)
   useEffect(() => {
     fetchLogs(false);
   }, [activeFilters]);
@@ -283,50 +264,89 @@ const JcbReport = () => {
     ).length +
     (activeFilters.exactDate ? 1 : 0) +
     (activeFilters.search ? 1 : 0);
-
-  // Checks if buttons should be disabled
   const isSearchDisabled = !localSearch.trim() && !activeFilters.search;
   const isApplyDisabled =
-    pendingFilters.vehicleFilter === "All" &&
-    pendingFilters.dateFilter === "All" &&
-    !pendingFilters.exactDate &&
-    activeFilters.vehicleFilter === "All" &&
-    activeFilters.dateFilter === "All" &&
-    !activeFilters.exactDate;
+    pendingFilters.vehicleFilter === activeFilters.vehicleFilter &&
+    pendingFilters.dateFilter === activeFilters.dateFilter &&
+    pendingFilters.exactDate === activeFilters.exactDate;
 
-  // ... (handleFullBackup and handleWipeAll remain exactly the same)
+  // 🚀 SMART RESUME BACKUP + 60s SPAM GUARD + 24H LOCK
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch) return toast.error("Please select a month to backup.");
+
+      const SAFE_BACKUP_LIMIT = 1000;
+      const LOCK_KEY = "jcb_backup_lock";
+      const SPAM_KEY = "jcb_last_backup_click";
+      const META_KEY = `backup_jcb_${monthToFetch}_meta`;
+      const now = Date.now();
+
+      // 1. Anti-Spam Check (60 Seconds)
+      const lastClick = parseInt(localStorage.getItem(SPAM_KEY) || "0", 10);
+      if (now - lastClick < 60000) {
+        const remainingSeconds = Math.ceil((60000 - (now - lastClick)) / 1000);
+        return toast.warning(
+          `⏳ Please wait ${remainingSeconds}s before requesting another backup.`,
+        );
+      }
+
+      // 2. Strict 24-Hour Lock Check
+      const lockTime = parseInt(localStorage.getItem(LOCK_KEY) || "0", 10);
+      if (now < lockTime) {
+        const remainingHours = Math.ceil((lockTime - now) / (1000 * 60 * 60));
+        return toast.error(
+          `🚨 LOCKED: Daily limit reached. Unlocks in ${remainingHours} hours.`,
+        );
+      }
+
       const today = new Date().toISOString().split("T")[0];
+
+      // Smart Resume Storage
       let dlMeta = JSON.parse(
-        localStorage.getItem(`backup_jcb_${monthToFetch}_meta`) ||
-          '{"date":"","count":0,"lastId":null}',
+        localStorage.getItem(META_KEY) ||
+          '{"date":"","todayCount":0,"lastDocId":null,"partNumber":0}',
       );
-      if (dlMeta.date === today && dlMeta.count >= SAFE_BACKUP_LIMIT)
-        return toast.error(`Daily Limit (${SAFE_BACKUP_LIMIT}) reached.`);
+
       if (dlMeta.date !== today) {
         dlMeta.date = today;
-        dlMeta.count = 0;
+        dlMeta.todayCount = 0;
       }
-      const fetchLimit = SAFE_BACKUP_LIMIT - dlMeta.count;
-      toast.info(`Fetching secure backup...`);
+
+      const fetchLimit = SAFE_BACKUP_LIMIT - dlMeta.todayCount;
+      if (fetchLimit <= 0) return toast.error("Daily limit reached.");
+
+      localStorage.setItem(SPAM_KEY, Date.now().toString());
+      toast.info(
+        dlMeta.lastDocId
+          ? `Resuming backup from Part ${dlMeta.partNumber + 1}...`
+          : `Starting new backup...`,
+      );
+
       const qConstraints = [
         where("date", ">=", monthToFetch),
         where("date", "<=", monthToFetch + "\uf8ff"),
-        orderBy("date"),
+        orderBy("date", "asc"),
         limit(fetchLimit),
       ];
-      if (dlMeta.lastId) {
-        const lastDocRef = await getDoc(doc(db, "jcb_logs", dlMeta.lastId));
+
+      // Resume exactly from last point
+      if (dlMeta.lastDocId) {
+        const lastDocRef = await getDoc(doc(db, "jcb_logs", dlMeta.lastDocId));
         if (lastDocRef.exists()) qConstraints.push(startAfter(lastDocRef));
       }
+
       const q = query(collection(db, "jcb_logs"), ...qConstraints);
       const snapshot = await getDocs(q);
-      if (snapshot.empty)
+
+      if (snapshot.empty) {
+        localStorage.removeItem(META_KEY);
+        localStorage.setItem(`backup_jcb_${monthToFetch}`, "true");
+        if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
         return toast.info(
-          `All records for ${monthToFetch} downloaded completely.`,
+          `✅ All records for ${monthToFetch} downloaded completely.`,
         );
+      }
+
       const headers = [
         "Date",
         "Vehicle No",
@@ -337,43 +357,51 @@ const JcbReport = () => {
         "End Time",
         "Total Hours",
         "Total Minutes",
-        "Total Mins (Agg)",
       ];
       const rows = snapshot.docs.map((document) => {
         const log = document.data();
         let dateStr = log.date
           ? `\t${new Date(log.date).toLocaleDateString("en-GB")}`
           : "-";
-        return `${dateStr},"${log.vehicleNo}","${log.customerName}","${log.phone}","${log.location}","${log.startTime}","${log.endTime}",${log.totalHours},${log.totalMinutes},${log.totalMins}`;
+        return `${dateStr},"${log.vehicleNo}","${log.customerName || ""}","${log.phone || ""}","${log.location || ""}","${log.startTime || ""}","${log.endTime || ""}","${log.totalHours || 0}","${log.totalMinutes || 0}"`;
       });
+
       const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
+
+      dlMeta.partNumber += 1;
       link.setAttribute(
         "download",
-        `Backup_JCB_${monthToFetch}_Part${Math.floor(dlMeta.count / SAFE_BACKUP_LIMIT) + 1}.csv`,
+        `Backup_JCB_${monthToFetch}_Part${dlMeta.partNumber}.csv`,
       );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      dlMeta.count += snapshot.size;
-      dlMeta.lastId = snapshot.docs[snapshot.docs.length - 1].id;
-      localStorage.setItem(
-        `backup_jcb_${monthToFetch}_meta`,
-        JSON.stringify(dlMeta),
-      );
-      if (snapshot.size === fetchLimit)
-        toast.warning(
-          `${SAFE_BACKUP_LIMIT} Limit reached. Download next tomorrow.`,
+
+      dlMeta.todayCount += snapshot.size;
+      dlMeta.lastDocId = snapshot.docs[snapshot.docs.length - 1].id;
+      localStorage.setItem(META_KEY, JSON.stringify(dlMeta));
+
+      // 3. Lock if limit hit
+      if (dlMeta.todayCount >= SAFE_BACKUP_LIMIT) {
+        const unlockTime = Date.now() + 24 * 60 * 60 * 1000;
+        localStorage.setItem(LOCK_KEY, unlockTime.toString());
+        toast.error(
+          `🚨 Limit reached. System locked for 24 hours. Resume automatically tomorrow.`,
         );
-      else {
-        toast.success(`Backup completed!`);
-        localStorage.setItem(`backup_jcb_${monthToFetch}`, "true");
-        if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
+      } else {
+        toast.success(`Part ${dlMeta.partNumber} downloaded successfully!`);
+        if (snapshot.size < fetchLimit) {
+          localStorage.removeItem(META_KEY);
+          localStorage.setItem(`backup_jcb_${monthToFetch}`, "true");
+          if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
+        }
       }
     } catch (e) {
-      toast.error("Backup failed.");
+      toast.error("Backup failed. Database reads were protected.");
+      console.error(e);
     }
   };
 
@@ -403,6 +431,7 @@ const JcbReport = () => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div
@@ -454,10 +483,8 @@ const JcbReport = () => {
               <AlertOctagon size={16} /> Wipe Database
             </button>
             {warningTooltip === "wipe-all" && (
-              <div className="absolute top-full mt-2 right-0 md:left-1/2 md:-translate-x-1/2 z-[100] animate-in fade-in zoom-in-95 duration-200">
-                <div className="bg-[#09090B] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase tracking-wider font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
-                  🚫 Admin Access Required
-                </div>
+              <div className="absolute top-full mt-2 right-0 z-[100] bg-[#09090B] border border-red-500/30 shadow-xl text-red-400 text-[10px] uppercase font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max">
+                🚫 Admin Access Required
               </div>
             )}
           </div>
@@ -471,24 +498,22 @@ const JcbReport = () => {
       </div>
 
       {showBackupWarning && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 w-full">
           <div className="flex items-center gap-3">
             <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
               <ShieldAlert size={20} />
             </div>
             <div>
               <h4 className="text-amber-400 font-bold text-sm tracking-wide">
-                Monthly Data Backup Required
+                Monthly Backup Required
               </h4>
               <p className="text-amber-100/60 text-xs mt-0.5">
-                You haven't downloaded the JCB logs backup for{" "}
-                <strong>
-                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </strong>
-                . Download it now to keep records secure.
+                Please secure logs for{" "}
+                {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
+                  month: "long",
+                  year: "numeric",
+                })}
+                .
               </p>
             </div>
           </div>
@@ -497,13 +522,13 @@ const JcbReport = () => {
             variant="outline"
             className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
           >
-            <Download size={14} className="mr-2" /> Download Backup
+            <Download size={14} className="mr-2" /> Download Part 1
           </Button>
         </div>
       )}
 
+      {/* FILTER & DATA CONTAINER */}
       <div className="bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl border-zinc-800/60">
-        {/* 🚀 MANUAL SEARCH SECTION */}
         <div className="p-5 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-3xl bg-zinc-900/10 border-zinc-800/60">
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
             <div className="relative w-full sm:w-80 xl:w-96 group">
@@ -514,9 +539,13 @@ const JcbReport = () => {
               <input
                 type="text"
                 placeholder="Search customer name..."
-                className="w-full bg-transparent border border-zinc-800 rounded-xl pl-12 pr-4 py-3 text-sm text-zinc-100 outline-none transition-all focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 placeholder:text-zinc-600"
+                className="w-full bg-transparent border border-zinc-800 rounded-xl pl-12 pr-4 py-3 text-sm text-zinc-100 outline-none transition-all focus:border-zinc-700 placeholder:text-zinc-600"
                 value={localSearch}
-                onChange={(e) => setLocalSearch(e.target.value)}
+                onChange={(e) => {
+                  setLocalSearch(e.target.value);
+                  if (e.target.value.trim() === "")
+                    setActiveFilters((prev) => ({ ...prev, search: "" }));
+                }}
                 onKeyDown={(e) =>
                   e.key === "Enter" && !isSearchDisabled && executeSearch()
                 }
@@ -525,30 +554,23 @@ const JcbReport = () => {
             <button
               onClick={executeSearch}
               disabled={isSearchDisabled}
-              className={`h-11 px-6 rounded-xl text-xs font-bold tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-2 ${
-                isSearchDisabled
-                  ? "bg-zinc-800/50 text-zinc-500 border border-zinc-700/50 opacity-50 cursor-not-allowed"
-                  : `${theme.primaryBg} ${theme.primaryText} border ${theme.primaryBorder} hover:opacity-80 hover:shadow-lg active:scale-95 cursor-pointer`
-              }`}
+              className={`h-11 px-6 rounded-xl text-xs font-bold tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-2 ${isSearchDisabled ? "bg-zinc-800/50 text-zinc-500 border border-zinc-700/50 opacity-50 cursor-not-allowed" : `${theme.primaryBg} ${theme.primaryText} border ${theme.primaryBorder} hover:opacity-80 hover:shadow-lg active:scale-95 cursor-pointer`}`}
             >
               SEARCH
             </button>
           </div>
-
-          {/* 🚀 CUSTOM LOCALIZED REFRESH CURSOR/BUTTON */}
           <button
             onClick={() => fetchLogs(false, true)}
             title="Refresh Grid Data"
-            className={`w-11 h-11 flex items-center justify-center rounded-xl bg-zinc-800/40 border border-zinc-700/50 hover:bg-zinc-700/50 transition-all cursor-pointer group hover:shadow-[0_0_15px_rgba(255,255,255,0.05)] active:scale-95 ml-auto sm:ml-0`}
+            className="w-11 h-11 flex items-center justify-center rounded-xl bg-zinc-800/40 border border-zinc-700/50 hover:bg-zinc-700/50 transition-all cursor-pointer group active:scale-95 ml-auto sm:ml-0"
           >
             <RefreshCcw
               size={18}
-              className={`text-zinc-400 group-hover:text-white group-hover:animate-spin duration-1000`}
+              className="text-zinc-400 group-hover:text-white group-hover:animate-spin duration-1000"
             />
           </button>
         </div>
 
-        {/* 🚀 MANUAL FILTER SECTION */}
         <div className="p-4 border-b bg-[#09090B] flex flex-wrap items-center gap-4 relative z-20 border-zinc-800/60">
           <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] px-3 py-1 border-r border-zinc-800 mr-2 text-zinc-500">
             <Filter size={16} /> FILTERS{" "}
@@ -560,7 +582,6 @@ const JcbReport = () => {
               </span>
             )}
           </div>
-
           <div className="relative group">
             <select
               value={pendingFilters.vehicleFilter}
@@ -570,27 +591,18 @@ const JcbReport = () => {
                   vehicleFilter: e.target.value,
                 })
               }
-              className="appearance-none bg-transparent border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
+              className="appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer hover:border-zinc-700 focus:border-[#0ea5e9]/50"
             >
-              <option value="All" className="bg-[#09090B] text-zinc-300">
-                All Vehicles
-              </option>
-              <option value="OD02AT6907" className="bg-[#09090B] text-white">
-                OD02AT6907
-              </option>
-              <option value="OD02XA7407" className="bg-[#09090B] text-white">
-                OD02XA7407
-              </option>
-              <option value="OD02AJ3507" className="bg-[#09090B] text-white">
-                OD02AJ3507
-              </option>
+              <option value="All">All Vehicles</option>
+              <option value="OD02AT6907">OD02AT6907</option>
+              <option value="OD02XA7407">OD02XA7407</option>
+              <option value="OD02AJ3507">OD02AJ3507</option>
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-white"
             />
           </div>
-
           <div className="relative group">
             <select
               value={pendingFilters.dateFilter}
@@ -601,7 +613,7 @@ const JcbReport = () => {
                   exactDate: "",
                 })
               }
-              className="appearance-none bg-transparent border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50"
+              className="appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer hover:border-zinc-700 focus:border-[#0ea5e9]/50"
             >
               <option value="All">Timeline: All</option>
               <option value="Today">Today</option>
@@ -610,10 +622,9 @@ const JcbReport = () => {
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:text-white"
             />
           </div>
-
           <div className="relative group flex items-center">
             <div
               className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${pendingFilters.exactDate ? theme.primaryText : "text-zinc-500"}`}
@@ -631,23 +642,16 @@ const JcbReport = () => {
                 })
               }
               style={{ colorScheme: "dark" }}
-              className={`appearance-none bg-transparent border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all hover:border-zinc-700 focus:border-[#0ea5e9]/50 focus:ring-1 focus:ring-[#0ea5e9]/50 ${pendingFilters.exactDate ? "text-white" : "text-zinc-500"}`}
+              className={`appearance-none bg-[#09090B] border rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer hover:border-zinc-700 focus:border-[#0ea5e9]/50 ${pendingFilters.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
-
-          {/* 🚀 APPLY FILTERS BUTTON */}
           <button
             onClick={executeApplyFilters}
             disabled={isApplyDisabled}
-            className={`px-4 py-2.5 rounded-xl text-xs font-bold tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-2 ${
-              isApplyDisabled
-                ? "bg-zinc-800/50 text-zinc-500 border border-zinc-700/50 opacity-50 cursor-not-allowed"
-                : `bg-white text-black border border-white hover:bg-gray-200 cursor-pointer`
-            }`}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold tracking-widest uppercase transition-all duration-300 flex items-center justify-center gap-2 ${isApplyDisabled ? "bg-zinc-800/50 text-zinc-500 border border-zinc-700/50 opacity-50 cursor-not-allowed" : "bg-white text-black border border-white hover:bg-gray-200 cursor-pointer"}`}
           >
             APPLY
           </button>
-
           {activeFiltersCount > 0 && (
             <Button
               variant="ghost"
@@ -668,78 +672,66 @@ const JcbReport = () => {
             <>
               <table className="w-full text-left border-collapse min-w-[800px]">
                 <thead>
-                  <tr className="bg-transparent text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800/60">
-                    <th className="py-4 px-6 whitespace-nowrap">
-                      Date & Vehicle
-                    </th>
-                    <th className="py-4 px-6 whitespace-nowrap">
-                      Customer Info
-                    </th>
-                    <th className="py-4 px-6 whitespace-nowrap">Time Log</th>
-                    <th className="py-4 px-6 text-right whitespace-nowrap">
-                      Actions
-                    </th>
+                  <tr className="text-zinc-500 text-[10px] uppercase font-bold border-b border-zinc-800/60">
+                    <th className="py-4 px-6">Date & Vehicle</th>
+                    <th className="py-4 px-6">Customer Info</th>
+                    <th className="py-4 px-6">Time Log</th>
+                    <th className="py-4 px-6 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 text-sm">
                   {logs.map((log) => {
-                    const hasEdits =
-                      log.editHistory && log.editHistory.length > 0;
-                    const latestLog = hasEdits
-                      ? log.editHistory[log.editHistory.length - 1]
-                      : null;
-
+                    const latestLog =
+                      log.editHistory?.length > 0
+                        ? log.editHistory[log.editHistory.length - 1]
+                        : null;
                     return (
                       <tr
                         key={log._id}
                         id={log._id}
-                        className={`transition-all duration-1000 ease-out group ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
+                        className={`group ${activeHighlight === log._id ? `${theme.primaryBg} border-${theme.primaryText}` : "hover:bg-zinc-800/30"}`}
                       >
                         <td className="p-5 px-6 align-top">
-                          <p
-                            className={`text-[11px] font-mono text-zinc-400 mb-1.5`}
-                          >
+                          <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
                             {new Date(log.date).toLocaleDateString("en-GB")}
                           </p>
-                          <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
-                            <Truck size={14} className={`text-zinc-500`} />{" "}
+                          <p className="font-bold text-white uppercase tracking-wide flex items-center gap-2">
+                            <Truck size={14} className="text-zinc-500" />{" "}
                             {log.vehicleNo}
                           </p>
-                          {hasEdits && (
+                          {latestLog && (
                             <div
                               onClick={() => openHistory(log)}
-                              className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
+                              className="mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80"
                             >
                               <History size={10} className="text-zinc-400" />
-                              <span
-                                className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
-                              >
+                              <span className="text-[9px] font-bold text-zinc-300 uppercase">
                                 {latestLog.role || "ADMIN"}
                               </span>
                             </div>
                           )}
                         </td>
                         <td className="p-5 px-6 align-top">
-                          <div className="font-bold text-white text-md tracking-wide flex items-center gap-2 mb-1.5">
+                          <div className="font-bold text-white flex items-center gap-2 mb-1.5">
                             <User size={14} className="text-zinc-500" />{" "}
                             {log.customerName}
                           </div>
-                          <div className="text-[11px] text-zinc-400 font-mono flex items-center gap-1.5 mb-1.5">
+                          <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 mb-1.5">
                             <Phone size={10} className="text-zinc-600" />{" "}
                             {log.phone}
                           </div>
-                          <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 uppercase tracking-wider">
+                          <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 uppercase">
                             <MapPin size={10} className="text-zinc-600" />{" "}
                             {log.location}
                           </div>
                         </td>
                         <td className="p-5 px-6 align-top">
                           <div className="flex flex-col gap-2">
-                            <span className="text-[10px] bg-zinc-800/50 border border-zinc-700/50 px-2.5 py-1 rounded text-zinc-300 font-mono w-max tracking-wider">
+                            <span className="text-[10px] bg-zinc-800/50 border border-zinc-700/50 px-2.5 py-1 rounded text-zinc-300 font-mono w-max">
                               {log.startTime} to {log.endTime}
                             </span>
                             <span
-                              className={`text-lg font-black ${theme.primaryText} font-mono tracking-wider`}
+                              className={`text-lg font-black ${theme.primaryText} font-mono`}
                             >
                               {log.totalHours}h {log.totalMinutes}m
                             </span>
@@ -753,7 +745,7 @@ const JcbReport = () => {
                                   state: { editLog: log },
                                 })
                               }
-                              className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
+                              className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg`}
                             >
                               <Edit2 size={16} />
                             </button>
@@ -766,15 +758,10 @@ const JcbReport = () => {
                                       id: log._id,
                                     })
                               }
-                              className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
+                              className={`p-2 rounded-lg ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
                             >
                               <Trash2 size={16} />
                             </button>
-                            {warningTooltip === log._id && (
-                              <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
-                                🚫 Access Denied
-                              </div>
-                            )}
                           </div>
                         </td>
                       </tr>
@@ -784,15 +771,16 @@ const JcbReport = () => {
                     <tr>
                       <td
                         colSpan="4"
-                        className="p-12 text-center text-zinc-500 italic animate-in fade-in"
+                        className="p-12 text-center text-zinc-500 italic"
                       >
-                        No JCB records found for this query.
+                        No records found.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
 
+              {/* READS PROTECTION: MAX DISPLAY 1000 */}
               {hasMore &&
                 loadedCount < MAX_RECORDS_LIMIT &&
                 logs.length > 0 && (
@@ -805,7 +793,7 @@ const JcbReport = () => {
                     >
                       {loadingMore ? (
                         <RefreshCcw size={16} className="animate-spin mr-2" />
-                      ) : null}{" "}
+                      ) : null}
                       {loadingMore
                         ? "Loading..."
                         : `Load Next 50 Records (Loaded: ${loadedCount})`}
@@ -815,7 +803,7 @@ const JcbReport = () => {
 
               {loadedCount >= MAX_RECORDS_LIMIT && (
                 <div className="p-6 border-t border-zinc-800/60 flex justify-center">
-                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md animate-in fade-in slide-in-from-bottom-2 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md">
                     <AlertOctagon
                       className="mx-auto mb-2 opacity-80"
                       size={24}
@@ -823,11 +811,10 @@ const JcbReport = () => {
                     <h4 className="font-bold text-sm mb-1">
                       Display Limit Reached
                     </h4>
-                    <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
-                      To preserve system performance and Firebase Read limits,
-                      infinite scrolling stops at 5,000 records. Please utilize
-                      the Search and Filters at the top to precisely locate
-                      older records.
+                    <p className="text-[11px] font-medium text-amber-200/60">
+                      To preserve Firebase Read limits, infinite scrolling stops
+                      at {MAX_RECORDS_LIMIT} records. Please utilize the Search
+                      and Filters at the top to locate older records.
                     </p>
                   </div>
                 </div>
@@ -847,59 +834,56 @@ const JcbReport = () => {
         isDestructive={true}
       />
 
+      {/* WIPE MODAL */}
       {isDeleteAllOpen && !isManager && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
           <div
             className="absolute inset-0"
             onClick={() => !wiping && setIsDeleteAllOpen(false)}
           />
-          <div className="bg-[#09090B] border border-red-900/30 shadow-2xl rounded-3xl w-full max-w-lg relative z-10 overflow-hidden flex flex-col p-8 animate-in zoom-in-[0.95] duration-300 ease-out">
+          <div className="bg-[#09090B] border border-red-900/30 shadow-2xl rounded-3xl w-full max-w-lg relative z-10 p-8">
             <div className="flex items-center gap-3 text-red-500 mb-6">
               <AlertOctagon size={28} />
-              <h2 className="text-xl font-black tracking-wide">
-                Wipe Database
-              </h2>
+              <h2 className="text-xl font-black">Wipe Database</h2>
             </div>
+
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-2xl p-5 mb-6">
               <div className="flex items-start gap-3">
-                <ShieldAlert
-                  size={20}
-                  className="text-yellow-500 shrink-0 mt-0.5"
-                />
+                <ShieldAlert size={20} className="text-yellow-500 mt-0.5" />
                 <div className="w-full">
                   <h3 className="text-yellow-500 font-bold text-sm mb-1">
                     Backup Recommendation
                   </h3>
-                  <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
+                  <p className="text-zinc-400 text-xs mb-3">
                     Download backup before wiping.{" "}
                     <strong className="text-amber-400">
-                      Limit: {SAFE_BACKUP_LIMIT} records/day.
-                    </strong>{" "}
-                    If you exceed this, the system will save your progress, and
-                    you can download the rest tomorrow.
+                      Limit: 1,000 records/day.
+                    </strong>
                   </p>
-                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                  <div className="flex gap-2">
                     <input
                       type="month"
                       value={backupMonth}
                       onChange={(e) => setBackupMonth(e.target.value)}
                       style={{ colorScheme: "dark" }}
-                      className="w-full sm:w-32 bg-zinc-900/50 border border-yellow-500/30 rounded-xl px-3 py-2.5 text-xs text-zinc-200 outline-none transition-all"
+                      className="w-32 bg-zinc-900/50 border border-yellow-500/30 rounded-xl px-3 text-xs text-zinc-200 outline-none"
                     />
                     <button
                       onClick={() => handleFullBackup(backupMonth)}
-                      className="w-full sm:flex-1 py-2.5 bg-transparent border border-yellow-600/40 text-yellow-500 hover:bg-yellow-500/10 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 py-2 bg-transparent border border-yellow-600/40 text-yellow-500 hover:bg-yellow-500/10 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
                     >
-                      <Download size={14} /> Download Backup
+                      <Download size={14} /> Download
                     </button>
                   </div>
                 </div>
               </div>
             </div>
+
             <p className="text-red-400/80 text-sm mb-4">
               This action will{" "}
-              <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
-              JCB records. Please enter your Admin password to confirm.
+              <strong className="text-red-500">PERMANENTLY DELETE</strong> JCB
+              records up to the daily safety limit (2,500). Enter Admin password
+              to confirm.
             </p>
             <div className="relative mb-8">
               <input
@@ -907,35 +891,29 @@ const JcbReport = () => {
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Enter admin password..."
-                className="w-full bg-[#09090B] border border-zinc-800 focus:border-red-500/50 rounded-xl pl-4 pr-10 py-3 text-zinc-100 outline-none transition-all text-sm"
+                className="w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-3 text-zinc-100 outline-none"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500"
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-            <div className="flex justify-end gap-3 items-center">
+            <div className="flex justify-end gap-3">
               <button
-                onClick={() => {
-                  setIsDeleteAllOpen(false);
-                  setDeletePassword("");
-                }}
+                onClick={() => setIsDeleteAllOpen(false)}
                 disabled={wiping}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
+                className="px-6 py-2.5 text-sm font-bold text-zinc-400 hover:text-white"
               >
                 Cancel
               </button>
               <button
                 onClick={handleWipeAll}
                 disabled={wiping || !deletePassword.trim()}
-                className={`h-11 px-6 rounded-xl text-sm font-bold border transition-colors flex items-center justify-center gap-2 ${wiping || !deletePassword.trim() ? "border-rose-900/30 text-rose-500/50 bg-rose-950/20 cursor-not-allowed" : "border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20"}`}
+                className={`h-11 px-6 rounded-xl text-sm font-bold border flex items-center gap-2 ${wiping || !deletePassword.trim() ? "border-rose-900/30 text-rose-500/50 bg-rose-950/20" : "border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20"}`}
               >
-                {wiping ? (
-                  <RefreshCcw size={16} className="animate-spin" />
-                ) : null}{" "}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </button>
             </div>
@@ -943,23 +921,20 @@ const JcbReport = () => {
         </div>
       )}
 
+      {/* HISTORY MODAL */}
       {historyModal.isOpen && historyModal.data && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div
             className="absolute inset-0 cursor-pointer"
             onClick={() =>
               setHistoryModal({ isOpen: false, data: null, itemName: "" })
             }
           />
-          <div
-            className={`bg-[#09090B] border ${theme.primaryBorder} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-[0.95] duration-300 ease-out`}
-          >
-            <div
-              className={`flex items-center justify-between p-5 border-b ${theme.primaryBorder} ${theme.primaryBg} shrink-0`}
-            >
-              <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
+          <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl w-full max-w-md relative z-10 shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-5 border-b border-zinc-800/60 shrink-0">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
                 <History size={16} className={theme.primaryText} /> Log History:{" "}
-                <span className={`${theme.primaryText} font-normal`}>
+                <span className="text-zinc-400 font-normal">
                   {historyModal.itemName}
                 </span>
               </div>
@@ -967,7 +942,7 @@ const JcbReport = () => {
                 onClick={() =>
                   setHistoryModal({ isOpen: false, data: null, itemName: "" })
                 }
-                className="text-zinc-400 hover:text-white transition-colors"
+                className="text-zinc-500 hover:text-white"
               >
                 <X size={18} />
               </button>
@@ -976,7 +951,7 @@ const JcbReport = () => {
               {historyModal.data.map((log, index) => (
                 <div
                   key={index}
-                  className={`bg-[#09090B] border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300`}
+                  className={`bg-zinc-900/30 border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative`}
                 >
                   {index === 0 && (
                     <div
@@ -985,13 +960,13 @@ const JcbReport = () => {
                   )}
                   <div className="flex items-center gap-4 pl-1">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800/50 text-zinc-400"}`}
                     >
                       {(log.role || "A")[0].toUpperCase()}
                     </div>
                     <div>
                       <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-500"}`}
+                        className={`font-bold uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-400"}`}
                       >
                         {log.role || "ADMIN"}
                       </h4>
@@ -1004,17 +979,15 @@ const JcbReport = () => {
                         {new Date(log.at).toLocaleString("en-GB", {
                           day: "2-digit",
                           month: "short",
-                          year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
-                          second: "2-digit",
                         })}
                       </p>
                     </div>
                   </div>
                   {index === 0 && (
                     <div
-                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border`}
+                      className={`${theme.primaryBg} ${theme.primaryBorder} ${theme.primaryText} text-[10px] font-bold px-3 py-1 rounded-lg border`}
                     >
                       LATEST
                     </div>

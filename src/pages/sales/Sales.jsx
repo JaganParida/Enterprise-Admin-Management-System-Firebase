@@ -157,6 +157,37 @@ const Sales = () => {
     const { name, value } = e.target;
     setFormData((prev) => {
       let newData = { ...prev, [name]: value };
+
+      if (name === "vehicleNo") {
+        let raw = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        let formatted = "";
+
+        if (raw.length > 0) formatted += raw.substring(0, 2);
+        if (raw.length > 2) formatted += "-" + raw.substring(2, 4);
+        if (raw.length > 4) {
+          let remaining = raw.substring(4);
+          if (/^[0-9]/.test(remaining)) {
+            let match = remaining.match(/^([0-9]{1,4})?([A-Z]{0,2})?/);
+            if (match && match[1]) formatted += "-" + match[1];
+            if (match && match[2]) formatted += "-" + match[2];
+          } else {
+            let match = remaining.match(/^([A-Z]{1,3})?([0-9]{0,4})?/);
+            if (match && match[1]) formatted += "-" + match[1];
+            if (match && match[2]) formatted += "-" + match[2];
+          }
+        }
+
+        if (
+          value.endsWith("-") &&
+          formatted.length < 14 &&
+          formatted.replace(/-/g, "") === raw
+        ) {
+          formatted += "-";
+        }
+
+        newData.vehicleNo = formatted.substring(0, 14);
+      }
+
       if (name === "quantity" || name === "pricePerQuantity") {
         const qty = Number(newData.quantity) || 0;
         const rate = Number(newData.pricePerQuantity) || 0;
@@ -358,7 +389,8 @@ const Sales = () => {
                   value={formData.vehicleNo}
                   onChange={handleChange}
                   required
-                  placeholder="e.g. OD 02 AB 1234"
+                  maxLength="14"
+                  placeholder="e.g. OD-02-AX-1234"
                   className={`w-full pl-11 pr-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
                 />
               </div>

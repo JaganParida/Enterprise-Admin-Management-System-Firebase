@@ -1495,55 +1495,94 @@ const PublicFooter = () => {
   const addressQuery = encodeURIComponent(
     "Sundarpur, Chandaka, Khordha, Odisha",
   );
+  // Fixed the syntax for the map URL so it actually renders
   const mapUrl = `https://maps.google.com/maps?q=${addressQuery}&t=&z=14&ie=UTF8&iwloc=&output=embed`;
 
   return (
-    <footer className="bg-[#09090B] border-t border-white/5 pt-20 pb-8 px-6 relative z-20">
-      <div className="max-w-7xl mx-auto">
+    <footer className="relative bg-[#09090B] border-t border-white/[0.04] pt-24 pb-8 px-6 z-20 overflow-hidden">
+      {/* Ultra-Subtle Faded Grid (No Glowing Blobs) */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_100%,#000_50%,transparent_100%)] pointer-events-none -z-10" />
+
+      <div className="max-w-7xl mx-auto relative z-10">
         <div className="mb-24 flex flex-col lg:flex-row gap-16 justify-between items-center">
+          {/* Left Text Content */}
           <div className="flex-1 text-center lg:text-left">
-            <h3 className="text-3xl md:text-4xl font-black text-white tracking-tighter mb-4">
+            <div className="inline-flex items-center justify-center lg:justify-start gap-3 mb-6 w-full lg:w-auto opacity-80">
+              <span className="w-6 h-px bg-zinc-500 hidden lg:block"></span>
+              <span className="text-zinc-400 text-xs font-semibold uppercase tracking-widest font-mono">
+                Global Headquarters
+              </span>
+            </div>
+            <h3 className="text-4xl md:text-5xl font-medium text-white tracking-tight mb-6">
               Operation Center
             </h3>
-            <p className="text-zinc-400 mb-8 max-w-md mx-auto lg:mx-0 font-medium">
-              Track your fleet and manage assets from our central command hub.
+            <p className="text-zinc-400 mb-10 max-w-md mx-auto lg:mx-0 text-base leading-relaxed">
+              Track your fleet, manage assets, and monitor regional logistics
+              from our central command hub.
             </p>
-            <div className="inline-flex items-center gap-3 bg-white/5 px-5 py-3 rounded-xl border border-white/10">
-              <MapPin size={20} className="text-zinc-400" />
-              <p className="text-sm font-medium text-zinc-300">
-                At-Sundarpur, PO/PS-Chandaka, Dist-Khordha
-              </p>
+
+            {/* Flat, Sleek Location Badge */}
+            <div className="inline-flex items-center gap-4 bg-[#121214] hover:bg-[#18181B] transition-colors duration-200 px-5 py-3 rounded-2xl border border-white/5 group cursor-pointer">
+              <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center text-zinc-400 group-hover:text-white transition-colors shrink-0">
+                <MapPin size={18} />
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] text-zinc-500 font-semibold mb-0.5 uppercase tracking-widest font-mono">
+                  Current Location
+                </p>
+                <p className="text-sm font-medium text-zinc-300 group-hover:text-white transition-colors">
+                  At-Sundarpur, PO/PS-Chandaka, Dist-Khordha
+                </p>
+              </div>
             </div>
           </div>
-          <div className="flex-1 w-full max-w-lg">
-            <div className="w-full h-[300px] rounded-3xl border border-white/10 overflow-hidden relative bg-[#121214]">
-              <iframe
-                src={mapUrl}
-                width="100%"
-                height="100%"
-                style={{
-                  border: 0,
-                  filter:
-                    "invert(90%) hue-rotate(180deg) brightness(85%) contrast(110%) sepia(10%) grayscale(50%)",
-                }}
-                allowFullScreen=""
-                loading="lazy"
-                title="Location"
-                className="w-full h-full opacity-60 hover:opacity-100 transition-opacity duration-500 grayscale hover:grayscale-0"
-              ></iframe>
+
+          {/* Right Map Container (Flat & Sharp) */}
+          <div className="flex-1 w-full max-w-xl">
+            <div className="w-full h-[320px] p-2 rounded-[2rem] bg-white/[0.02] border border-white/5 backdrop-blur-sm">
+              <div className="w-full h-full rounded-[1.5rem] overflow-hidden relative bg-[#09090B] border border-white/5">
+                <iframe
+                  src={mapUrl}
+                  width="100%"
+                  height="100%"
+                  style={{
+                    border: 0,
+                    filter:
+                      "invert(90%) hue-rotate(180deg) brightness(85%) contrast(110%) sepia(10%) grayscale(80%)",
+                  }}
+                  allowFullScreen=""
+                  loading="lazy"
+                  title="Location"
+                  // UPDATE: Added hover:![filter:none] to force the light theme on hover
+                  className="w-full h-full opacity-70 hover:opacity-100 transition-all duration-500 hover:![filter:none]"
+                ></iframe>
+              </div>
             </div>
           </div>
         </div>
-        <div className="border-t border-white/5 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] font-bold uppercase tracking-widest font-mono text-zinc-500">
-          <p>Enterprise OS // v2.0</p>
-          <div className="flex items-center gap-6">
-            <span className="hover:text-zinc-300 transition-colors cursor-pointer">
+
+        {/* Bottom Status Bar */}
+        <div className="border-t border-white/[0.04] pt-8 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-50"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </div>
+            <p className="text-[11px] font-medium uppercase tracking-widest font-mono text-zinc-500">
+              Enterprise OS <span className="text-zinc-700 mx-2">/</span> v2.0
+            </p>
+          </div>
+
+          <div className="flex flex-wrap justify-center items-center gap-6 lg:gap-8 text-[11px] font-medium uppercase tracking-widest font-mono text-zinc-500">
+            <span className="hover:text-zinc-300 transition-colors cursor-pointer flex items-center gap-2">
               Sys_Log
             </span>
-            <span className="hover:text-zinc-300 transition-colors cursor-pointer">
+            <span className="hover:text-zinc-300 transition-colors cursor-pointer flex items-center gap-2">
               Security
             </span>
-            <p>Developed BY Centurions27</p>
+            <p className="text-zinc-400 bg-white/5 border border-white/5 px-3 py-1.5 rounded-md">
+              Developed BY Centurions27
+            </p>
           </div>
         </div>
       </div>

@@ -441,6 +441,8 @@ const ProductionReport = () => {
     }
   };
 
+  // 🔥 CRITICAL FIX: location.key added to dependency array
+  // This forces the check to re-run whenever you navigate back to this page
   useEffect(() => {
     const needsRefresh =
       sessionStorage.getItem("prod_report_needs_refresh") === "true";
@@ -457,7 +459,7 @@ const ProductionReport = () => {
       fetchLogs(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, location.key]);
 
   const handleApplyFilters = (e) => {
     if (e) e.preventDefault();
@@ -607,8 +609,8 @@ const ProductionReport = () => {
     try {
       if (!monthToFetch) return toast.error("Please select a month.");
       setIsExporting(true);
-      const QUOTA_LIMIT = 2000; // REDUCED FROM 10k TO PROTECT QUOTA
-      const BATCH_SIZE = 500; // Smoother chunks
+      const QUOTA_LIMIT = 2000;
+      const BATCH_SIZE = 500;
       const collectionName =
         activeTab === "production" ? "production" : "labour_payouts";
       const savedState = await productionService.getBackupState(
@@ -997,10 +999,10 @@ const ProductionReport = () => {
         {/* ✅ FIX: FORM BASED SEARCH & FILTER TOOLBAR */}
         <form
           onSubmit={handleApplyFilters}
-          className="p-4 border-b border-zinc-800/60 flex flex-col xl:flex-row items-center justify-between gap-4"
+          className="p-4 border-b border-zinc-800/60 flex flex-col xl:flex-row flex-wrap items-start xl:items-center justify-between gap-4"
         >
           {/* SEARCH INPUT */}
-          <div className="relative w-full xl:w-[320px] group shrink-0">
+          <div className="relative w-full xl:max-w-[320px] flex-1 group shrink-0">
             <input
               type="text"
               placeholder={`Search ${activeTab === "production" ? "product" : "buyer"}...`}
@@ -1031,7 +1033,7 @@ const ProductionReport = () => {
           </div>
 
           {/* FILTERS - PILL SHAPES */}
-          <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto overflow-x-auto hide-scrollbar pb-1 xl:pb-0 shrink-0">
+          <div className="flex flex-nowrap xl:flex-wrap items-center gap-2 w-full xl:w-auto overflow-x-auto xl:overflow-visible hide-scrollbar pb-1 xl:pb-0 shrink-0">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 mr-1 shrink-0">
               <Filter size={12} /> Filters
             </div>
@@ -1050,10 +1052,27 @@ const ProductionReport = () => {
                     className="appearance-none bg-[#111116] border border-zinc-800/80 rounded-full pl-4 pr-8 py-2 text-[11px] md:text-xs font-semibold text-zinc-300 outline-none cursor-pointer focus:border-indigo-500/50 hover:bg-[#18181f] transition-all shadow-sm"
                   >
                     <option value="All">All Products</option>
-                    <option value="Bricks (10 inch)">Bricks 10"</option>
-                    <option value="Bricks (9 inch)">Bricks 9"</option>
-                    <option value="Zig Zag (60mm)">Zig Zag</option>
+
+                    {/* Bricks */}
+                    <option value="Bricks (10 inch)">Bricks (10 inch)</option>
+                    <option value="Bricks (9 inch)">Bricks (9 inch)</option>
+                    <option value="Bricks (8 inch)">Bricks (8 inch)</option>
+
+                    {/* Paver Blocks */}
+                    <option value="Zig Zag (60mm)">Zig Zag (60mm)</option>
+                    <option value="Zig Zag (80mm)">Zig Zag (80mm)</option>
+                    <option value="6/12 Brick (60mm)">6/12 Brick (60mm)</option>
+                    <option value="6/12 Brick (80mm)">612 Brick (80mm)</option>
+                    <option value="6/6 Brick (60mm)">6/6 Brick (60mm)</option>
+                    <option value="6/6 Brick (80mm)">6/6 Brick (80mm)</option>
+
+                    {/* Chequered Tiles */}
                     <option value="Hexagon">Hexagon</option>
+                    <option value="Brick Design (9inch)">
+                      Brick Design (9inch)
+                    </option>
+                    <option value="Curve Stone">Curve Stone</option>
+                    <option value="Cover Block">Cover Block</option>
                   </select>
                   <ChevronDown
                     size={12}
@@ -1145,7 +1164,7 @@ const ProductionReport = () => {
                 (localFilters?.date || "All") === "All" &&
                 !(localFilters?.exactDate || "")
               }
-              className={`shrink-0 px-4 py-2 text-[11px] md:text-xs rounded-full flex items-center gap-1 font-bold shadow-sm ml-auto xl:ml-0 transition-all duration-300 ${
+              className={`shrink-0 px-4 py-2 text-[11px] md:text-xs rounded-full flex items-center gap-1 font-bold shadow-sm transition-all duration-300 ${
                 (localFilters?.product || "All") !== "All" ||
                 (localFilters?.quantity || "All") !== "All" ||
                 (localFilters?.date || "All") !== "All" ||
@@ -1173,22 +1192,22 @@ const ProductionReport = () => {
         {/* 🚀 DATA TABLES */}
         <div className="overflow-x-auto hide-scrollbar min-h-[400px]">
           {activeTab === "production" && (
-            <table className="w-full text-left min-w-[700px] animate-in fade-in duration-300">
+            <table className="w-full text-left min-w-max animate-in fade-in duration-300">
               <thead className="bg-transparent border-b border-zinc-800/40">
                 <tr>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 w-[25%]">
                     Date & Info
                   </th>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 w-[25%]">
                     Item Name
                   </th>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 w-[15%]">
                     Size
                   </th>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right w-[15%]">
                     Output
                   </th>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right md:pr-8">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right md:pr-8 w-[20%]">
                     Actions
                   </th>
                 </tr>
@@ -1275,22 +1294,22 @@ const ProductionReport = () => {
           )}
 
           {activeTab === "labour" && (
-            <table className="w-full text-left min-w-[750px] animate-in fade-in duration-300">
+            <table className="w-full text-left min-w-max animate-in fade-in duration-300">
               <thead className="bg-transparent border-b border-zinc-800/40">
                 <tr>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 w-[30%]">
                     Buyer Details
                   </th>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right w-[15%]">
                     Cost
                   </th>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right w-[15%]">
                     Paid
                   </th>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right w-[15%]">
                     Due
                   </th>
-                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right md:pr-8">
+                  <th className="py-3 px-5 text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right md:pr-8 w-[25%]">
                     Actions
                   </th>
                 </tr>
@@ -1461,20 +1480,22 @@ const ProductionReport = () => {
                               className="border-t border-rose-900/20 overflow-hidden bg-[#0c0c0e]"
                             >
                               <div className="p-2 sm:p-4 overflow-x-auto">
-                                <table className="w-full text-left min-w-[550px]">
+                                <table className="w-full text-left min-w-max">
                                   <thead className="text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800/60 bg-transparent">
                                     <tr>
-                                      <th className="py-2.5 px-4">Date</th>
-                                      <th className="py-2.5 px-4 text-right">
+                                      <th className="py-2.5 px-4 w-[25%]">
+                                        Date
+                                      </th>
+                                      <th className="py-2.5 px-4 text-right w-[20%]">
                                         Cost
                                       </th>
-                                      <th className="py-2.5 px-4 text-right">
+                                      <th className="py-2.5 px-4 text-right w-[20%]">
                                         Paid
                                       </th>
-                                      <th className="py-2.5 px-4 text-right text-rose-500">
+                                      <th className="py-2.5 px-4 text-right text-rose-500 w-[20%]">
                                         Due
                                       </th>
-                                      <th className="py-2.5 px-4 text-center">
+                                      <th className="py-2.5 px-4 text-center w-[15%]">
                                         Action
                                       </th>
                                     </tr>

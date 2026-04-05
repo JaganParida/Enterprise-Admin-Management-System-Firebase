@@ -56,7 +56,7 @@ function App() {
 
   return (
     <AuthProvider>
-      {/* <LaunchOverlay /> */}
+      <LaunchOverlay />
       <UIProvider>
         <Router>
           <Routes>

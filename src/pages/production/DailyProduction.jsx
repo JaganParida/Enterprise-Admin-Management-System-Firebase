@@ -221,21 +221,38 @@ const DailyProduction = () => {
     }
   };
 
+  // ✅ UPDATED LABOUR AUTO-CALCULATION LOGIC
   const handleLabourChange = (e) => {
     const { name, value } = e.target;
     setLabourData((prev) => {
       let newData = { ...prev, [name]: value };
-      const cost = Number(newData.cost) || 0;
+
+      // Parse numerical values safely, treating empty string as 0
+      const cost = newData.cost === "" ? 0 : Number(newData.cost);
+      const paid = newData.amountPaid === "" ? 0 : Number(newData.amountPaid);
+      const due = newData.amountDue === "" ? 0 : Number(newData.amountDue);
+
       if (name === "cost") {
-        const paid = Number(newData.amountPaid) || 0;
-        newData.amountDue = cost > 0 ? Math.max(0, cost - paid).toString() : "";
+        // When Cost is edited, update the Due
+        if (newData.cost !== "") {
+          newData.amountDue = Math.max(0, cost - paid).toString();
+        }
       } else if (name === "amountPaid") {
-        const paid = Number(value) || 0;
-        newData.amountDue = cost > 0 ? Math.max(0, cost - paid).toString() : "";
+        // When Paid is edited -> Update Due (if cost exists) OR Calculate Cost
+        if (newData.cost !== "") {
+          newData.amountDue = Math.max(0, cost - paid).toString();
+        } else if (newData.amountDue !== "") {
+          newData.cost = (paid + due).toString();
+        }
       } else if (name === "amountDue") {
-        const due = Number(value) || 0;
-        if (cost > 0) newData.amountPaid = Math.max(0, cost - due).toString();
+        // When Due is edited -> Update Paid (if cost exists) OR Calculate Cost
+        if (newData.cost !== "") {
+          newData.amountPaid = Math.max(0, cost - due).toString();
+        } else if (newData.amountPaid !== "") {
+          newData.cost = (paid + due).toString();
+        }
       }
+
       return newData;
     });
   };
@@ -508,16 +525,16 @@ const DailyProduction = () => {
                               Zig Zag (80mm)
                             </option>
                             <option
-                              value="6-12 Brick (60mm)"
+                              value="6/12 Brick (60mm)"
                               className="text-zinc-100 font-normal"
                             >
-                              6-12 Brick (60mm)
+                              6/12 Brick (60mm)
                             </option>
                             <option
-                              value="6-12 Brick (80mm)"
+                              value="6/12 Brick (80mm)"
                               className="text-zinc-100 font-normal"
                             >
-                              6-12 Brick (80mm)
+                              6/12 Brick (80mm)
                             </option>
                             <option
                               value="6/6 Brick (60mm)"

@@ -101,14 +101,33 @@ const EditPayout = () => {
     const { name, value } = e.target;
     setLabourData((prev) => {
       let newData = { ...prev, [name]: value };
-      if (name === "amountDue" && originalLog) {
-        const prevDue = Number(originalLog.amountDue) || 0;
-        const prevPaid = Number(originalLog.amountPaid) || 0;
-        const newDue = Number(value);
-        if (newDue === 0 && prevDue > 0)
-          newData.amountPaid = prevPaid + prevDue;
-        else if (newDue > 0 && prevDue > 0) newData.amountPaid = prevPaid;
+
+      // Parse numerical values safely, treating empty string as 0
+      const cost = newData.cost === "" ? 0 : Number(newData.cost);
+      const paid = newData.amountPaid === "" ? 0 : Number(newData.amountPaid);
+      const due = newData.amountDue === "" ? 0 : Number(newData.amountDue);
+
+      if (name === "cost") {
+        // When Cost is edited, update the Due
+        if (newData.cost !== "") {
+          newData.amountDue = Math.max(0, cost - paid).toString();
+        }
+      } else if (name === "amountPaid") {
+        // When Paid is edited -> Update Due (if cost exists) OR Calculate Cost
+        if (newData.cost !== "") {
+          newData.amountDue = Math.max(0, cost - paid).toString();
+        } else if (newData.amountDue !== "") {
+          newData.cost = (paid + due).toString();
+        }
+      } else if (name === "amountDue") {
+        // When Due is edited -> Update Paid (if cost exists) OR Calculate Cost
+        if (newData.cost !== "") {
+          newData.amountPaid = Math.max(0, cost - due).toString();
+        } else if (newData.amountPaid !== "") {
+          newData.cost = (paid + due).toString();
+        }
       }
+
       return newData;
     });
   };
@@ -120,6 +139,7 @@ const EditPayout = () => {
         admin || { email: "Unknown", role: "admin" };
       await productionService.updateLabourPayout(id, labourData, currentUser);
       toast.success("Payout record synchronized successfully.");
+      sessionStorage.setItem("prod_report_needs_refresh", "true");
       navigate(-1);
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to update record.");

@@ -218,19 +218,31 @@ const Maintenance = () => {
       const payload = { ...formData, cost: Number(formData.cost) || 0 };
 
       if (editId) {
-        await maintenanceService.updateLog(editId, payload, currentUser);
-        const diffCost = payload.cost - Number(oldLogData?.cost || 0);
-        setStats((prev) => ({ ...prev, totalCost: prev.totalCost + diffCost }));
+        // 🚀 Sending oldCost to correctly update stats via service
+        const oldCost = Number(oldLogData?.cost || 0);
+        await maintenanceService.updateLog(
+          editId,
+          payload,
+          currentUser,
+          oldCost,
+        );
         toast.success("Updated successfully!");
       } else {
         await maintenanceService.addLog(payload, currentUser);
-        setStats((prev) => ({
-          totalCost: prev.totalCost + payload.cost,
-          serviceCount: prev.serviceCount + 1,
-        }));
         toast.success("Logged successfully!");
       }
+
       resetForm();
+
+      // 🚀 Pulling perfectly synced stats from cache instantly (NO DELAY)
+      setStats(
+        maintenanceService.getCachedStats() || {
+          totalCost: 0,
+          serviceCount: 0,
+        },
+      );
+
+      // Only logs fetch from server to get new doc ID
       const logsRes = await maintenanceService.getLogs(
         defaultFilters,
         null,
@@ -257,11 +269,13 @@ const Maintenance = () => {
       itemName: `Maintenance for ${log?.vehicleNo || "Unknown"}`,
     });
   };
+
   const resetForm = () => {
     setEditId(null);
     setOldLogData(null);
     setFormData(initialForm);
   };
+
   const handleRowClick = (e, id) => {
     if (
       e.target.closest("button") ||

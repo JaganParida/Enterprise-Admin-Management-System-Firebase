@@ -226,16 +226,16 @@ const EditProduction = () => {
                       Zig Zag (80mm)
                     </option>
                     <option
-                      value="6-12 Brick (60mm)"
+                      value="6/12 Brick (60mm)"
                       className="text-zinc-100 font-normal"
                     >
-                      6-12 Brick (60mm)
+                      6/12 Brick (60mm)
                     </option>
                     <option
-                      value="6-12 Brick (80mm)"
+                      value="6/12 Brick (80mm)"
                       className="text-zinc-100 font-normal"
                     >
-                      6-12 Brick (80mm)
+                      6/12 Brick (80mm)
                     </option>
                     <option
                       value="6/6 Brick (60mm)"

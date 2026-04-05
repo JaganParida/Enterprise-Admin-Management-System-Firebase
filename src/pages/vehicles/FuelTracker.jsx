@@ -131,7 +131,6 @@ const FuelTracker = () => {
     (parseFloat(formData.liters) || 0) *
     (parseFloat(formData.pricePerLiter) || 0);
 
-  // 🚀 Background Cross-Tab Sync Checker
   useEffect(() => {
     const checkSync = () => {
       const globalLastUpdate = parseInt(
@@ -149,12 +148,13 @@ const FuelTracker = () => {
     if (logs.length === 0 || force) setSyncStatus("syncing");
     if (logs.length === 0) setLoading(true);
     try {
+      // 🚀 FIXED: Fetch exactly 10 records instead of 50 to prevent throwing away 40 reads.
       const [statsRes, logsRes] = await Promise.all([
         fuelService.getStats(force),
-        fuelService.getLogs(defaultFilters, null, 50, force),
+        fuelService.getLogs(defaultFilters, null, 10, force),
       ]);
       setStats(statsRes);
-      setLogs(logsRes.data ? logsRes.data.slice(0, 10) : []);
+      setLogs(logsRes.data || []);
       setSyncStatus("synced");
     } catch (err) {
       toast.error("Failed to load tracking data.");
@@ -193,6 +193,7 @@ const FuelTracker = () => {
     let remainder = rawValue.slice(4);
     let middleChars = remainder.replace(/[^A-Z]/g, "").slice(0, 2);
     let lastDigits = remainder.replace(/[^0-9]/g, "").slice(0, 4);
+
     let formatted = state;
     if (state.length === 2 && rawValue.length > 2) {
       formatted += "-" + rto;
@@ -206,13 +207,16 @@ const FuelTracker = () => {
         }
       }
     }
-    setFormData((prev) => ({ ...prev, vehicleNo: formatted }));
+
+    if (formatted.length <= 13) {
+      setFormData((prev) => ({ ...prev, vehicleNo: formatted }));
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!/^[A-Z]{2}-[0-9]{2}-([A-Z]{1,2}-)?[0-9]{4}$/.test(formData.vehicleNo))
-      return toast.error("Invalid Vehicle No. Format");
+      return toast.error("Invalid Vehicle No. Format (e.g. OD-02-AX-1234)");
     if (Number(formData.liters) <= 0) return toast.error("Liters must be > 0");
     if (Number(formData.pricePerLiter) <= 0)
       return toast.error("Price per liter must be > 0");
@@ -227,19 +231,23 @@ const FuelTracker = () => {
         const diffLiters =
           Number(payload.liters) - Number(oldLogData?.liters || 0);
         const diffCost = calculatedTotal - Number(oldLogData?.totalCost || 0);
-        setStats((prev) => ({
-          totalLiters: prev.totalLiters + diffLiters,
-          totalCost: prev.totalCost + diffCost,
-          refuelCount: prev.refuelCount,
-        }));
+        const newStats = {
+          totalLiters: stats.totalLiters + diffLiters,
+          totalCost: stats.totalCost + diffCost,
+          refuelCount: stats.refuelCount,
+        };
+        setStats(newStats);
+        fuelService.updateLocalStats(newStats);
         toast.success("Fuel log updated!");
       } else {
         await fuelService.addLog(payload, currentUser);
-        setStats((prev) => ({
-          totalLiters: prev.totalLiters + Number(payload.liters),
-          totalCost: prev.totalCost + calculatedTotal,
-          refuelCount: prev.refuelCount + 1,
-        }));
+        const newStats = {
+          totalLiters: stats.totalLiters + Number(payload.liters),
+          totalCost: stats.totalCost + calculatedTotal,
+          refuelCount: stats.refuelCount + 1,
+        };
+        setStats(newStats);
+        fuelService.updateLocalStats(newStats);
         toast.success("Fuel logged successfully!");
       }
 
@@ -250,7 +258,7 @@ const FuelTracker = () => {
         10,
         false,
       );
-      setLogs(logsRes.data ? logsRes.data.slice(0, 10) : []);
+      setLogs(logsRes.data || []);
       setSyncStatus("synced");
     } catch (err) {
       toast.error("Failed to save log.");
@@ -268,11 +276,13 @@ const FuelTracker = () => {
       itemName: `Fuel for ${log.vehicleNo}`,
     });
   };
+
   const resetForm = () => {
     setEditId(null);
     setOldLogData(null);
     setFormData(initialForm);
   };
+
   const handleRowClick = (e, id) => {
     if (
       e.target.closest("button") ||

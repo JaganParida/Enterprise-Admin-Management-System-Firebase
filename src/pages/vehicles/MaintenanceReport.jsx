@@ -211,9 +211,14 @@ const MaintenanceReport = () => {
     if (!deleteModal.id) return;
     try {
       const currentUser = admin?.data || admin || {};
-      await maintenanceService.deleteLog(deleteModal.id, currentUser);
-      toast.success("Maintenance record deleted successfully");
-      fetchLogs(false);
+      // 🚀 Finding the exact log object to pass to service so it subtracts exact cost
+      const logToDelete = logs.find((l) => l._id === deleteModal.id);
+
+      if (logToDelete) {
+        await maintenanceService.deleteLog(logToDelete, currentUser);
+        toast.success("Maintenance record deleted successfully");
+        fetchLogs(false);
+      }
     } catch (error) {
       toast.error(error.message || "Failed to delete record");
     } finally {
@@ -237,21 +242,13 @@ const MaintenanceReport = () => {
     (filters.exactDate ? 1 : 0) +
     (filters.search ? 1 : 0);
 
-  // 🚀 ACTION HANDLERS FOR BUTTONS
+  // 🚀 FIXED: MERGE FILTER STATES INSTEAD OF OVERWRITING
   const applySearch = () => {
     if (!localSearch.trim() && !filters.search) return;
     setFilters((prev) => ({
       ...prev,
-      search: localSearch,
-      amountFilter: "Any Amount",
-      dateFilter: "All",
-      exactDate: "",
+      search: localSearch.trim(),
     }));
-    setLocalFilters({
-      amountFilter: "Any Amount",
-      dateFilter: "All",
-      exactDate: "",
-    });
   };
 
   const applyFilters = () => {
@@ -260,9 +257,7 @@ const MaintenanceReport = () => {
       amountFilter: localFilters.amountFilter,
       dateFilter: localFilters.dateFilter,
       exactDate: localFilters.exactDate,
-      search: "",
     }));
-    setLocalSearch("");
   };
 
   const clearAllFilters = () => {
@@ -275,6 +270,37 @@ const MaintenanceReport = () => {
     setLocalSearch("");
     setLocalFilters(reset);
     setFilters(reset);
+  };
+
+  // 🚀 AUTO VERIFY & AUTO STOP VEHICLE NO FORMATTER
+  const handleVehicleSearchChange = (e) => {
+    let rawValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    let state = rawValue.slice(0, 2).replace(/[^A-Z]/g, "");
+    let rto = rawValue.slice(2, 4).replace(/[^0-9]/g, "");
+    let remainder = rawValue.slice(4);
+    let middleChars = remainder.replace(/[^A-Z]/g, "").slice(0, 2);
+    let lastDigits = remainder.replace(/[^0-9]/g, "").slice(0, 4);
+
+    let formatted = state;
+    if (state.length === 2 && rawValue.length > 2) {
+      formatted += "-" + rto;
+      if (rto.length === 2 && rawValue.length > 4) {
+        formatted += "-";
+        if (middleChars.length > 0) {
+          formatted += middleChars;
+          if (lastDigits.length > 0) formatted += "-" + lastDigits;
+        } else {
+          formatted += lastDigits;
+        }
+      }
+    }
+
+    if (formatted.length <= 13) {
+      setLocalSearch(formatted);
+      if (formatted.trim() === "") {
+        setFilters((prev) => ({ ...prev, search: "" }));
+      }
+    }
   };
 
   const handleFullBackup = async (monthToFetch = backupMonth) => {
@@ -518,7 +544,7 @@ const MaintenanceReport = () => {
         <div
           className={`p-5 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-3xl bg-zinc-900/10 border-zinc-800/60`}
         >
-          {/* 🚀 DECOUPLED SEARCH INPUT & BUTTON */}
+          {/* 🚀 DECOUPLED SEARCH INPUT & BUTTON WITH FORMATTER */}
           <div className="flex w-full sm:w-auto gap-2 flex-1 max-w-lg">
             <div className="relative w-full group">
               <Search
@@ -527,10 +553,10 @@ const MaintenanceReport = () => {
               />
               <input
                 type="text"
-                placeholder="Search vehicle no..."
-                className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-200 outline-none transition-all shadow-inner ${theme.primaryFocus}`}
+                placeholder="Search vehicle no (OD-02...)"
+                className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-200 outline-none transition-all shadow-inner uppercase ${theme.primaryFocus}`}
                 value={localSearch}
-                onChange={(e) => setLocalSearch(e.target.value)}
+                onChange={handleVehicleSearchChange}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") applySearch();
                 }}

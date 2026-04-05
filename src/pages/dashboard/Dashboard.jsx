@@ -1,6 +1,8 @@
 import React, { useEffect, useState, Suspense, lazy } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import dashboardService from "../../services/dashboardService";
+import dashboardService, {
+  dashboardCache,
+} from "../../services/dashboardService";
 import { useUI } from "../../context/UIProvider";
 import {
   TrendingUp,
@@ -8,13 +10,13 @@ import {
   Users,
   Activity,
   DollarSign,
-  Download,
   Plus,
   Factory,
   FileText,
   ChevronRight,
   ShoppingCart,
   Calendar,
+  RefreshCw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
@@ -30,10 +32,11 @@ const Dashboard = () => {
   const { toast } = useUI();
   const location = useLocation();
   const navigate = useNavigate();
+
   const [loading, setLoading] = useState(true);
   const [showQuickMenu, setShowQuickMenu] = useState(false);
+  const [syncState, setSyncState] = useState("syncing"); // "syncing" | "synced" | "required"
 
-  // 🔥 THEME HOOK
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
       ? window.location.pathname
@@ -69,67 +72,31 @@ const Dashboard = () => {
     recentActivity: [],
   });
 
-  useEffect(() => {
-    const loadDashboard = async () => {
-      try {
-        const response = await dashboardService.getStats();
-        setData(response.data);
-      } catch (error) {
-        toast.error("Failed to load dashboard metrics.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadDashboard();
-  }, [toast]);
+  // 🚀 ULTRA SMART SYNC LOGIC
+  const loadDashboard = async (forceRefresh = false) => {
+    // Agar manually forceRefresh dabaya gaya hai aur data pehle se up-to-date hai
+    if (forceRefresh && !dashboardCache.isDirty) {
+      toast.success("Data is already up to date.");
+      return;
+    }
 
-  // 🚀 EXPORT LOGIC WITH BOM
-  const handleExport = () => {
+    setSyncState("syncing");
     try {
-      const headers = ["Section,Metric,Value,Date/Note"];
-      const rows = [];
-      rows.push(`OVERVIEW,Total Sales Revenue,${data.cards.balance},`);
-      rows.push(`OVERVIEW,Total Stock Value,${data.cards.stockValue},`);
-      rows.push(`OVERVIEW,Invoice Revenue,${data.cards.revenue},`);
-      rows.push(`OVERVIEW,Active Employees,${data.cards.activeEmployees},`);
-      rows.push(`OVERVIEW,Low Stock Items,${data.cards.lowStock},Alert`);
-      rows.push(
-        `OVERVIEW,Pending Invoices,${data.cards.pendingInvoices},Action Needed`,
-      );
-
-      data.charts.production.forEach((item) => {
-        rows.push(`PRODUCTION,Daily Output,${item.quantity},${item.date}`);
-      });
-      data.charts.sales.forEach((item) => {
-        rows.push(`SALES,Daily Sales,${item.amount},${item.date}`);
-      });
-
-      if (data.recentActivity && data.recentActivity.length > 0) {
-        rows.push(`\nRECENT ACTIVITY,Type,Details,Amount/Qty,Date`);
-        data.recentActivity.forEach((act) => {
-          rows.push(
-            `ACTIVITY,${act.activityType},"${act.productName || act.clientName || "N/A"}",${act.amount || act.grandTotal || act.quantity || 0},${new Date(act.date || act.createdAt).toLocaleDateString("en-GB")}`,
-          );
-        });
-      }
-
-      const csvContent = "\uFEFF" + [headers, ...rows].join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute(
-        "download",
-        `Enterprise_Report_${new Date().toISOString().split("T")[0]}.csv`,
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success("Dashboard report exported to Excel");
+      const response = await dashboardService.getStats(forceRefresh);
+      setData(response.data);
+      // Data fetch hone ke baad humesha synced state dikhayega jab tak koi aur file isDirty = true na kar de
+      setSyncState(dashboardCache.isDirty ? "required" : "synced");
     } catch (error) {
-      toast.error("Failed to export data");
+      toast.error("Database mismatch. Sync required.");
+      setSyncState("required");
+    } finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadDashboard(false);
+  }, [toast]);
 
   const productionChartData = {
     labels: data.charts.production.map((d) => d.date),
@@ -308,20 +275,34 @@ const Dashboard = () => {
             >
               <Factory className={theme.primaryText} size={28} />
             </div>
-            Enterprise Hub
+            NexFlow Command Center
           </h1>
           <p className="text-zinc-400 mt-2 text-sm font-medium">
-            Real-time factory production & financial command center.
+            Real-time factory production & financial command center for NexFlow
+            ERP.
           </p>
         </div>
-        <div className="flex gap-3 relative">
+        <div className="flex gap-3 relative flex-wrap">
+          {/* 🚀 SMART SYNC BUTTON - RE-ENGINEERED */}
           <Button
-            variant="outline"
-            className="text-xs h-11 px-5 gap-2 rounded-xl border-zinc-800 text-zinc-300 hover:bg-zinc-800/50 hover:text-white hover:border-zinc-700 transition-colors"
-            onClick={handleExport}
+            onClick={() => loadDashboard(true)}
+            className={`text-xs h-11 px-4 gap-2 rounded-xl transition-all duration-500 flex items-center border ${
+              syncState === "synced"
+                ? "opacity-60 bg-zinc-800/40 text-zinc-400 border-zinc-700/50 hover:bg-zinc-800/60"
+                : syncState === "syncing"
+                  ? "bg-blue-500/10 text-blue-400 border-blue-500/30 animate-pulse cursor-wait"
+                  : "bg-rose-500/10 text-rose-400 border-rose-500/40 hover:bg-rose-500/20 shadow-[0_0_20px_rgba(244,63,94,0.15)] hover:shadow-[0_0_25px_rgba(244,63,94,0.25)] cursor-pointer animate-in zoom-in-95"
+            }`}
           >
-            <Download size={16} /> Export Report
+            <RefreshCw
+              size={16}
+              className={`${syncState === "syncing" ? "animate-spin" : syncState === "required" ? "animate-bounce" : ""}`}
+            />
+            {syncState === "synced" && "Up to Date"}
+            {syncState === "syncing" && "Syncing..."}
+            {syncState === "required" && "Sync Required"}
           </Button>
+
           <div className="relative">
             <Button
               variant="primary"
@@ -560,7 +541,6 @@ const StatCard = ({
         sky: "text-sky-400 bg-sky-500/10 border-sky-500/20",
         zinc: "text-zinc-400 bg-white/5 border-white/10",
       };
-
   const theme = colors[color] || colors.zinc;
   const hoverClass = isTransport
     ? "hover:border-blue-500/30 hover:shadow-[0_8px_24px_-6px_rgba(59,130,246,0.15)] hover:bg-white/[0.04]"
@@ -593,10 +573,9 @@ const StatCard = ({
   );
 };
 
-// 🚀 CLICKABLE ACTIVITY ITEM WITH HIGHLIGHT PARAMS
+// 🚀 CLICKABLE ACTIVITY ITEM
 const ActivityItem = ({ data, isTransport, basePath }) => {
   const navigate = useNavigate();
-
   let Icon = Factory;
   let colorTheme = isTransport
     ? "text-cyan-400 bg-cyan-500/10 border-cyan-500/20 group-hover:bg-cyan-500/20"
@@ -604,7 +583,6 @@ const ActivityItem = ({ data, isTransport, basePath }) => {
   let title = `Production: ${data.productName || "Product"}`;
   let desc = `${Number(data.quantity || 0).toLocaleString()} Units Produced`;
   let amount = null;
-  // 🚀 Added ?highlight URL params so the list page knows which row to animate
   let linkUrl = `${basePath}/production/report?highlight=${data._id}`;
 
   if (data.activityType === "Sale") {

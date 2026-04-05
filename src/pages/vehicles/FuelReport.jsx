@@ -45,17 +45,17 @@ const defaultFilters = {
   exactDate: "",
 };
 
+// 🚀 FIXED: Set safe batch size limit to 25 to halve initial reads
+const PAGE_SIZE = 25;
+
 const FuelReport = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
-  // 🚀 DECOUPLED LOCAL INPUT FROM ACTIVE QUERY
   const [filterInput, setFilterInput] = useState(defaultFilters);
   const [activeFilters, setActiveFilters] = useState(defaultFilters);
-
-  // 🚀 4-SECOND RELAXATION STATE
   const [isCooldown, setIsCooldown] = useState(false);
 
   const [logs, setLogs] = useState(
@@ -109,6 +109,35 @@ const FuelReport = () => {
   const [backupMonth, setBackupMonth] = useState(getPreviousMonthString());
   const [showBackupWarning, setShowBackupWarning] = useState(null);
 
+  const handleSearchChange = (e) =>
+    setFilterInput({
+      search: e.target.value,
+      amountFilter: "Any Amount",
+      dateFilter: "All",
+      exactDate: "",
+    });
+  const handleAmountChange = (e) =>
+    setFilterInput({
+      search: "",
+      amountFilter: e.target.value,
+      dateFilter: "All",
+      exactDate: "",
+    });
+  const handleDateChange = (e) =>
+    setFilterInput({
+      search: "",
+      amountFilter: "Any Amount",
+      dateFilter: e.target.value,
+      exactDate: "",
+    });
+  const handleExactDateChange = (e) =>
+    setFilterInput({
+      search: "",
+      amountFilter: "Any Amount",
+      dateFilter: "All",
+      exactDate: e.target.value,
+    });
+
   useEffect(() => {
     const checkBackupNeeded = async () => {
       const prevMonth = getPreviousMonthString();
@@ -155,7 +184,7 @@ const FuelReport = () => {
       const response = await fuelService.getLogs(
         filterObj,
         isLoadMore ? lastDoc : null,
-        50,
+        PAGE_SIZE,
         force,
       );
       if (isLoadMore) {
@@ -167,7 +196,7 @@ const FuelReport = () => {
         setSyncStatus("synced");
       }
       setLastDoc(response.lastVisible || null);
-      setHasMore(response.data && response.data.length === 50);
+      setHasMore(response.data && response.data.length === PAGE_SIZE);
     } catch (error) {
       if (!isLoadMore) setSyncStatus("error");
       toast.error("Failed to load report data.");
@@ -183,18 +212,14 @@ const FuelReport = () => {
     }
   }, []);
 
-  // 🚀 BUTTON STATE LOGIC
   const hasChanges =
     JSON.stringify(filterInput) !== JSON.stringify(activeFilters);
   const isApplyDisabled = isCooldown || !hasChanges;
 
-  // 🚀 APPLY FILTERS WITH 4S RELAXATION
   const applyFilters = () => {
     if (isApplyDisabled) return;
     setActiveFilters(filterInput);
     fetchLogs(false, true, filterInput);
-
-    // Trigger 4-second relaxation
     setIsCooldown(true);
     setTimeout(() => setIsCooldown(false), 4000);
   };
@@ -204,8 +229,6 @@ const FuelReport = () => {
     setFilterInput(defaultFilters);
     setActiveFilters(defaultFilters);
     fetchLogs(false, true, defaultFilters);
-
-    // Trigger 4-second relaxation for clear button too
     setIsCooldown(true);
     setTimeout(() => setIsCooldown(false), 4000);
   };
@@ -219,7 +242,7 @@ const FuelReport = () => {
     try {
       await fuelService.deleteLog(deleteModal.id, admin?.data || admin);
       toast.success("Record deleted");
-      fetchLogs(false);
+      fetchLogs(false, true); // Force fetch after delete to sync state
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -251,23 +274,25 @@ const FuelReport = () => {
         localStorage.getItem(`backup_${monthToFetch}_meta`) ||
           '{"date":"","count":0,"lastId":null}',
       );
-      if (dlMeta.date === today && dlMeta.count >= 1000)
+
+      if (dlMeta.date === today && dlMeta.count >= 10000) {
         return toast.error(
-          "Daily Download Limit (1,000) reached to protect your Firebase Quota.",
+          "Daily Download Limit (10,000) reached to protect your Firebase Quota.",
         );
+      }
       if (dlMeta.date !== today) {
         dlMeta.date = today;
         dlMeta.count = 0;
       }
 
-      const fetchLimit = 1000 - dlMeta.count;
-      toast.info(`Fetching secure backup... (Allowance left: ${fetchLimit})`);
+      const fetchLimit = 10000 - dlMeta.count;
+      toast.info(`Fetching secure backup...`);
 
       const qConstraints = [
         fuelService.where("date", ">=", monthToFetch),
         fuelService.where("date", "<=", monthToFetch + "\uf8ff"),
         fuelService.orderBy("date"),
-        fuelService.limit(fetchLimit),
+        fuelService.limit(Math.min(1000, fetchLimit)),
       ];
       if (dlMeta.lastId) {
         const lastDocRef = await getDoc(doc(db, "fuels", dlMeta.lastId));
@@ -285,6 +310,7 @@ const FuelReport = () => {
         return toast.info(
           `All records for ${monthToFetch} downloaded completely.`,
         );
+
       const headers = [
         "Date",
         "Vehicle No",
@@ -319,7 +345,7 @@ const FuelReport = () => {
       );
 
       if (snapshot.size === fetchLimit) {
-        toast.warning("1,000 Limit reached. Download the next batch tomorrow.");
+        toast.warning("Limit reached. Download the next batch tomorrow.");
       } else {
         toast.success(`Backup completed (${snapshot.size} records)!`);
         if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
@@ -343,7 +369,7 @@ const FuelReport = () => {
       else toast.success("Database wiped.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
-      fetchLogs(false);
+      fetchLogs(false, true); // Force refetch
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -353,6 +379,7 @@ const FuelReport = () => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div
@@ -426,41 +453,11 @@ const FuelReport = () => {
         </div>
       </div>
 
-      {showBackupWarning && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 fade-in shadow-[0_0_20px_rgba(245,158,11,0.1)] w-full">
-          <div className="flex items-center gap-3">
-            <div className="bg-amber-500/20 p-2.5 rounded-full text-amber-500">
-              <ShieldAlert size={20} />
-            </div>
-            <div>
-              <h4 className="text-amber-400 font-bold text-sm tracking-wide">
-                Monthly Data Backup Required
-              </h4>
-              <p className="text-amber-100/60 text-xs mt-0.5">
-                You haven't downloaded the fuel backup for{" "}
-                <strong>
-                  {new Date(showBackupWarning + "-01").toLocaleString("en-US", {
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </strong>
-                . Download it now to keep records secure.
-              </p>
-            </div>
-          </div>
-          <Button
-            onClick={() => handleFullBackup(showBackupWarning)}
-            variant="outline"
-            className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10 whitespace-nowrap"
-          >
-            <Download size={14} className="mr-2" /> Download Backup
-          </Button>
-        </div>
-      )}
-
+      {/* Main Table Container */}
       <div
         className={`bg-[#09090B] rounded-3xl border overflow-visible shadow-2xl border-zinc-800/60`}
       >
+        {/* Search & Filter Top Bar */}
         <div
           className={`p-5 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 rounded-t-3xl bg-zinc-900/10 border-zinc-800/60`}
         >
@@ -475,22 +472,12 @@ const FuelReport = () => {
                 placeholder="Search vehicle..."
                 className={`w-full bg-[#09090B] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-200 outline-none transition-all shadow-inner ${theme.primaryFocus}`}
                 value={filterInput.search}
-                onChange={(e) =>
-                  setFilterInput({
-                    ...filterInput,
-                    search: e.target.value,
-                    amountFilter: "Any Amount",
-                    dateFilter: "All",
-                    exactDate: "",
-                  })
-                }
+                onChange={handleSearchChange}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") applyFilters();
                 }}
               />
             </div>
-
-            {/* 🚀 OPACITY LOGIC & 4S RELAXATION BUTTON */}
             <Button
               onClick={applyFilters}
               disabled={isApplyDisabled}
@@ -506,6 +493,7 @@ const FuelReport = () => {
           </div>
         </div>
 
+        {/* Dropdown Filters */}
         <div
           className={`p-4 border-b bg-[#09090B] flex flex-wrap items-center gap-4 relative z-20 border-zinc-800/60`}
         >
@@ -521,18 +509,11 @@ const FuelReport = () => {
               </span>
             )}
           </div>
+
           <div className="relative group">
             <select
               value={filterInput.amountFilter}
-              onChange={(e) =>
-                setFilterInput({
-                  ...filterInput,
-                  amountFilter: e.target.value,
-                  search: "",
-                  dateFilter: "All",
-                  exactDate: "",
-                })
-              }
+              onChange={handleAmountChange}
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
               <option value="Any Amount">Any Cost</option>
@@ -545,18 +526,11 @@ const FuelReport = () => {
               className={`absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:${theme.primaryText}`}
             />
           </div>
+
           <div className="relative group">
             <select
               value={filterInput.dateFilter}
-              onChange={(e) =>
-                setFilterInput({
-                  ...filterInput,
-                  dateFilter: e.target.value,
-                  exactDate: "",
-                  search: "",
-                  amountFilter: "Any Amount",
-                })
-              }
+              onChange={handleDateChange}
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-4 pr-10 py-2.5 text-xs font-medium text-zinc-300 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
             >
               <option value="All">Timeline: All</option>
@@ -569,6 +543,7 @@ const FuelReport = () => {
               className={`absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none group-hover:${theme.primaryText}`}
             />
           </div>
+
           <div className="relative group flex items-center">
             <div
               className={`absolute left-3 flex items-center justify-center pointer-events-none transition-colors ${filterInput.exactDate ? theme.primaryText : "text-zinc-500"}`}
@@ -578,21 +553,12 @@ const FuelReport = () => {
             <input
               type="date"
               value={filterInput.exactDate}
-              onChange={(e) =>
-                setFilterInput({
-                  ...filterInput,
-                  exactDate: e.target.value,
-                  dateFilter: "All",
-                  search: "",
-                  amountFilter: "Any Amount",
-                })
-              }
+              onChange={handleExactDateChange}
               style={{ colorScheme: "dark" }}
               className={`appearance-none bg-[#09090B] border border-zinc-800 rounded-xl pl-9 pr-4 py-2.5 text-xs font-medium outline-none cursor-pointer transition-all ${theme.primaryFocus} ${filterInput.exactDate ? "text-white" : "text-zinc-500"}`}
             />
           </div>
 
-          {/* 🚀 OPACITY LOGIC & 4S RELAXATION BUTTON */}
           <Button
             onClick={applyFilters}
             disabled={isApplyDisabled}
@@ -614,6 +580,7 @@ const FuelReport = () => {
           )}
         </div>
 
+        {/* Data Table */}
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
           {syncStatus === "syncing" && logs.length === 0 ? (
             <div className="flex justify-center items-center h-64">
@@ -728,11 +695,6 @@ const FuelReport = () => {
                             >
                               <Trash2 size={16} />
                             </button>
-                            {warningTooltip === log._id && (
-                              <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
-                                🚫 Access Denied
-                              </div>
-                            )}
                           </div>
                         </td>
                       </tr>
@@ -751,6 +713,7 @@ const FuelReport = () => {
                 </tbody>
               </table>
 
+              {/* Strict Pagination Load More Button */}
               {hasMore && loadedCount < 5000 && logs.length > 0 && (
                 <div className="flex justify-center p-6 border-t border-zinc-800/60">
                   <Button
@@ -759,19 +722,20 @@ const FuelReport = () => {
                     variant="outline"
                     className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
                   >
-                    {loadingMore ? (
+                    {loadingMore && (
                       <RefreshCcw size={16} className="animate-spin mr-2" />
-                    ) : null}{" "}
+                    )}
                     {loadingMore
                       ? "Loading..."
-                      : `Load Next 50 Records (Loaded: ${loadedCount})`}
+                      : `Load Next ${PAGE_SIZE} Records (Loaded: ${loadedCount})`}
                   </Button>
                 </div>
               )}
 
+              {/* Max Display Limit Warning */}
               {loadedCount >= 5000 && (
                 <div className="p-6 border-t border-zinc-800/60 flex justify-center">
-                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md animate-in fade-in slide-in-from-bottom-2 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md shadow-lg">
                     <AlertOctagon
                       className="mx-auto mb-2 opacity-80"
                       size={24}
@@ -803,6 +767,7 @@ const FuelReport = () => {
         isDestructive={true}
       />
 
+      {/* Wipe Database & Export Modal */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
@@ -814,6 +779,8 @@ const FuelReport = () => {
               <AlertOctagon size={24} />
               <h2 className="text-xl font-bold tracking-wide">Wipe Database</h2>
             </div>
+
+            {/* 🚀 FIXED UI WARNING TEXT */}
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -827,10 +794,12 @@ const FuelReport = () => {
                   <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
                     Download backup before wiping.{" "}
                     <strong className="text-amber-400">
-                      Limit: 1,000 records/day.
+                      Daily Download Limit: 10,000 records.
                     </strong>{" "}
-                    If you exceed this, the system will save your progress, and
-                    you can download the rest tomorrow.
+                    If you exceed this, the system saves progress for tomorrow.{" "}
+                    <strong className="text-red-400 ml-1">
+                      Daily Delete Limit: 5,000 records.
+                    </strong>
                   </p>
                   <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
                     <input
@@ -851,10 +820,12 @@ const FuelReport = () => {
                 </div>
               </div>
             </div>
+
             <p className="text-red-100/70 text-sm mb-4">
               This action will{" "}
               <strong className="text-red-500">PERMANENTLY DELETE ALL</strong>{" "}
-              fuel records. Please enter your Admin password to confirm.
+              fuel records up to the safety limit (5,000). Please enter your
+              Admin password to confirm.
             </p>
             <div className="relative mb-8">
               <input
@@ -890,91 +861,11 @@ const FuelReport = () => {
                 disabled={wiping || !deletePassword}
                 className="h-11"
               >
-                {wiping ? (
+                {wiping && (
                   <RefreshCcw size={16} className="animate-spin mr-2" />
-                ) : null}
+                )}{" "}
                 {wiping ? "Wiping..." : "Confirm Wipe"}
               </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {historyModal.isOpen && historyModal.data && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div
-            className="absolute inset-0 cursor-pointer"
-            onClick={() =>
-              setHistoryModal({ isOpen: false, data: null, itemName: "" })
-            }
-          />
-          <div
-            className={`bg-[#09090B] border ${theme.primaryBorder} rounded-3xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200`}
-          >
-            <div
-              className={`flex items-center justify-between p-5 border-b ${theme.primaryBorder} ${theme.primaryBg} shrink-0`}
-            >
-              <div className="flex items-center gap-2 text-white font-bold tracking-wide text-sm">
-                <History size={16} className={theme.primaryText} /> Log History:{" "}
-                <span className={`${theme.primaryText} font-normal`}>
-                  {historyModal.itemName}
-                </span>
-              </div>
-              <button
-                onClick={() =>
-                  setHistoryModal({ isOpen: false, data: null, itemName: "" })
-                }
-                className="text-zinc-400 hover:text-white transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-3">
-              {historyModal.data.map((log, index) => (
-                <div
-                  key={index}
-                  className={`bg-[#09090B] border ${index === 0 ? theme.primaryBorder : "border-zinc-800"} rounded-xl p-4 flex items-center justify-between relative overflow-hidden`}
-                >
-                  {index === 0 && (
-                    <div
-                      className={`absolute left-0 top-0 w-1 h-full ${theme.primaryBg}`}
-                    ></div>
-                  )}
-                  <div className="flex items-center gap-4 pl-1">
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${index === 0 ? `${theme.primaryBg} ${theme.primaryText}` : "bg-zinc-800 text-zinc-500"}`}
-                    >
-                      {(log.role || "A")[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <h4
-                        className={`font-bold tracking-widest uppercase text-sm ${index === 0 ? "text-white" : "text-zinc-500"}`}
-                      >
-                        {log.role || "ADMIN"}
-                      </h4>
-                      <p className="text-zinc-500 text-[10px] mt-0.5 font-mono">
-                        {log.by || "admin@system.com"}
-                      </p>
-                      <p
-                        className={`text-[10px] font-mono mt-1 ${index === 0 ? theme.primaryText : "text-zinc-600"}`}
-                      >
-                        {new Date(log.at).toLocaleString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                  {index === 0 && (
-                    <div className="bg-indigo-500/10 border-indigo-500/20 text-indigo-400 text-[10px] font-bold px-3 py-1 rounded-lg tracking-widest uppercase border">
-                      LATEST
-                    </div>
-                  )}
-                </div>
-              ))}
             </div>
           </div>
         </div>
