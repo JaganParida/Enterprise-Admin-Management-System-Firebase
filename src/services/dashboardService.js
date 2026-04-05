@@ -2,6 +2,8 @@ import { db } from "../config/firebase";
 import {
   collection,
   getDocs,
+  getDoc,
+  doc,
   query,
   orderBy,
   limit,
@@ -11,14 +13,39 @@ import {
   count,
 } from "firebase/firestore";
 
+// 🚀 CONCEPT 1: GLOBAL RAM CACHE
+export const dashboardCache = {
+  data: null,
+  isDirty: true,
+  lastFetch: 0,
+  markDirty: () => {
+    dashboardCache.isDirty = true;
+    console.log(
+      "⚠️ Dashboard Cache marked as dirty. Will fetch fresh data next time.",
+    );
+  },
+};
+
 const dashboardService = {
-  getStats: async () => {
+  getStats: async (forceRefresh = false) => {
+    // 🔥 ZERO-READ INTERCEPTOR
+    // Agar cache fresh hai aur user forceRefresh kar raha hai, toh read mat kar
+    if (!dashboardCache.isDirty && dashboardCache.data) {
+      console.log("⚡ Loaded from RAM Cache (0 Reads consumed)");
+      return { data: dashboardCache.data, cached: true };
+    }
+
+    console.log("📡 Fetching fresh data from Firebase (Max 15-20 Reads)...");
+
     let activeEmployees = 0;
     let revenue = 0;
     let pendingInvoices = 0;
+    let stockValue = 0;
+    let lowStock = 0;
+    let totalSalesRevenue = 0;
 
     try {
-      // 1. 🚀 FAST SERVER-SIDE AGGREGATIONS (Try this first)
+      // 1. BULLETPROOF SERVER-SIDE AGGREGATIONS
       const empQ = query(
         collection(db, "employees"),
         where("status", "==", "Active"),
@@ -31,71 +58,57 @@ const dashboardService = {
         collection(db, "invoices"),
         where("status", "==", "Pending"),
       );
+      const salesQ = collection(db, "sales");
 
-      const [empSnap, paidInvSnap, pendingInvSnap] = await Promise.all([
-        getAggregateFromServer(empQ, { activeCount: count() }),
-        getAggregateFromServer(paidInvQ, { totalRevenue: sum("grandTotal") }),
-        getAggregateFromServer(pendingInvQ, { pendingCount: count() }),
-      ]);
+      const [empSnap, paidInvSnap, pendingInvSnap, totalSalesSnap] =
+        await Promise.all([
+          getAggregateFromServer(empQ, { activeCount: count() }),
+          getAggregateFromServer(paidInvQ, { totalRevenue: sum("grandTotal") }),
+          getAggregateFromServer(pendingInvQ, { pendingCount: count() }),
+          getAggregateFromServer(salesQ, { totalSales: sum("amount") }),
+        ]).catch((error) => {
+          console.error("Firebase Aggregation Error:", error);
+          return [null, null, null, null];
+        });
 
-      activeEmployees = empSnap.data().activeCount || 0;
-      revenue = paidInvSnap.data().totalRevenue || 0;
-      pendingInvoices = pendingInvSnap.data().pendingCount || 0;
-    } catch (aggError) {
-      console.warn(
-        "Aggregation missing index, falling back to client fetch:",
-        aggError,
-      );
+      activeEmployees = empSnap?.data().activeCount || 0;
+      revenue = paidInvSnap?.data().totalRevenue || 0;
+      pendingInvoices = pendingInvSnap?.data().pendingCount || 0;
+      totalSalesRevenue = totalSalesSnap?.data().totalSales || 0;
 
-      // 🚀 ENTERPRISE FALLBACK: Agar Index missing hai, toh UI crash nahi hoga!
-      // Firebase fallback to fetch and calculate in browser until index is built.
-      const [empDocs, invDocs] = await Promise.all([
-        getDocs(collection(db, "employees")),
-        getDocs(collection(db, "invoices")),
-      ]);
+      // 2. STOCK METADATA FETCH (1 Read)
+      try {
+        const stockMetadataRef = doc(db, "metadata", "stockStats");
+        const stockMetadataSnap = await getDoc(stockMetadataRef);
 
-      empDocs.forEach((doc) => {
-        if (doc.data().status === "Active") activeEmployees++;
-      });
+        if (stockMetadataSnap.exists()) {
+          const stockData = stockMetadataSnap.data();
+          stockValue = Number(stockData.totalStockValue) || 0;
+          lowStock = Number(stockData.lowStockCount) || 0;
+        }
+      } catch (metadataError) {
+        console.error("Failed to read stock metadata:", metadataError);
+      }
 
-      invDocs.forEach((doc) => {
-        const d = doc.data();
-        if (d.status === "Paid") revenue += Number(d.grandTotal) || 0;
-        if (d.status === "Pending") pendingInvoices++;
-      });
-    }
-
-    try {
-      // 2. 🚀 OPTIMIZED STOCK CALCULATION
-      const stockSnap = await getDocs(collection(db, "stocks"));
-      let stockValue = 0;
-      let lowStock = 0;
-      stockSnap.forEach((doc) => {
-        const d = doc.data();
-        stockValue += (Number(d.quantity) || 0) * (Number(d.price) || 0);
-        if (Number(d.quantity) < 10) lowStock++;
-      });
-
-      // 3. 🚀 OPTIMIZED RECENT ACTIVITY & CHARTS (Fetch ONLY what is needed)
+      // 3. STRICTLY LIMITED RECENT ACTIVITY (Max 15 Reads Total - OPTIMIZED FOR FREE PLAN)
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setHours(0, 0, 0, 0);
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-      // We limit to 20/10 to avoid huge document reads on every dashboard load
       const prodQuery = query(
         collection(db, "production"),
         orderBy("date", "desc"),
-        limit(20),
+        limit(5),
       );
       const salesQuery = query(
         collection(db, "sales"),
         orderBy("date", "desc"),
-        limit(20),
+        limit(5),
       );
       const invQuery = query(
         collection(db, "invoices"),
         orderBy("createdAt", "desc"),
-        limit(10),
+        limit(5),
       );
 
       const [prodSnap, salesSnap, recentInvSnap] = await Promise.all([
@@ -107,9 +120,7 @@ const dashboardService = {
       let activities = [];
       const productionData = [];
       const salesData = [];
-      let totalSalesRevenue = 0;
 
-      // Process Production
       prodSnap.forEach((doc) => {
         const d = doc.data();
         activities.push({ ...d, activityType: "Production", _id: doc.id });
@@ -125,10 +136,8 @@ const dashboardService = {
         }
       });
 
-      // Process Sales
       salesSnap.forEach((doc) => {
         const d = doc.data();
-        totalSalesRevenue += Number(d.amount) || 0;
         activities.push({ ...d, activityType: "Sale", _id: doc.id });
         if (new Date(d.date) >= sevenDaysAgo) {
           salesData.push({
@@ -142,7 +151,6 @@ const dashboardService = {
         }
       });
 
-      // Process Recent Invoices for Activity Feed
       recentInvSnap.forEach((doc) => {
         const d = doc.data();
         activities.push({
@@ -153,32 +161,34 @@ const dashboardService = {
         });
       });
 
-      // 4. 🚀 SORT & SLICE RECENT ACTIVITY (Merge & Sort the 3 collections)
       activities.sort((a, b) => {
         const dateA = new Date(a.createdAt || a.date || 0).getTime();
         const dateB = new Date(b.createdAt || b.date || 0).getTime();
         return dateB - dateA;
       });
 
-      const recentActivity = activities.slice(0, 10);
-
-      return {
-        data: {
-          cards: {
-            balance: totalSalesRevenue,
-            revenue: revenue,
-            activeEmployees: activeEmployees,
-            stockValue: stockValue,
-            lowStock: lowStock,
-            pendingInvoices: pendingInvoices,
-          },
-          charts: {
-            production: productionData.reverse(),
-            sales: salesData.reverse(),
-          },
-          recentActivity,
+      const finalData = {
+        cards: {
+          balance: totalSalesRevenue,
+          revenue: revenue,
+          activeEmployees: activeEmployees,
+          stockValue: stockValue,
+          lowStock: lowStock,
+          pendingInvoices: pendingInvoices,
         },
+        charts: {
+          production: productionData.reverse(),
+          sales: salesData.reverse(),
+        },
+        recentActivity: activities.slice(0, 10),
       };
+
+      // 🔥 SAVE TO RAM CACHE FOR NEXT TIME
+      dashboardCache.data = finalData;
+      dashboardCache.isDirty = false;
+      dashboardCache.lastFetch = Date.now();
+
+      return { data: finalData, cached: false };
     } catch (error) {
       console.error("Dashboard Service Critical Error:", error);
       throw error;
