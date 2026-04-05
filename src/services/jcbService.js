@@ -21,7 +21,7 @@ import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 const jcbCollection = collection(db, "jcb_logs");
 
-// 🚀 THE MAGIC BULLET: In-Memory Cache for ZERO Reads on Navigation
+// 🚀 RAM Cache
 let memoryCache = {
   stats: null,
   logs: null,
@@ -30,7 +30,6 @@ let memoryCache = {
   lastFetchTime: 0,
 };
 
-// Trigger this when data is added/edited/deleted
 const markDirty = () => {
   memoryCache.isDirty = true;
   localStorage.setItem("jcb_last_update", Date.now().toString());
@@ -45,7 +44,6 @@ const jcbService = {
   startAfter,
   getDocs,
 
-  // 🚀 SYNCHRONOUS GETTERS TO KILL UI FLICKER
   getLastFetchTime: () => memoryCache.lastFetchTime,
   getCachedStats: () => (!memoryCache.isDirty ? memoryCache.stats : null),
   getCachedLogs: (filters) => {
@@ -60,27 +58,22 @@ const jcbService = {
     return null;
   },
 
-  // 🚀 STATS: 100% RISK-FREE (No mass read fallback)
   getStats: async (forceRefresh = false) => {
     if (!forceRefresh && !memoryCache.isDirty && memoryCache.stats)
       return memoryCache.stats;
-
     try {
       const q = query(jcbCollection);
       const snapshot = await getAggregateFromServer(q, {
         totalMins: sum("totalMins"),
         logCount: count(),
       });
-
-      let totalMins = snapshot.data().totalMins || 0;
-      let logCount = snapshot.data().logCount || 0;
-
-      const result = { totalMins, logCount };
+      const result = {
+        totalMins: snapshot.data().totalMins || 0,
+        logCount: snapshot.data().logCount || 0,
+      };
       memoryCache.stats = result;
       return result;
     } catch (error) {
-      // 🚨 FIXED: Removed the dangerous getDocs fallback.
-      // Instead of reading the whole DB, we return 0 to protect daily quota.
       console.warn(
         "Aggregation failed. Returning 0 to prevent mass database reads.",
       );
@@ -88,7 +81,6 @@ const jcbService = {
     }
   },
 
-  // 🚀 LOGS: 0 READS ON NAVIGATION
   getLogs: async (
     filters = {},
     lastVisibleDoc = null,
@@ -108,63 +100,109 @@ const jcbService = {
       return { data: memoryCache.logs, lastVisible: null };
     }
 
-    let constraints = [];
-    let hasInequality = false;
-
-    if (filters.vehicleFilter && filters.vehicleFilter !== "All")
-      constraints.push(where("vehicleNo", "==", filters.vehicleFilter));
-    if (filters.exactDate)
-      constraints.push(where("date", "==", filters.exactDate));
-
-    if (filters.search) {
-      constraints.push(
-        where("customerName", ">=", filters.search),
-        where("customerName", "<=", filters.search + "\uf8ff"),
-        orderBy("customerName"),
-      );
-      hasInequality = true;
-    } else if (
-      filters.dateFilter &&
-      filters.dateFilter !== "All" &&
-      !filters.exactDate
-    ) {
-      const today = new Date();
-      let targetDate = new Date();
-      if (filters.dateFilter === "Today")
-        targetDate.setDate(today.getDate() - 1);
-      else if (filters.dateFilter === "Last7Days")
-        targetDate.setDate(today.getDate() - 7);
-      else if (filters.dateFilter === "ThisMonth") targetDate.setDate(1);
-
-      const pastDateStr = targetDate.toISOString().split("T")[0];
-      constraints.push(
-        where("date", ">=", pastDateStr),
-        orderBy("date", "desc"),
-      );
-      hasInequality = true;
-    }
-
-    if (!hasInequality && !filters.exactDate)
-      constraints.push(orderBy("date", "desc"));
-    constraints.push(limit(pageSize));
-    if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
-
     try {
+      let constraints = [];
+      let dbFilteredField = null;
+
+      if (filters.vehicleFilter && filters.vehicleFilter !== "All") {
+        constraints.push(
+          where("vehicleNo", "==", filters.vehicleFilter.trim()),
+        );
+      }
+
+      if (filters.exactDate) {
+        constraints.push(where("date", "==", filters.exactDate));
+      }
+
+      const today = new Date();
+      const offset = today.getTimezoneOffset() * 60000;
+      const localToday = new Date(today.getTime() - offset);
+      const todayStr = localToday.toISOString().split("T")[0];
+
+      let startDateStr = null;
+      let endDateStr = todayStr;
+
+      if (
+        filters.dateFilter &&
+        filters.dateFilter !== "All" &&
+        !filters.exactDate
+      ) {
+        if (filters.dateFilter === "Today") {
+          startDateStr = todayStr;
+        } else if (filters.dateFilter === "Last7Days") {
+          const d = new Date(localToday.getTime());
+          d.setDate(d.getDate() - 7);
+          startDateStr = d.toISOString().split("T")[0];
+        } else if (filters.dateFilter === "ThisMonth") {
+          const d = new Date(localToday.getTime());
+          d.setDate(1);
+          startDateStr = d.toISOString().split("T")[0];
+          const endD = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+          endDateStr = endD.toISOString().split("T")[0];
+        }
+      }
+
+      if (filters.search) {
+        constraints.push(
+          where("customerName", ">=", filters.search),
+          where("customerName", "<=", filters.search + "\uf8ff"),
+          orderBy("customerName"),
+        );
+        dbFilteredField = "search";
+      } else if (startDateStr) {
+        if (startDateStr === endDateStr) {
+          constraints.push(where("date", "==", startDateStr));
+        } else {
+          constraints.push(
+            where("date", ">=", startDateStr),
+            where("date", "<=", endDateStr),
+            orderBy("date", "desc"),
+          );
+          dbFilteredField = "date";
+        }
+      }
+
+      if (!dbFilteredField && !filters.exactDate) {
+        constraints.push(orderBy("date", "desc"));
+      }
+
+      constraints.push(limit(pageSize));
+      if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
+
       const q = query(jcbCollection, ...constraints);
       const snapshot = await getDocs(q);
 
-      const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
+      let fetchedData = snapshot.docs.map((doc) => ({
+        _id: doc.id,
+        ...doc.data(),
+      }));
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
+      if (dbFilteredField !== "search" && filters.search) {
+        const searchStr = filters.search.toLowerCase();
+        fetchedData = fetchedData.filter(
+          (d) =>
+            d.customerName && d.customerName.toLowerCase().includes(searchStr),
+        );
+      }
+      if (dbFilteredField === "search" && startDateStr) {
+        fetchedData = fetchedData.filter(
+          (d) => d.date >= startDateStr && d.date <= endDateStr,
+        );
+      }
+
+      fetchedData = fetchedData.slice(0, pageSize);
+
       if (!isLoadMore) {
-        memoryCache.logs = data;
+        memoryCache.logs = fetchedData;
         memoryCache.filtersKey = filterKey;
         memoryCache.isDirty = false;
         memoryCache.lastFetchTime = Date.now();
       }
 
-      return { data, lastVisible: newLastVisible };
+      return { data: fetchedData, lastVisible: newLastVisible };
     } catch (error) {
+      console.error("Firebase Query Failed. Error:", error);
       throw error;
     }
   },
@@ -214,26 +252,41 @@ const jcbService = {
 
   deleteLog: async (id, user) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
-      throw new Error("Action Denied: Managers cannot delete records.");
+      throw new Error("Action Denied.");
     await deleteDoc(doc(db, "jcb_logs", id));
     markDirty();
     return { message: "Deleted" };
   },
 
+  // 🚨 24-HOUR STRICT LOCK WIPE LOGIC
   deleteAllLogs: async ({ password, email, user }) => {
     if (user?.role === "manager" || user?.data?.role === "manager")
       throw new Error("Action Denied.");
+
+    const MAX_DAILY_WIPE = 2500;
+    const LOCK_KEY = "jcb_wipe_lock";
+    const META_KEY = "jcb_wipe_meta";
+
+    // 1. Check Strict 24-Hour Lock First
+    const lockTime = parseInt(localStorage.getItem(LOCK_KEY) || "0", 10);
+    const now = Date.now();
+
+    if (now < lockTime) {
+      const remainingHours = Math.ceil((lockTime - now) / (1000 * 60 * 60));
+      throw new Error(
+        `🚨 BUTTON LOCKED: Daily Limit of ${MAX_DAILY_WIPE} reached. Wipe function will unlock in ${remainingHours} hours.`,
+      );
+    }
+
+    // 2. Regular Daily Count Logic
     const today = new Date().toISOString().split("T")[0];
     let wipeMeta = JSON.parse(
-      localStorage.getItem("jcb_wipe_meta") || '{"date":"","count":0}',
+      localStorage.getItem(META_KEY) || '{"date":"","count":0}',
     );
-    // 10k wipe limit is safe because batch writes are heavily optimized by Firebase
-    if (wipeMeta.date === today && wipeMeta.count >= 10000)
-      throw new Error(
-        "Daily Wipe Limit Reached (10,000 records). Action locked for 24 hours to prevent backend crashes.",
-      );
+
     if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
 
+    // 3. Admin Authentication
     const currentUser = auth.currentUser;
     try {
       const credential = EmailAuthProvider.credential(
@@ -245,9 +298,10 @@ const jcbService = {
       throw new Error("Access Denied: Incorrect Admin Password.");
     }
 
+    // 4. Execute Deletion
     let totalDeleted = 0,
       hasMore = true;
-    const maxAllowed = 10000 - wipeMeta.count;
+    const maxAllowed = MAX_DAILY_WIPE - wipeMeta.count;
 
     while (hasMore && totalDeleted < maxAllowed) {
       const q = query(
@@ -263,15 +317,20 @@ const jcbService = {
       totalDeleted += snapshot.size;
     }
 
+    // 5. Update Meta & Apply 24-Hour Lock if Limit Hit
     wipeMeta.count += totalDeleted;
-    localStorage.setItem("jcb_wipe_meta", JSON.stringify(wipeMeta));
+    localStorage.setItem(META_KEY, JSON.stringify(wipeMeta));
     markDirty();
 
-    if (totalDeleted >= maxAllowed && hasMore)
+    if (wipeMeta.count >= MAX_DAILY_WIPE) {
+      // Lock exactly for 24 hours
+      const unlockTime = Date.now() + 24 * 60 * 60 * 1000;
+      localStorage.setItem(LOCK_KEY, unlockTime.toString());
       return {
-        warning:
-          "10,000 records deleted. Daily limit reached. Come back tomorrow.",
+        warning: `🚨 ${MAX_DAILY_WIPE} records deleted. System LOCKED for exactly 24 hours to protect database limits.`,
       };
+    }
+
     return { success: true };
   },
 };
