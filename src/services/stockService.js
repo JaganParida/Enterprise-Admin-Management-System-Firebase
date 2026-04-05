@@ -14,8 +14,10 @@ import {
   where,
   startAfter,
   writeBatch,
+  increment, // 🔥 ADDED: Required for 0-Read metadata updates
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { dashboardCache } from "./dashboardService"; // 🔥 ADDED: To clear dashboard RAM
 
 const stockCollection = collection(db, "stocks");
 const METADATA_COLLECTION = "_system_metadata";
@@ -89,7 +91,6 @@ const stockService = {
         memoryCache.fullDBLoaded = false;
       }
 
-      // ZERO-READ: Return from RAM if no filters and not dirty
       if (!memoryCache.isDirty && isInitialLoad && noFilters) {
         return {
           data: memoryCache.data.slice(0, limitCount),
@@ -99,7 +100,6 @@ const stockService = {
         };
       }
 
-      // SUPER-OPTIMIZATION: 0-Read Local Search if full DB is in RAM
       if (memoryCache.fullDBLoaded && !forceRefresh) {
         const localFiltered = applyLocalFilters(memoryCache.data, filters);
         const startIndex = lastDoc
@@ -123,7 +123,6 @@ const stockService = {
         };
       }
 
-      // Server Fetch Construction
       let constraints = [];
       let hasInequality = false;
 
@@ -194,11 +193,15 @@ const stockService = {
   },
 
   createStock: async (stockData, user) => {
+    const qty = Number(stockData.quantity) || 0;
+    const price = Number(stockData.price) || 0;
+    const isLow = qty < 10;
+
     const payload = {
       ...stockData,
       searchName: stockData.name.toLowerCase().trim(),
-      quantity: Number(stockData.quantity) || 0,
-      price: Number(stockData.price) || 0,
+      quantity: qty,
+      price: price,
       createdAt: new Date().toISOString(),
       createdBy: user?.email || "Unknown",
       editHistory: [],
@@ -208,6 +211,21 @@ const stockService = {
 
     memoryCache.data.unshift(newItem);
     memoryCache.isDirty = false;
+
+    // 🔥 METADATA UPDATE & CACHE INVALIDATION
+    try {
+      await setDoc(
+        doc(db, "metadata", "stockStats"),
+        {
+          totalStockValue: increment(qty * price),
+          lowStockCount: increment(isLow ? 1 : 0),
+        },
+        { merge: true },
+      );
+      if (dashboardCache) dashboardCache.markDirty();
+    } catch (e) {
+      console.error("Metadata update failed", e);
+    }
 
     return { data: newItem };
   },
@@ -228,13 +246,25 @@ const stockService = {
     let currentHistory = [];
     const cachedItem = memoryCache.data.find((item) => item._id === id);
 
-    if (cachedItem && cachedItem.editHistory) {
-      currentHistory = [...cachedItem.editHistory];
+    let oldQty = 0;
+    let oldPrice = 0;
+
+    if (cachedItem) {
+      currentHistory = cachedItem.editHistory
+        ? [...cachedItem.editHistory]
+        : [];
+      oldQty = Number(cachedItem.quantity) || 0;
+      oldPrice = Number(cachedItem.price) || 0;
     } else {
       const snap = await getDoc(docRef);
-      currentHistory = Array.isArray(snap.data()?.editHistory)
-        ? snap.data().editHistory
-        : [];
+      if (snap.exists()) {
+        const data = snap.data();
+        currentHistory = Array.isArray(data.editHistory)
+          ? data.editHistory
+          : [];
+        oldQty = Number(data.quantity) || 0;
+        oldPrice = Number(data.price) || 0;
+      }
     }
 
     const currentEdit = {
@@ -245,11 +275,14 @@ const stockService = {
     currentHistory.push(currentEdit);
     if (currentHistory.length > 2) currentHistory = currentHistory.slice(-2);
 
+    const newQty = Number(updateData.quantity) || 0;
+    const newPrice = Number(updateData.price) || 0;
+
     const payload = {
       ...updateData,
       searchName: updateData.name.toLowerCase().trim(),
-      quantity: Number(updateData.quantity) || 0,
-      price: Number(updateData.price) || 0,
+      quantity: newQty,
+      price: newPrice,
       lastEditedBy: currentEdit.by,
       lastEditedRole: currentEdit.role,
       lastEditedAt: currentEdit.at,
@@ -263,6 +296,24 @@ const stockService = {
     );
     memoryCache.isDirty = false;
 
+    // 🔥 METADATA UPDATE & CACHE INVALIDATION
+    try {
+      const valDiff = newQty * newPrice - oldQty * oldPrice;
+      const lowDiff = (newQty < 10 ? 1 : 0) - (oldQty < 10 ? 1 : 0);
+
+      await setDoc(
+        doc(db, "metadata", "stockStats"),
+        {
+          totalStockValue: increment(valDiff),
+          lowStockCount: increment(lowDiff),
+        },
+        { merge: true },
+      );
+      if (dashboardCache) dashboardCache.markDirty();
+    } catch (e) {
+      console.error("Metadata update failed", e);
+    }
+
     return { message: "Stock updated successfully" };
   },
 
@@ -270,28 +321,58 @@ const stockService = {
     const userRole = user?.data?.role || user?.role;
     if (userRole === "manager") throw new Error("Action Denied.");
 
+    // 🔥 1. Find the item BEFORE deleting it so we know how much to subtract
+    let oldQty = 0;
+    let oldPrice = 0;
+    const cachedItem = memoryCache.data.find((item) => item._id === id);
+    if (cachedItem) {
+      oldQty = Number(cachedItem.quantity) || 0;
+      oldPrice = Number(cachedItem.price) || 0;
+    } else {
+      const snap = await getDoc(doc(db, "stocks", id));
+      if (snap.exists()) {
+        oldQty = Number(snap.data().quantity) || 0;
+        oldPrice = Number(snap.data().price) || 0;
+      }
+    }
+
+    // 2. Delete the document
     await deleteDoc(doc(db, "stocks", id));
 
     memoryCache.data = memoryCache.data.filter((item) => item._id !== id);
     memoryCache.isDirty = false;
 
+    // 🔥 3. METADATA UPDATE & CACHE INVALIDATION (The Dashboard Fix)
+    try {
+      const valueToSubtract = oldQty * oldPrice;
+      const wasLowStock = oldQty < 10;
+
+      await setDoc(
+        doc(db, "metadata", "stockStats"),
+        {
+          totalStockValue: increment(-valueToSubtract),
+          lowStockCount: increment(wasLowStock ? -1 : 0),
+        },
+        { merge: true },
+      );
+      if (dashboardCache) dashboardCache.markDirty();
+    } catch (e) {
+      console.error("Failed to update stock metadata on delete", e);
+    }
+
     return { message: "Item deleted successfully" };
   },
 
-  // 🚀 FIXED WIPE AUTHENTICATION & BATCHING
   deleteAllStocks: async ({ password, email, user }) => {
     try {
-      // 1. Secure Authentication Verification
       const currentUser = auth.currentUser;
       if (!currentUser || currentUser.email !== email) {
         throw new Error("Authentication mismatch. Please log out and back in.");
       }
 
-      // Re-authenticate to ensure it's actually the admin
       const credential = EmailAuthProvider.credential(email, password);
       await reauthenticateWithCredential(currentUser, credential);
 
-      // 2. Daily Limit Guard (10,000 Deletes max per day)
       const todayString = new Date().toDateString();
       let wipeState = (await stockService.getWipeState()) || {
         count: 0,
@@ -299,7 +380,6 @@ const stockService = {
         lockedUntil: null,
       };
 
-      // Reset count if it is a new day
       if (wipeState.date !== todayString) {
         wipeState = { count: 0, date: todayString, lockedUntil: null };
       }
@@ -321,13 +401,12 @@ const stockService = {
         };
       }
 
-      // 3. Batch Deletion Logic
       let totalDeleted = 0;
       let hasMore = true;
       const MAX_UI_SAFE_DELETE = Math.min(10000 - wipeState.count, 5000);
 
       while (hasMore && totalDeleted < MAX_UI_SAFE_DELETE) {
-        const q = query(stockCollection, limit(500)); // Firebase max batch size is 500
+        const q = query(stockCollection, limit(500));
         const snapshot = await getDocs(q);
 
         if (snapshot.size === 0) {
@@ -344,16 +423,25 @@ const stockService = {
         totalDeleted += snapshot.size;
       }
 
-      // 4. Update Wipe State Quota
       wipeState.count += totalDeleted;
       await stockService.setWipeState(wipeState);
 
-      // 5. Clear Memory Cache
       memoryCache.data = [];
       memoryCache.lastDoc = null;
       memoryCache.hasMore = false;
       memoryCache.isDirty = true;
       memoryCache.fullDBLoaded = true;
+
+      // 🔥 RESET METADATA TO ZERO ON WIPE
+      try {
+        await setDoc(doc(db, "metadata", "stockStats"), {
+          totalStockValue: 0,
+          lowStockCount: 0,
+        });
+        if (dashboardCache) dashboardCache.markDirty();
+      } catch (e) {
+        console.error("Failed to reset metadata", e);
+      }
 
       return { message: `Wiped ${totalDeleted} records securely.` };
     } catch (error) {
