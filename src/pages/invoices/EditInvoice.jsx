@@ -10,12 +10,28 @@ import {
   FileText,
   ArrowLeft,
   RefreshCcw,
-  AlertCircle,
+  LayoutTemplate,
 } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// Configuration for templates logic
+const TEMPLATES = {
+  MAA: { id: "MAA", label: "Maa Flyash (Blue)", hasQuantity: true },
+  SANJIB: { id: "SANJIB", label: "Sanjib Parida (B&W)", hasQuantity: true },
+  SANDEEP: {
+    id: "SANDEEP",
+    label: "Sandeep Parida (Yellow)",
+    hasQuantity: true,
+  },
+  SACHIDA: {
+    id: "SACHIDA",
+    label: "Sachida Nanda (Service)",
+    hasQuantity: false,
+  },
+};
 
 const EditInvoice = () => {
   const { id } = useParams();
@@ -34,28 +50,23 @@ const EditInvoice = () => {
       : location.pathname;
   const isTransport = currentPath.includes("/transportation");
 
+  // Premium Theme Colors
   const theme = {
     primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
     primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
     primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
     primaryFocus: isTransport
-      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
-      : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
+      ? "focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+      : "focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500",
     indicatorLine: isTransport ? "bg-cyan-500" : "bg-indigo-500",
+    gradientBg: isTransport
+      ? "from-cyan-600 to-blue-600"
+      : "from-indigo-600 to-purple-600",
   };
 
+  const [templateType, setTemplateType] = useState("MAA");
   const [client, setClient] = useState({ name: "", address: "", gst: "" });
-  const [items, setItems] = useState([
-    {
-      id: 1,
-      name: "",
-      hsn: "",
-      quantity: 1,
-      price: 0,
-      total: 0,
-      isCustom: false,
-    },
-  ]);
+  const [items, setItems] = useState([]);
   const [gstRate, setGstRate] = useState(5);
   const [invoiceDate, setInvoiceDate] = useState("");
   const [status, setStatus] = useState("Pending");
@@ -69,47 +80,55 @@ const EditInvoice = () => {
     grandTotal: 0,
   });
 
-  const products = [
-    { name: "Bricks (10 inch)", hsn: "6815" },
-    { name: "Bricks (9 inch)", hsn: "6815" },
-    { name: "Bricks (8 inch)", hsn: "6815" },
-    { name: "Paver Blocks (Zig Zag 60mm)", hsn: "6810" },
-    { name: "Paver Blocks (Zig Zag 80mm)", hsn: "6810" },
-    { name: "Paver Blocks (6-12 Brick 60mm)", hsn: "6810" },
-    { name: "Paver Blocks (6-12 Brick 80mm)", hsn: "6810" },
-    { name: "Paver Blocks (6/6 Brick 60mm)", hsn: "6810" },
-    { name: "Paver Blocks (6/6 Brick 80mm)", hsn: "6810" },
-  ];
+  const activeConfig = TEMPLATES[templateType];
+
+  const getLabels = () => {
+    if (templateType === "SACHIDA") {
+      return {
+        section: "Customer Details",
+        name: "Name of the Customer / Party",
+        desc: "DESCRIPTION OF SERVICE",
+        qty: "Quantity",
+        rate: "Price",
+      };
+    }
+    if (templateType === "SANDEEP") {
+      return {
+        section: "Purchaser Details",
+        name: "Name of the Purchaser",
+        desc: "Description of Goods",
+        qty: "Quantity",
+        rate: "Unit Price",
+      };
+    }
+    return {
+      section: "Purchaser Details",
+      name: "Name of the Purchaser",
+      desc: "Description of Goods",
+      qty: "Qnty",
+      rate: "Rate / Price",
+    };
+  };
+  const labels = getLabels();
 
   useEffect(() => {
     const fetchInvoice = async () => {
       try {
         const { data } = await invoiceService.getInvoiceById(id);
+        setTemplateType(data.templateType || "MAA");
         const { phone, ...clientDataWithoutPhone } = data.client;
         setClient(clientDataWithoutPhone);
-        const processedItems = data.items.map((item) => ({
-          ...item,
-          isCustom: !products.some((p) => p.name === item.name),
-        }));
-        setItems(processedItems);
+        setItems(data.items.map((item) => ({ ...item, isCustom: true })));
         setGstRate(data.gstRate || 5);
         setInvoiceDate(
           data.date ? new Date(data.date).toISOString().split("T")[0] : "",
         );
         setStatus(data.status);
-        const fetchedInvNo = data.invoiceNumber || "";
-        setInvoiceNumber(fetchedInvNo.replace(/^INV-/, ""));
+        setInvoiceNumber((data.invoiceNumber || "").replace(/^INV-/, ""));
         if (data.lastEditedAt) {
           setAuditInfo({
             role: data.lastEditedRole || "Admin",
-            at: new Date(data.lastEditedAt).toLocaleString("en-GB", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            }),
+            at: new Date(data.lastEditedAt).toLocaleString("en-GB"),
           });
         }
       } catch (error) {
@@ -122,64 +141,57 @@ const EditInvoice = () => {
   }, [id]);
 
   useEffect(() => {
+    setItems((prev) =>
+      prev.map((item) => {
+        const qty = activeConfig.hasQuantity
+          ? parseFloat(item.quantity) || 0
+          : 1;
+        const price = parseFloat(item.price) || 0;
+        return { ...item, total: qty * price };
+      }),
+    );
+  }, [activeConfig.hasQuantity]);
+
+  useEffect(() => {
     const subTotal = items.reduce((acc, item) => acc + (item.total || 0), 0);
     const gstAmount = (subTotal * gstRate) / 100;
-    const cgst = gstAmount / 2;
-    const sgst = gstAmount / 2;
-    const grandTotal = subTotal + gstAmount;
-    setTotals({ subTotal, gstAmount, cgst, sgst, grandTotal });
+    setTotals({
+      subTotal,
+      gstAmount,
+      cgst: gstAmount / 2,
+      sgst: gstAmount / 2,
+      grandTotal: subTotal + gstAmount,
+    });
   }, [items, gstRate]);
 
   const handleClientChange = (field, value) => {
     setClient({ ...client, [field]: value });
-    if (errors[field]) {
-      const newErrors = { ...errors };
-      delete newErrors[field];
-      setErrors(newErrors);
-    }
   };
 
   const handleItemChange = (itemId, field, value) => {
-    const newItems = items.map((item) => {
-      if (item.id === itemId) {
-        let updatedItem = { ...item, [field]: value };
-        if (field === "nameSelect") {
-          if (value === "Custom") {
-            updatedItem.isCustom = true;
-            updatedItem.name = "";
-            updatedItem.hsn = "";
-          } else {
-            updatedItem.isCustom = false;
-            updatedItem.name = value;
-            const selectedProduct = products.find((p) => p.name === value);
-            if (selectedProduct) updatedItem.hsn = selectedProduct.hsn;
-          }
+    setItems(
+      items.map((item) => {
+        if (item.id === itemId) {
+          let updated = { ...item, [field]: value };
+          const qty = activeConfig.hasQuantity
+            ? parseFloat(updated.quantity) || 0
+            : 1;
+          const price = parseFloat(updated.price) || 0;
+          updated.total = qty * price;
+          return updated;
         }
-        const qty = parseFloat(updatedItem.quantity) || 0;
-        const price = parseFloat(updatedItem.price) || 0;
-        updatedItem.total = qty * price;
-        return updatedItem;
-      }
-      return item;
-    });
-    setItems(newItems);
+        return item;
+      }),
+    );
   };
 
   const addItem = () =>
     setItems([
       ...items,
-      {
-        id: Date.now(),
-        name: "",
-        hsn: "",
-        quantity: 1,
-        price: 0,
-        total: 0,
-        isCustom: false,
-      },
+      { id: Date.now(), name: "", hsn: "", quantity: 1, price: 0, total: 0 },
     ]);
   const removeItem = (itemId) => {
-    if (items.length > 1) setItems(items.filter((item) => item.id !== itemId));
+    if (items.length > 1) setItems(items.filter((i) => i.id !== itemId));
   };
 
   const validateForm = () => {
@@ -199,8 +211,12 @@ const EditInvoice = () => {
 
   const executeUpdate = async () => {
     setSaving(true);
-    const cleanItems = items.map(({ isCustom, nameSelect, ...rest }) => rest);
+    const cleanItems = items.map(({ isCustom, ...rest }) => ({
+      ...rest,
+      quantity: activeConfig.hasQuantity ? Number(rest.quantity) : 1,
+    }));
     const invoiceData = {
+      templateType,
       client,
       items: cleanItems,
       date: invoiceDate,
@@ -215,9 +231,6 @@ const EditInvoice = () => {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
       await invoiceService.updateInvoice(id, invoiceData, currentUser);
-
-      // NOTE: Removed `invoiceService.cache.isValid = false`.
-      // The service now handles optimistic cache updates natively.
       toast.success("Invoice updated successfully!");
       navigate(-1);
     } catch (err) {
@@ -235,333 +248,232 @@ const EditInvoice = () => {
       </div>
     );
 
+  // Ultra-sleek transparent base class for table inputs
+  const tableInputClasses = `w-full bg-transparent border border-white/10 hover:border-white/20 rounded-xl px-4 py-3 text-white outline-none text-sm transition-all focus:bg-white/[0.02] ${theme.primaryFocus}`;
+
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-4 print:w-full print:max-w-none print:m-0 print:p-0 print:bg-white">
+    <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12 px-4 print:w-full print:max-w-none print:m-0 print:p-0 print:bg-white text-zinc-100 font-sans">
       <button
         onClick={() => navigate(-1)}
-        className="flex items-center text-zinc-500 hover:text-white mb-2 transition-colors print:hidden"
+        className="flex items-center text-zinc-400 hover:text-white mb-2 transition-colors font-semibold text-sm print:hidden"
       >
         <ArrowLeft size={18} className="mr-2" /> Back to Invoices
       </button>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 print:hidden">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div
-              className={`p-2.5 rounded-xl border ${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder}`}
-            >
-              <FileText size={24} />
-            </div>{" "}
-            Edit Invoice
-          </h1>
+
+      {/* PREMIUM HEADER */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 print:hidden bg-[#0A0A0C] p-6 rounded-2xl border border-white/5 shadow-2xl">
+        <div className="flex items-center gap-4">
+          <div
+            className={`p-3 rounded-xl bg-gradient-to-br ${theme.gradientBg} shadow-lg shadow-indigo-500/20 text-white`}
+          >
+            <FileText size={28} />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-white whitespace-nowrap">
+              Edit Invoice
+            </h1>
+            <p className="text-zinc-500 text-sm mt-1 font-medium">
+              Update record details safely.
+            </p>
+          </div>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+          {/* Template Selector */}
+          <div className="relative flex items-center bg-transparent border border-white/10 hover:border-white/20 transition-all rounded-xl px-4 py-1.5 focus-within:ring-1 focus-within:border-indigo-500 focus-within:ring-indigo-500">
+            <LayoutTemplate size={18} className="text-zinc-400 mr-3" />
+            <select
+              value={templateType}
+              onChange={(e) => setTemplateType(e.target.value)}
+              style={{ colorScheme: "dark" }}
+              className="bg-transparent text-white font-semibold text-sm outline-none cursor-pointer py-2 pr-4 appearance-none w-full whitespace-nowrap"
+            >
+              <option value="MAA" className="bg-[#0F0F12] text-white">
+                M/S MAA FLYASH BRICKS (Blue)
+              </option>
+              <option value="SANJIB" className="bg-[#0F0F12] text-white">
+                M/S SANJIB PARIDA (B&W)
+              </option>
+              <option value="SANDEEP" className="bg-[#0F0F12] text-white">
+                M/S SANDEEP PARIDA (Yellow)
+              </option>
+              <option value="SACHIDA" className="bg-[#0F0F12] text-white">
+                M/S SACHIDA NANDA PARIDA (Service)
+              </option>
+            </select>
+          </div>
+
+          {/* Status Selector */}
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            className={`bg-[#09090B] border border-zinc-800 text-zinc-100 text-sm rounded-xl px-4 py-3 sm:py-2 outline-none w-full sm:w-auto cursor-pointer transition-all ${theme.primaryFocus}`}
+            style={{ colorScheme: "dark" }}
+            className={`bg-transparent border border-white/10 text-white font-medium text-sm rounded-xl px-5 py-3.5 outline-none cursor-pointer transition-all hover:border-white/20 ${theme.primaryFocus}`}
           >
-            <option value="Pending">Status: Pending</option>
-            <option value="Paid">Status: Paid</option>
-            <option value="Cancelled">Status: Cancelled</option>
+            <option value="Pending" className="bg-[#0F0F12] text-white">
+              Status: Pending
+            </option>
+            <option value="Paid" className="bg-[#0F0F12] text-white">
+              Status: Paid
+            </option>
+            <option value="Cancelled" className="bg-[#0F0F12] text-white">
+              Status: Cancelled
+            </option>
           </select>
+
+          {/* Date Picker */}
           <input
             type="date"
             value={invoiceDate}
             onChange={(e) => setInvoiceDate(e.target.value)}
             style={{ colorScheme: "dark" }}
-            className={`bg-[#09090B] border border-zinc-800 font-bold text-sm rounded-xl px-4 py-3 sm:py-2 outline-none w-full sm:w-auto cursor-pointer transition-all ${theme.primaryText} ${theme.primaryFocus}`}
+            className={`bg-transparent border border-white/10 text-white font-medium text-sm rounded-xl px-5 py-3.5 outline-none cursor-pointer transition-all hover:border-white/20 ${theme.primaryFocus}`}
           />
         </div>
       </div>
 
-      <form onSubmit={handleFormSubmitClick} className="space-y-8">
-        <div className="bg-[#09090B] p-6 md:p-8 rounded-2xl border border-zinc-800/60 shadow-lg relative overflow-hidden print:shadow-none print:border-none print:bg-transparent print:p-0">
-          <h3 className="text-lg font-bold text-white mb-6 border-b border-zinc-800/60 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
+      <form onSubmit={handleFormSubmitClick} className="space-y-6">
+        {/* PURCHASER DETAILS CARD */}
+        <div className="bg-[#0A0A0C] p-6 lg:p-8 rounded-2xl border border-white/5 shadow-xl relative overflow-hidden">
+          <h3 className="text-xl font-semibold text-white mb-6 border-b border-white/10 pb-4 flex items-center gap-3 whitespace-nowrap tracking-tight">
             <span
-              className={`w-1.5 h-6 rounded-full print:hidden ${theme.indicatorLine}`}
+              className={`w-1.5 h-6 rounded-full ${theme.indicatorLine}`}
             ></span>{" "}
-            Purchaser Details
+            {labels.section}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-1">
-              <Input
-                label="Invoice Number"
-                placeholder="e.g. 1003"
-                value={invoiceNumber}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, "");
-                  setInvoiceNumber(val);
-                  if (errors.invoiceNumber) {
-                    const newErrors = { ...errors };
-                    delete newErrors.invoiceNumber;
-                    setErrors(newErrors);
-                  }
-                }}
-                className={
-                  errors.invoiceNumber
-                    ? "border-rose-500/50 focus:ring-rose-500"
-                    : ""
-                }
-              />
-              {errors.invoiceNumber && (
-                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1 mt-1">
-                  <AlertCircle size={10} /> {errors.invoiceNumber}
-                </p>
-              )}
-            </div>
-            <div className="space-y-1">
-              <Input
-                label="Client Name"
-                value={client.name}
-                onChange={(e) => handleClientChange("name", e.target.value)}
-                required
-                className={
-                  errors.name ? "border-rose-500/50 focus:ring-rose-500" : ""
-                }
-              />
-              {errors.name && (
-                <p className="text-rose-500 text-[10px] font-bold uppercase ml-1 flex items-center gap-1 mt-1">
-                  <AlertCircle size={10} /> {errors.name}
-                </p>
-              )}
-            </div>
+            <Input
+              label="Invoice Number"
+              value={invoiceNumber}
+              onChange={(e) =>
+                setInvoiceNumber(e.target.value.replace(/\D/g, ""))
+              }
+              className={
+                errors.invoiceNumber
+                  ? "border-rose-500/50 bg-rose-500/5"
+                  : "bg-transparent border-white/10 hover:border-white/20 focus:bg-white/[0.02]"
+              }
+            />
+            <Input
+              label={labels.name}
+              value={client.name}
+              onChange={(e) => handleClientChange("name", e.target.value)}
+              required
+              className={
+                errors.name
+                  ? "border-rose-500/50 bg-rose-500/5"
+                  : "bg-transparent border-white/10 hover:border-white/20 focus:bg-white/[0.02]"
+              }
+            />
             <Input
               label="Address"
               value={client.address}
               onChange={(e) => handleClientChange("address", e.target.value)}
-              className="md:col-span-2"
+              className="md:col-span-2 bg-transparent border-white/10 hover:border-white/20 focus:bg-white/[0.02]"
             />
             <Input
-              label="GSTIN (Optional)"
+              label="GSTIN"
               value={client.gst}
-              onChange={(e) => {
-                const val = e.target.value
-                  .toUpperCase()
-                  .replace(/[^A-Z0-9]/g, "");
-                if (val.length <= 15) handleClientChange("gst", val);
-              }}
+              onChange={(e) =>
+                handleClientChange("gst", e.target.value.toUpperCase())
+              }
+              className="bg-transparent border-white/10 hover:border-white/20 focus:bg-white/[0.02]"
             />
           </div>
         </div>
 
-        <div className="bg-[#09090B] p-6 md:p-8 rounded-2xl border border-zinc-800/60 shadow-lg print:shadow-none print:border-none print:bg-transparent print:p-0">
-          <h3 className="text-lg font-bold text-white mb-6 border-b border-zinc-800/60 pb-4 flex items-center gap-2 print:text-black print:border-gray-300">
+        {/* ITEMS TABLE CARD */}
+        <div className="bg-[#0A0A0C] p-6 lg:p-8 rounded-2xl border border-white/5 shadow-xl">
+          <h3 className="text-xl font-semibold text-white mb-6 border-b border-white/10 pb-4 flex items-center gap-3 whitespace-nowrap tracking-tight">
             <span
-              className={`w-1.5 h-6 rounded-full print:hidden ${theme.indicatorLine}`}
+              className={`w-1.5 h-6 rounded-full ${theme.indicatorLine}`}
             ></span>{" "}
-            Description of Goods
+            {labels.desc}
           </h3>
-          <div className="overflow-x-auto pb-4 custom-scrollbar print:overflow-visible print:w-full">
-            <table className="w-full text-left mb-4 min-w-[800px] print:min-w-0">
+          <div className="overflow-x-auto pb-4 custom-scrollbar">
+            <table className="w-full text-left mb-2 min-w-[850px]">
               <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800/60 font-bold print:text-gray-500">
-                  <th className="pb-3 w-[35%] pl-2">Product Name</th>
-                  <th className="pb-3 w-[15%]">HSN Code</th>
-                  <th className="pb-3 w-20 text-center">Qnty</th>
-                  <th className="pb-3 w-28 text-center">Rate / Price</th>
-                  <th className="pb-3 w-32 text-right pr-4">Amount (₹)</th>
-                  <th className="pb-3 w-10 text-center print:hidden"></th>
+                <tr className="text-[11px] uppercase tracking-widest text-zinc-400 border-b border-white/10 font-semibold bg-white/[0.02]">
+                  <th className="py-4 px-4 w-[35%] whitespace-nowrap rounded-tl-xl">
+                    {labels.desc}
+                  </th>
+                  <th className="py-4 px-3 w-[15%] whitespace-nowrap">
+                    HSN Code
+                  </th>
+                  {activeConfig.hasQuantity && (
+                    <th className="py-4 px-3 w-20 text-center whitespace-nowrap">
+                      {labels.qty}
+                    </th>
+                  )}
+                  <th className="py-4 px-3 w-32 text-center whitespace-nowrap">
+                    {labels.rate}
+                  </th>
+                  <th className="py-4 px-4 w-32 text-right whitespace-nowrap">
+                    Amount (₹)
+                  </th>
+                  <th className="py-4 w-12 text-center rounded-tr-xl"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800/60 print:divide-gray-200">
+              <tbody className="divide-y divide-white/5">
                 {items.map((item) => (
-                  <tr key={item.id} className="group">
-                    <td className="py-4 pr-3 pl-2">
-                      {!item.isCustom ? (
-                        <div className="relative">
-                          <select
-                            className={`w-full bg-zinc-900/50 border ${errors[`item_${item.id}_name`] ? "border-rose-500/50 focus:border-rose-500" : `border-zinc-800 ${theme.primaryFocus}`} rounded-lg px-3 py-2.5 text-zinc-100 outline-none text-sm cursor-pointer appearance-none transition-all print:bg-transparent print:text-black`}
-                            value={item.isCustom ? "Custom" : item.name || ""}
-                            onChange={(e) =>
-                              handleItemChange(
-                                item.id,
-                                "nameSelect",
-                                e.target.value,
-                              )
-                            }
-                          >
-                            <option
-                              value=""
-                              disabled
-                              className="bg-[#09090B] text-zinc-500"
-                            >
-                              Select Product...
-                            </option>
-                            <optgroup
-                              label="Bricks"
-                              className={`bg-[#09090B] font-bold ${theme.primaryText}`}
-                            >
-                              <option
-                                value=" FLYASH Bricks (10 inch)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Bricks 10 inch
-                              </option>
-                              <option
-                                value="FLYASH Bricks (9 inch)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Bricks 9 inch
-                              </option>
-                              <option
-                                value="FLYASH Bricks 8 inch"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Bricks 8 inch
-                              </option>
-                            </optgroup>
-                            <optgroup
-                              label="Paver Blocks"
-                              className={`bg-[#09090B] font-bold ${theme.primaryText}`}
-                            >
-                              <option
-                                value="Paver Blocks Zig Zag (60mm)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Zig Zag (60mm)
-                              </option>
-                              <option
-                                value="Paver Blocks Zig Zag (80mm)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Zig Zag (80mm)
-                              </option>
-                              <option
-                                value="Paver Blocks 6/12 Brick (60mm)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                6/12 Brick (60mm)
-                              </option>
-                              <option
-                                value="Paver Blocks 6/12 Brick (80mm)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                6/12 Brick (80mm)
-                              </option>
-                              <option
-                                value="Paver Blocks 6/6 Brick (60mm)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                6/6 Brick 60mm
-                              </option>
-                              <option
-                                value="Paver Blocks 6/6 Brick (80mm)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                6/6 Brick (80mm)
-                              </option>
-                            </optgroup>
-                            <optgroup
-                              label="Chequered Tiles"
-                              className={`bg-[#09090B] font-bold ${theme.primaryText}`}
-                            >
-                              <option
-                                value="Chequered Tiles Hexagon"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Hexagon
-                              </option>
-                              <option
-                                value="Chequered Tiles Brick Design (9inch)"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Brick Design (9inch)
-                              </option>
-                              <option
-                                value="Chequered Tiles Curve Stone"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Curve Stone
-                              </option>
-                              <option
-                                value="Chequered Tiles Cover Block"
-                                className="bg-[#09090B] text-zinc-100 font-normal"
-                              >
-                                Cover Block
-                              </option>
-                            </optgroup>
-                            <option
-                              value="Other Building Materials"
-                              className="bg-[#09090B] text-zinc-100 font-normal"
-                            >
-                              Other Building Materials
-                            </option>
-                            <option
-                              value="Custom"
-                              className="bg-[#09090B] text-amber-400 font-bold border-t border-zinc-800/60 pt-2"
-                            >
-                              Custom Item...
-                            </option>
-                          </select>
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-[10px] print:hidden">
-                            ▼
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="relative">
-                          <input
-                            type="text"
-                            className={`w-full bg-zinc-900/50 border ${errors[`item_${item.id}_name`] ? "border-rose-500/50 focus:border-rose-500" : `border-zinc-800 ${theme.primaryFocus}`} rounded-lg px-3 py-2.5 text-zinc-100 outline-none text-sm pr-12 transition-all print:bg-transparent print:text-black`}
-                            placeholder="Type custom description..."
-                            value={item.name}
-                            onChange={(e) =>
-                              handleItemChange(item.id, "name", e.target.value)
-                            }
-                            autoFocus
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleItemChange(item.id, "nameSelect", "")
-                            }
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-rose-400 hover:text-rose-300 text-xs print:hidden"
-                          >
-                            Undo
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-4 pr-3">
+                  <tr
+                    key={item.id}
+                    className="group hover:bg-white/[0.01] transition-colors"
+                  >
+                    <td className="py-3 px-3">
                       <input
                         type="text"
-                        placeholder="HSN"
-                        className={`w-full bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-100 outline-none text-sm text-center transition-all print:bg-transparent print:text-black print:border-none ${theme.primaryFocus}`}
+                        className={`${tableInputClasses} ${errors[`item_${item.id}_name`] ? "border-rose-500/50 bg-rose-500/5" : ""}`}
+                        value={item.name}
+                        onChange={(e) =>
+                          handleItemChange(item.id, "name", e.target.value)
+                        }
+                      />
+                    </td>
+                    <td className="py-3 px-2">
+                      <input
+                        type="text"
+                        className={`${tableInputClasses} text-center`}
                         value={item.hsn}
                         onChange={(e) =>
                           handleItemChange(item.id, "hsn", e.target.value)
                         }
                       />
                     </td>
-                    <td className="py-4 pr-3">
+                    {activeConfig.hasQuantity && (
+                      <td className="py-3 px-2">
+                        <input
+                          type="number"
+                          className={`${tableInputClasses} text-center ${errors[`item_${item.id}_qty`] ? "border-rose-500/50 bg-rose-500/5" : ""}`}
+                          value={item.quantity}
+                          onChange={(e) =>
+                            handleItemChange(
+                              item.id,
+                              "quantity",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </td>
+                    )}
+                    <td className="py-3 px-2">
                       <input
                         type="number"
-                        className={`w-full bg-zinc-900/50 border ${errors[`item_${item.id}_qty`] ? "border-rose-500/50 focus:border-rose-500" : `border-zinc-800 ${theme.primaryFocus}`} rounded-lg px-2 py-2.5 text-zinc-100 text-center outline-none text-sm transition-all print:bg-transparent print:text-black print:border-none`}
-                        value={item.quantity}
-                        onChange={(e) =>
-                          handleItemChange(item.id, "quantity", e.target.value)
-                        }
-                        onWheel={(e) => e.target.blur()}
-                      />
-                    </td>
-                    <td className="py-4 pr-3">
-                      <input
-                        type="number"
-                        className={`w-full bg-zinc-900/50 border ${errors[`item_${item.id}_price`] ? "border-rose-500/50 focus:border-rose-500" : `border-zinc-800 ${theme.primaryFocus}`} rounded-lg px-3 py-2.5 text-zinc-100 text-right outline-none text-sm transition-all print:bg-transparent print:text-black print:border-none`}
+                        className={`${tableInputClasses} text-right ${errors[`item_${item.id}_price`] ? "border-rose-500/50 bg-rose-500/5" : ""}`}
                         value={item.price}
                         onChange={(e) =>
                           handleItemChange(item.id, "price", e.target.value)
                         }
-                        onWheel={(e) => e.target.blur()}
                       />
                     </td>
-                    <td className="py-4 font-bold text-white font-mono text-sm text-right pr-4 print:text-black">
+                    <td className="py-3 px-4 font-bold text-white font-mono text-[15px] text-right tracking-wide whitespace-nowrap">
                       {Number(item.total || 0).toLocaleString("en-IN")}
                     </td>
-                    <td className="py-4 text-center print:hidden">
+                    <td className="py-3 text-center">
                       <button
                         type="button"
                         onClick={() => removeItem(item.id)}
-                        className="text-zinc-600 hover:text-rose-400 transition-colors p-2 rounded-lg"
+                        className="text-zinc-500 hover:text-rose-500 hover:bg-rose-500/10 p-2.5 rounded-xl transition-all"
                       >
                         <Trash2 size={18} />
                       </button>
@@ -575,95 +487,90 @@ const EditInvoice = () => {
             type="button"
             variant="outline"
             onClick={addItem}
-            className="text-xs border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800/50 mt-2 rounded-xl print:hidden"
+            className="text-sm font-semibold border-white/10 bg-white/5 text-white hover:bg-white/10 mt-2 rounded-xl py-2.5 px-5"
           >
-            <Plus size={16} className="mr-1" /> Add Row
+            <Plus size={18} className="mr-2" /> Add Row
           </Button>
         </div>
 
-        <div className="bg-[#09090B] p-8 rounded-2xl border border-zinc-800/60 shadow-lg flex justify-end print:shadow-none print:border-none print:bg-transparent print:p-0">
-          <div className="w-full md:w-80 space-y-4">
-            <div className="flex justify-between text-zinc-400 text-sm font-medium print:text-gray-600">
+        {/* TOTALS CARD */}
+        <div className="bg-[#0A0A0C] p-6 lg:p-8 rounded-2xl border border-white/5 shadow-xl flex justify-end">
+          <div className="w-full md:w-96 space-y-4">
+            <div className="flex justify-between text-zinc-400 text-sm font-medium">
               <span>G. Total (Before Tax):</span>
-              <span className="font-mono text-white print:text-black">
+              <span className="font-mono text-white tracking-wide">
                 ₹ {totals.subTotal.toLocaleString("en-IN")}
               </span>
             </div>
-            <div className="flex justify-between items-center text-zinc-400 text-sm print:text-gray-600">
+            <div className="flex justify-between items-center text-zinc-400 text-sm font-medium">
               <span>Tax Category:</span>
               <select
-                className={`bg-zinc-900/50 border border-zinc-800 rounded-lg px-2 py-1 text-zinc-300 text-xs print:bg-transparent print:text-black print:border-none print:appearance-none outline-none transition-all cursor-pointer ${theme.primaryFocus}`}
+                style={{ colorScheme: "dark" }}
+                className={`bg-transparent border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none cursor-pointer font-semibold transition-all hover:border-white/20 focus:bg-white/[0.02] ${theme.primaryFocus}`}
                 value={gstRate}
                 onChange={(e) => setGstRate(parseFloat(e.target.value))}
               >
-                <option value="0" className="bg-[#09090B]">
+                <option value="0" className="bg-[#0F0F12] text-white">
                   0%
                 </option>
-                <option value="5" className="bg-[#09090B]">
+                <option value="5" className="bg-[#0F0F12] text-white">
                   GST 5%
                 </option>
-                <option value="12" className="bg-[#09090B]">
+                <option value="12" className="bg-[#0F0F12] text-white">
                   GST 12%
                 </option>
-                <option value="18" className="bg-[#09090B]">
+                <option value="18" className="bg-[#0F0F12] text-white">
                   GST 18%
                 </option>
               </select>
             </div>
             {gstRate > 0 && (
               <>
-                <div className="flex justify-between text-zinc-500 text-xs print:text-gray-600">
+                <div className="flex justify-between text-zinc-500 text-sm font-medium">
                   <span>CGST @ {gstRate / 2}%:</span>
-                  <span className="font-mono print:text-black">
+                  <span className="font-mono text-zinc-300">
                     ₹{" "}
                     {totals.cgst.toLocaleString("en-IN", {
                       minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
                     })}
                   </span>
                 </div>
-                <div className="flex justify-between text-zinc-500 text-xs print:text-gray-600">
+                <div className="flex justify-between text-zinc-500 text-sm font-medium">
                   <span>SGST @ {gstRate / 2}%:</span>
-                  <span className="font-mono print:text-black">
+                  <span className="font-mono text-zinc-300">
                     ₹{" "}
                     {totals.sgst.toLocaleString("en-IN", {
                       minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
                     })}
                   </span>
                 </div>
               </>
             )}
-            <div
-              className={`border-t border-zinc-800/60 pt-4 flex justify-between text-xl font-bold print:text-black print:border-gray-300 ${theme.primaryText}`}
-            >
-              <span className="text-base text-white print:text-black">
-                Net Total:
-              </span>
-              <span className="font-mono">
+            <div className="border-t border-white/10 pt-5 flex justify-between text-2xl font-bold text-white items-center">
+              <span className="text-lg">Net Total:</span>
+              <span className="font-mono text-transparent bg-clip-text bg-gradient-to-r from-white to-zinc-400 tracking-tight">
                 ₹{" "}
                 {totals.grandTotal.toLocaleString("en-IN", {
                   minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
                 })}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col-reverse sm:flex-row justify-end gap-4 pb-4 px-4 print:hidden">
+        {/* ACTIONS */}
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-4 pb-4 px-4">
           <Button
             type="button"
             variant="outline"
             onClick={() => navigate(-1)}
-            className="w-full sm:w-auto border-zinc-800 text-zinc-400 hover:bg-zinc-800/50 hover:text-white rounded-xl"
+            className="w-full sm:w-auto border-white/10 text-zinc-300 bg-white/5 hover:bg-white/10 hover:text-white rounded-xl py-3.5 px-8 font-semibold text-sm"
           >
             Discard
           </Button>
           <Button
             type="submit"
-            variant="primary"
-            className="w-full sm:w-auto px-10 rounded-xl"
+            className={`w-full sm:w-auto px-10 py-3.5 rounded-xl text-sm font-bold text-white border-0 bg-gradient-to-r ${theme.gradientBg} shadow-lg shadow-indigo-500/20 hover:brightness-110 transition-all`}
             disabled={saving}
           >
             {saving ? (
@@ -674,10 +581,10 @@ const EditInvoice = () => {
             {saving ? " Updating..." : " Update Invoice"}
           </Button>
         </div>
+
+        {/* AUDIT INFO */}
         {auditInfo && (
-          <div
-            className={`text-center text-[10px] font-mono text-zinc-500 uppercase tracking-[0.1em] pt-2 border-t border-zinc-800/60 px-4 print:hidden`}
-          >
+          <div className="text-center text-[10px] font-mono text-zinc-500 uppercase tracking-[0.15em] pt-4 px-4 print:hidden">
             LAST UPDATED BY{" "}
             <span className={`${theme.primaryText} font-bold mx-1`}>
               {auditInfo.role}
@@ -692,7 +599,7 @@ const EditInvoice = () => {
         onClose={() => setIsDialogOpen(false)}
         onConfirm={executeUpdate}
         title="Update Invoice"
-        message="Are you sure you want to save changes to this invoice?"
+        message="Are you sure you want to save changes?"
         confirmText="Save Update"
         isDestructive={false}
       />
