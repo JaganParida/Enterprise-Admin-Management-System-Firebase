@@ -16,12 +16,79 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 
 const BarChart = lazy(() => import("../../components/charts/BarChart"));
 
 const ChartSkeleton = () => (
   <div className="w-full h-full bg-blue-900/10 animate-pulse rounded-xl border border-blue-900/20"></div>
+);
+
+// 🚀 NEW TRANSPORTATION DASHBOARD SKELETON
+const TransportationDashboardSkeleton = () => (
+  <div className="space-y-8 pb-10 h-full flex flex-col w-full">
+    {/* Header Skeleton */}
+    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-20">
+      <div>
+        <div className="h-9 w-64 bg-zinc-800/60 rounded-lg animate-pulse mb-3"></div>
+        <div className="h-4 w-80 bg-zinc-800/40 rounded-md animate-pulse"></div>
+      </div>
+      <div className="flex gap-3">
+        <div className="h-11 w-44 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+        <div className="h-11 w-32 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+      </div>
+    </div>
+
+    {/* Stats Grid Skeleton */}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {[1, 2, 3, 4].map((i) => (
+        <div
+          key={i}
+          className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl h-[152px] animate-pulse"
+        >
+          <div className="flex justify-between items-start mb-4">
+            <div className="h-12 w-12 rounded-xl bg-zinc-800/60"></div>
+          </div>
+          <div className="mt-6">
+            <div className="h-3 w-24 bg-zinc-800/50 rounded mb-2"></div>
+            <div className="h-8 w-32 bg-zinc-800/60 rounded"></div>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    {/* Charts & Activity Skeleton */}
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[500px]">
+      {/* Chart Section */}
+      <div className="lg:col-span-2 p-6 rounded-2xl bg-white/[0.02] border border-white/5 h-[350px] lg:h-full animate-pulse flex flex-col">
+        <div className="flex justify-between items-center mb-6">
+          <div className="h-8 w-48 bg-zinc-800/60 rounded-lg"></div>
+        </div>
+        <div className="flex-1 w-full bg-zinc-800/30 rounded-xl"></div>
+      </div>
+
+      {/* Activity Section */}
+      <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 h-[400px] lg:h-full animate-pulse flex flex-col">
+        <div className="flex justify-between items-center mb-6">
+          <div className="h-8 w-40 bg-zinc-800/60 rounded-lg"></div>
+          <div className="h-5 w-16 bg-zinc-800/50 rounded-md"></div>
+        </div>
+        <div className="space-y-5">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="flex gap-4 items-start">
+              <div className="h-10 w-10 rounded-lg bg-zinc-800/60 shrink-0"></div>
+              <div className="flex-1 space-y-2 mt-1">
+                <div className="flex justify-between">
+                  <div className="h-4 w-28 bg-zinc-800/60 rounded"></div>
+                  <div className="h-3 w-12 bg-zinc-800/50 rounded"></div>
+                </div>
+                <div className="h-3 w-40 bg-zinc-800/40 rounded"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
 );
 
 const TransportationDashboard = () => {
@@ -169,7 +236,8 @@ const TransportationDashboard = () => {
     },
   };
 
-  if (loading) return <Loader text="Initializing Fleet Command..." />;
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading) return <TransportationDashboardSkeleton />;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10 h-full flex flex-col">
