@@ -8,8 +8,8 @@ import {
 import { doc, getDoc, setDoc } from "firebase/firestore"; // 👈 Import Firestore functions
 
 export const ALLOWED_USERS = {
-  "jagan.parida.dev@gmail.com": "admin",
-  "jaganparida39064@gmail.com": "manager",
+  "maaflyashbricks2016@gmail.com": "admin",
+  "sanjibcutm07@gmail.com": "manager",
 };
 
 export const verifyAndGetRole = async (user) => {
