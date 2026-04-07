@@ -11,7 +11,7 @@ import {
 
 const MaintenanceOverlay = () => {
   // Target Time Configuration
-  const MAINTENANCE_END_TIME = "2026-04-05T20:45:00";
+  const MAINTENANCE_END_TIME = "2026-04-06T10:45:00";
   const [targetTime] = useState(new Date(MAINTENANCE_END_TIME));
 
   const [timeLeft, setTimeLeft] = useState({
@@ -22,7 +22,6 @@ const MaintenanceOverlay = () => {
   const [isMaintained, setIsMaintained] = useState(false);
 
   // Logic: Check if time has already passed on initial load
-  // If current time > target time, isVisible will be false immediately
   const [isVisible, setIsVisible] = useState(() => {
     return new Date() < new Date(MAINTENANCE_END_TIME);
   });
@@ -31,18 +30,20 @@ const MaintenanceOverlay = () => {
     if (isVisible) {
       document.body.style.overflow = "hidden";
       document.body.style.position = "fixed";
+      document.body.style.width = "100%";
     } else {
       document.body.style.overflow = "unset";
       document.body.style.position = "unset";
+      document.body.style.width = "auto";
     }
     return () => {
       document.body.style.overflow = "unset";
       document.body.style.position = "unset";
+      document.body.style.width = "auto";
     };
   }, [isVisible]);
 
   useEffect(() => {
-    // If the overlay isn't visible because time passed, don't start the timer
     if (!isVisible) return;
 
     const interval = setInterval(() => {
@@ -64,30 +65,30 @@ const MaintenanceOverlay = () => {
     return () => clearInterval(interval);
   }, [isMaintained, targetTime, isVisible]);
 
-  // If time has passed (initial check) or user closed it, return null
   if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999999] bg-[#050505] text-white font-sans flex items-center justify-center overflow-hidden">
+    <div className="fixed inset-0 z-[9999999] bg-[#050505] text-white font-sans flex flex-col h-[100dvh] w-screen overflow-hidden overscroll-none">
       {/* Precision Background Grid */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
 
       {/* Structural Accent Lines */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-px h-32 bg-gradient-to-b from-transparent via-indigo-500/20 to-transparent" />
-      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-px h-32 bg-gradient-to-t from-transparent via-indigo-500/20 to-transparent" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-px h-16 md:h-32 bg-gradient-to-b from-transparent via-indigo-500/20 to-transparent pointer-events-none" />
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-px h-16 md:h-32 bg-gradient-to-t from-transparent via-indigo-500/20 to-transparent pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative z-10 w-full max-w-5xl px-6"
+        className="relative z-10 w-full max-w-5xl mx-auto px-4 sm:px-6 h-full flex flex-col"
       >
-        <div className="flex flex-col items-center">
+        {/* Main Center Content (Grows to push footer down) */}
+        <div className="flex-1 flex flex-col justify-center items-center min-h-0 py-6">
           {/* Status Header */}
-          <div className="flex items-center gap-4 mb-12">
+          <div className="flex items-center gap-2 sm:gap-4 mb-6 md:mb-8 shrink-0">
             <div
-              className={`h-[1px] w-12 ${isMaintained ? "bg-emerald-500/30" : "bg-amber-500/30"}`}
+              className={`h-[1px] w-8 sm:w-12 ${isMaintained ? "bg-emerald-500/30" : "bg-amber-500/30"}`}
             />
-            <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.03] border border-white/10 rounded-md">
+            <div className="flex items-center gap-2 px-2 sm:px-3 py-1 bg-white/[0.03] border border-white/10 rounded-md">
               <span className={`flex h-2 w-2 relative`}>
                 <span
                   className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isMaintained ? "bg-emerald-400" : "bg-amber-400"}`}
@@ -96,17 +97,17 @@ const MaintenanceOverlay = () => {
                   className={`relative inline-flex rounded-full h-2 w-2 ${isMaintained ? "bg-emerald-500" : "bg-amber-500"}`}
                 />
               </span>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-zinc-400">
+              <span className="text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-[0.2em] sm:tracking-[0.3em] text-zinc-400">
                 {isMaintained ? "Protocol: Restored" : "Protocol: Deployment"}
               </span>
             </div>
             <div
-              className={`h-[1px] w-12 ${isMaintained ? "bg-emerald-500/30" : "bg-amber-500/30"}`}
+              className={`h-[1px] w-8 sm:w-12 ${isMaintained ? "bg-emerald-500/30" : "bg-amber-500/30"}`}
             />
           </div>
 
           {/* Main Title - Clean Typography */}
-          <h1 className="text-6xl md:text-8xl font-black tracking-[calc(-0.05em)] text-center leading-none mb-8">
+          <h1 className="text-4xl sm:text-6xl md:text-8xl font-black tracking-[calc(-0.05em)] text-center leading-none mb-4 md:mb-6 shrink-0">
             {isMaintained ? (
               <>
                 SYSTEMS <span className="text-emerald-500">READY</span>
@@ -118,7 +119,7 @@ const MaintenanceOverlay = () => {
             )}
           </h1>
 
-          <p className="text-zinc-500 text-sm md:text-base font-mono max-w-xl text-center leading-relaxed mb-16 uppercase tracking-widest opacity-80">
+          <p className="text-zinc-500 text-xs sm:text-sm md:text-base font-mono max-w-xl text-center leading-relaxed mb-8 md:mb-12 uppercase tracking-widest opacity-80 px-2 shrink-0">
             {isMaintained
               ? "Optimization cycle complete. All enterprise nodes are synchronized and ready for traffic."
               : "Synchronizing secure nodes and hardening architecture. Automatic restoration in progress."}
@@ -126,7 +127,7 @@ const MaintenanceOverlay = () => {
 
           {/* Functional UI Area */}
           {!isMaintained ? (
-            <div className="grid grid-cols-3 gap-6 md:gap-12 mb-16">
+            <div className="grid grid-cols-3 gap-3 sm:gap-6 md:gap-12 mb-8 md:mb-12 shrink-0">
               <TechnicalCounter value={timeLeft.hours} label="Hours" />
               <TechnicalCounter value={timeLeft.minutes} label="Minutes" />
               <TechnicalCounter value={timeLeft.seconds} label="Seconds" />
@@ -136,17 +137,17 @@ const MaintenanceOverlay = () => {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setIsVisible(false)}
-              className="group relative px-12 py-4 mb-5 bg-white text-black font-bold uppercase tracking-[0.2em] text-sm overflow-hidden"
+              className="group relative px-8 sm:px-12 py-3 sm:py-4 mb-5 bg-white text-black font-bold uppercase tracking-[0.2em] text-xs sm:text-sm overflow-hidden shrink-0"
             >
               <div className="absolute inset-0 bg-emerald-500 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-              <span className="relative z-10 flex items-center gap-3 group-hover:text-white transition-colors duration-300">
+              <span className="relative z-10 flex items-center gap-2 sm:gap-3 group-hover:text-white transition-colors duration-300">
                 Enter Command Center <ArrowRight size={16} />
               </span>
             </motion.button>
           )}
 
           {/* System Terminal Snippet */}
-          <div className="w-full max-w-md bg-white/[0.02] border border-white/5 p-4 font-mono text-[10px] text-zinc-600 rounded-lg">
+          <div className="w-full max-w-md bg-white/[0.02] border border-white/5 p-3 sm:p-4 font-mono text-[9px] sm:text-[10px] text-zinc-600 rounded-lg shrink-0">
             <div className="flex items-center gap-2 mb-2 border-b border-white/5 pb-2 text-zinc-500">
               <Terminal size={12} /> System_Logs.txt
             </div>
@@ -176,8 +177,8 @@ const MaintenanceOverlay = () => {
           </div>
         </div>
 
-        {/* Footer Meta */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full flex justify-between px-12 opacity-30 font-mono text-[10px] tracking-widest text-zinc-400">
+        {/* Footer Meta - Now a structural flex item, not absolute */}
+        <div className="w-full flex flex-col sm:flex-row justify-between items-center gap-2 sm:gap-0 pb-4 md:pb-8 opacity-30 font-mono text-[9px] sm:text-[10px] tracking-widest text-zinc-400 shrink-0">
           <div className="flex items-center gap-2">
             <Cpu size={12} /> V2.0.4_LATEST
           </div>
@@ -193,12 +194,12 @@ const MaintenanceOverlay = () => {
 const TechnicalCounter = ({ value, label }) => (
   <div className="flex flex-col items-center">
     <div className="relative">
-      <span className="text-5xl md:text-7xl font-light font-mono tabular-nums tracking-tighter text-white">
+      <span className="text-4xl sm:text-5xl md:text-7xl font-light font-mono tabular-nums tracking-tighter text-white">
         {String(value).padStart(2, "0")}
       </span>
-      <div className="absolute -left-2 top-0 bottom-0 w-px bg-indigo-500/20" />
+      <div className="absolute -left-1 sm:-left-2 top-0 bottom-0 w-px bg-indigo-500/20" />
     </div>
-    <span className="mt-2 text-[9px] font-bold text-indigo-500/60 uppercase tracking-[0.3em] font-mono">
+    <span className="mt-1 sm:mt-2 text-[8px] sm:text-[9px] font-bold text-indigo-500/60 uppercase tracking-[0.2em] sm:tracking-[0.3em] font-mono">
       {label}
     </span>
   </div>
