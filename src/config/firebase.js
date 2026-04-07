@@ -20,13 +20,11 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// 🚀 SMART CACHE: IndexedDB with Multiple Tabs & 50MB Size Limit
+// L2 Cache: IndexedDB + multi-tab coordination + 50 MB ceiling
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager(),
-    // Cache size set to 50 MB (52428800 bytes) to prevent browser crashes
-    // If cache exceeds this, Firebase auto-deletes the oldest unused documents
-    cacheSizeBytes: 52428800,
+    cacheSizeBytes: 52_428_800, // 50 MB — Firestore auto-evicts LRU docs beyond this
   }),
 });
 
