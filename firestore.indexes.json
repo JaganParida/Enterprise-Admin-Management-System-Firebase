@@ -3,11 +3,6 @@
     {
       "collectionGroup": "invoices",
       "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "createdAt", "order": "DESCENDING" }]
-    },
-    {
-      "collectionGroup": "invoices",
-      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
@@ -16,30 +11,10 @@
     {
       "collectionGroup": "invoices",
       "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "invoiceNumber", "order": "ASCENDING" }]
-    },
-    {
-      "collectionGroup": "invoices",
-      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "invoiceNumber", "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "invoices",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "clientNameLower", "order": "ASCENDING" }]
-    },
-    {
-      "collectionGroup": "invoices",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "grandTotal", "order": "DESCENDING" }]
-    },
-    {
-      "collectionGroup": "invoices",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "grandTotal", "order": "ASCENDING" }]
     },
     {
       "collectionGroup": "invoices",
@@ -56,16 +31,6 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "grandTotal", "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "invoices",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "date", "order": "ASCENDING" }]
-    },
-    {
-      "collectionGroup": "invoices",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "date", "order": "DESCENDING" }]
     },
     {
       "collectionGroup": "invoices",
