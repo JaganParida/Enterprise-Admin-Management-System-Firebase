@@ -13,7 +13,52 @@ import {
 } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
+
+// 🚀 NEW CREATE INVOICE SKELETON
+const CreateInvoiceSkeleton = () => (
+  <div className="max-w-6xl mx-auto space-y-6 pb-12 px-4 w-full flex flex-col">
+    {/* Header */}
+    <div className="bg-[#0A0A0C] p-6 rounded-2xl border border-white/5 h-[100px] animate-pulse flex justify-between items-center">
+      <div className="flex gap-4 items-center">
+        <div className="w-14 h-14 bg-zinc-800/60 rounded-xl"></div>
+        <div>
+          <div className="w-48 h-6 bg-zinc-800/60 rounded mb-2"></div>
+          <div className="w-40 h-3 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="flex gap-3">
+        <div className="w-40 h-11 bg-zinc-800/50 rounded-xl"></div>
+        <div className="w-36 h-11 bg-zinc-800/50 rounded-xl"></div>
+        <div className="w-36 h-11 bg-zinc-800/50 rounded-xl"></div>
+      </div>
+    </div>
+    {/* Purchaser */}
+    <div className="bg-[#0A0A0C] p-6 lg:p-8 rounded-2xl border border-white/5 animate-pulse">
+      <div className="w-40 h-6 bg-zinc-800/60 rounded mb-6"></div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        <div className="md:col-span-2 h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+      </div>
+    </div>
+    {/* Table */}
+    <div className="bg-[#0A0A0C] p-6 lg:p-8 rounded-2xl border border-white/5 animate-pulse h-[300px]">
+      <div className="w-48 h-6 bg-zinc-800/60 rounded mb-6"></div>
+      <div className="w-full h-10 bg-zinc-800/50 rounded-lg mb-4"></div>
+      <div className="w-full h-12 bg-zinc-800/40 rounded-xl mb-3"></div>
+      <div className="w-full h-12 bg-zinc-800/40 rounded-xl"></div>
+    </div>
+    {/* Totals */}
+    <div className="bg-[#0A0A0C] p-6 lg:p-8 rounded-2xl border border-white/5 animate-pulse flex justify-end">
+      <div className="w-full md:w-96 space-y-4">
+        <div className="h-4 w-full bg-zinc-800/50 rounded"></div>
+        <div className="h-8 w-full bg-zinc-800/40 rounded"></div>
+        <div className="h-8 w-full bg-zinc-800/60 rounded mt-4"></div>
+      </div>
+    </div>
+  </div>
+);
 
 // Configuration for templates logic
 const TEMPLATES = {
@@ -36,6 +81,9 @@ const CreateInvoice = () => {
   const location = useLocation();
   const { toast } = useUI();
   const { admin } = useAuth();
+
+  // 🚀 SEPARATED STATES: One for page load, one for submitting
+  const [isInitializing, setIsInitializing] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const currentPath =
@@ -266,6 +314,9 @@ const CreateInvoice = () => {
 
   // Ultra-sleek transparent base class for table inputs
   const tableInputClasses = `w-full bg-transparent border border-white/10 hover:border-white/20 rounded-xl px-4 py-3 text-white outline-none text-sm transition-all focus:bg-white/[0.02] ${theme.primaryFocus}`;
+
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (isInitializing) return <CreateInvoiceSkeleton />;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12 px-4 print:w-full print:max-w-none print:m-0 print:p-0 print:bg-white text-zinc-100 font-sans">

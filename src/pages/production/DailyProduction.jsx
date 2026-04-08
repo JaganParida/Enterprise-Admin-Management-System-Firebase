@@ -18,8 +18,74 @@ import {
   RefreshCcw,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 DAILY PRODUCTION SKELETON LOADER
+const DailyProductionSkeleton = () => (
+  <div className="space-y-8 pb-10 flex flex-col w-full animate-pulse">
+    {/* Header Skeleton */}
+    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      <div>
+        <div className="h-9 w-56 bg-zinc-800/60 rounded-lg mb-3"></div>
+        <div className="h-4 w-64 bg-zinc-800/40 rounded-md"></div>
+      </div>
+      <div className="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto">
+        <div className="h-10 w-full sm:w-64 bg-zinc-800/60 rounded-full"></div>
+        <div className="h-10 w-full sm:w-32 bg-zinc-800/60 rounded-xl"></div>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Left Form Skeleton */}
+      <div className="lg:col-span-1 bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 h-[420px] flex flex-col gap-6">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="h-10 w-10 bg-zinc-800/60 rounded-xl"></div>
+          <div className="h-6 w-32 bg-zinc-800/60 rounded-md"></div>
+        </div>
+        <div className="space-y-5">
+          <div>
+            <div className="h-3 w-24 bg-zinc-800/50 rounded mb-2"></div>
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          </div>
+          <div>
+            <div className="h-3 w-32 bg-zinc-800/50 rounded mb-2"></div>
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          </div>
+          <div>
+            <div className="h-3 w-36 bg-zinc-800/50 rounded mb-2"></div>
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          </div>
+        </div>
+        <div className="h-12 w-full bg-zinc-800/60 rounded-xl mt-auto"></div>
+      </div>
+
+      {/* Right Table Skeleton */}
+      <div className="lg:col-span-2 bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 h-[500px]">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div className="h-6 w-32 bg-zinc-800/60 rounded-md"></div>
+          <div className="h-8 w-full sm:w-32 bg-zinc-800/50 rounded-lg"></div>
+        </div>
+        <div className="border-b border-zinc-800/60 pb-3 mb-3 flex justify-between px-4">
+          <div className="h-3 w-16 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-24 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-16 bg-zinc-800/50 rounded"></div>
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div
+              key={i}
+              className="h-14 w-full bg-zinc-800/20 rounded-xl flex justify-between items-center px-4"
+            >
+              <div className="h-4 w-20 bg-zinc-800/40 rounded"></div>
+              <div className="h-6 w-32 bg-zinc-800/40 rounded-md"></div>
+              <div className="h-5 w-16 bg-zinc-800/40 rounded-md"></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 // 🚀 GLOBAL MEMORY CACHE (No Page Reload Waste)
 let globalProdCache = {
@@ -143,7 +209,6 @@ const DailyProduction = () => {
     }
   }, [toast]);
 
-  // 🚀 UPDATED MASTER SYNC FUNCTION
   const handleSyncStats = async () => {
     if (isStatsSynced) return;
     setSyncingStats(true);
@@ -221,31 +286,25 @@ const DailyProduction = () => {
     }
   };
 
-  // ✅ UPDATED LABOUR AUTO-CALCULATION LOGIC
   const handleLabourChange = (e) => {
     const { name, value } = e.target;
     setLabourData((prev) => {
       let newData = { ...prev, [name]: value };
-
-      // Parse numerical values safely, treating empty string as 0
       const cost = newData.cost === "" ? 0 : Number(newData.cost);
       const paid = newData.amountPaid === "" ? 0 : Number(newData.amountPaid);
       const due = newData.amountDue === "" ? 0 : Number(newData.amountDue);
 
       if (name === "cost") {
-        // When Cost is edited, update the Due
         if (newData.cost !== "") {
           newData.amountDue = Math.max(0, cost - paid).toString();
         }
       } else if (name === "amountPaid") {
-        // When Paid is edited -> Update Due (if cost exists) OR Calculate Cost
         if (newData.cost !== "") {
           newData.amountDue = Math.max(0, cost - paid).toString();
         } else if (newData.amountDue !== "") {
           newData.cost = (paid + due).toString();
         }
       } else if (name === "amountDue") {
-        // When Due is edited -> Update Paid (if cost exists) OR Calculate Cost
         if (newData.cost !== "") {
           newData.amountPaid = Math.max(0, cost - due).toString();
         } else if (newData.amountPaid !== "") {
@@ -333,12 +392,8 @@ const DailyProduction = () => {
     navigate(`${basePath}/production/report?highlight=${id}`);
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader />
-      </div>
-    );
+  // ✅ Trigger Custom Skeleton Loader
+  if (loading) return <DailyProductionSkeleton />;
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 overflow-x-hidden">

@@ -12,8 +12,48 @@ import {
 } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 NEW EDIT EMPLOYEE SKELETON
+const EditEmployeeSkeleton = () => (
+  <div className="max-w-4xl mx-auto w-full flex flex-col space-y-6 pb-10">
+    <div className="w-40 h-5 bg-zinc-800/50 rounded-md animate-pulse mb-2"></div>
+    <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 animate-pulse">
+      <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6">
+        <div className="h-14 w-14 rounded-xl bg-zinc-800/60"></div>
+        <div>
+          <div className="h-6 w-40 bg-zinc-800/60 rounded mb-2"></div>
+          <div className="h-3 w-24 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-900/30 p-5 rounded-2xl border border-zinc-800/50">
+          <div className="md:col-span-1 h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="md:col-span-2 h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-900/30 p-5 rounded-2xl border border-zinc-800/50">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="h-4 w-48 mx-auto bg-zinc-800/40 rounded mt-4"></div>
+        <div className="flex justify-end gap-3 border-t border-zinc-800/60 mt-2 pt-6">
+          <div className="h-11 w-32 bg-zinc-800/50 rounded-xl"></div>
+          <div className="h-11 w-40 bg-zinc-800/60 rounded-xl"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const EditEmployee = () => {
   const navigate = useNavigate();
@@ -150,16 +190,8 @@ const EditEmployee = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="w-full h-full min-h-[80vh] flex flex-col items-center justify-center animate-in fade-in duration-500">
-        <Loader />
-        <p className="text-zinc-500 mt-4 font-mono text-[10px] font-bold uppercase tracking-widest animate-pulse">
-          Loading Profile...
-        </p>
-      </div>
-    );
-  }
+  // 🚀 REPLACED LOADER WITH FULL PAGE SKELETON
+  if (loading) return <EditEmployeeSkeleton />;
 
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">

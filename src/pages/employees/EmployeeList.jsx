@@ -32,11 +32,71 @@ import {
   Info,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { collection, getDocs, query, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { motion, AnimatePresence } from "framer-motion";
+
+// 🚀 NEW EMPLOYEE LIST SKELETON
+const EmployeeListSkeleton = () => (
+  <div className="space-y-8 pb-10 flex flex-col w-full">
+    {/* Header Skeleton */}
+    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 w-full">
+      <div>
+        <div className="h-9 w-64 bg-zinc-800/60 rounded-lg animate-pulse mb-3"></div>
+        <div className="h-4 w-72 bg-zinc-800/40 rounded-md animate-pulse"></div>
+      </div>
+      <div className="flex gap-3">
+        <div className="h-11 w-36 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+        <div className="h-11 w-36 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+        <div className="h-11 w-36 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+      </div>
+    </div>
+
+    {/* Filter Bar Skeleton */}
+    <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-4 h-[76px] w-full animate-pulse flex justify-between items-center">
+      <div className="h-11 w-[32rem] bg-zinc-800/50 rounded-xl"></div>
+      <div className="flex gap-3">
+        <div className="h-8 w-24 bg-zinc-800/50 rounded-full"></div>
+        <div className="h-8 w-32 bg-zinc-800/50 rounded-full"></div>
+      </div>
+    </div>
+
+    {/* Employee Cards Skeleton */}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {[1, 2, 3, 4, 5, 6].map((i) => (
+        <div
+          key={i}
+          className="bg-[#09090B] border border-zinc-800/60 rounded-2xl p-6 h-[260px] animate-pulse flex flex-col"
+        >
+          <div className="flex justify-between items-start mb-4">
+            <div className="h-12 w-12 rounded-xl bg-zinc-800/50"></div>
+            <div className="flex gap-2">
+              <div className="h-8 w-8 rounded-lg bg-zinc-800/40"></div>
+              <div className="h-8 w-8 rounded-lg bg-zinc-800/40"></div>
+              <div className="h-8 w-8 rounded-lg bg-zinc-800/40"></div>
+            </div>
+          </div>
+          <div className="mt-2">
+            <div className="h-5 w-40 bg-zinc-800/60 rounded mb-2"></div>
+            <div className="flex gap-2 mb-4">
+              <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
+              <div className="h-4 w-16 bg-zinc-800/50 rounded"></div>
+            </div>
+          </div>
+          <div className="space-y-2 mb-4">
+            <div className="h-3 w-32 bg-zinc-800/40 rounded"></div>
+            <div className="h-3 w-48 bg-zinc-800/40 rounded"></div>
+          </div>
+          <div className="mt-auto pt-4 border-t border-zinc-800/50 flex justify-between">
+            <div className="h-4 w-20 bg-zinc-800/40 rounded"></div>
+            <div className="h-4 w-20 bg-zinc-800/50 rounded"></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 // CONCEPT 4 — Hard display cap at 5000 records
 const MAX_RECORDS_LIMIT = 5000;
@@ -533,6 +593,9 @@ const EmployeeList = () => {
     return number;
   };
 
+  // 🚀 REPLACED LOADER WITH FULL PAGE SKELETON
+  if (loading && employees.length === 0) return <EmployeeListSkeleton />;
+
   return (
     <motion.div
       variants={containerVariants}
@@ -704,12 +767,6 @@ const EmployeeList = () => {
         variants={itemVariants}
         className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 p-4 relative"
       >
-        {loading && !loadingMore && (
-          <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm">
-            <Loader />
-          </div>
-        )}
-
         <div className="flex w-full xl:w-[32rem]">
           <div className="relative w-full">
             <input

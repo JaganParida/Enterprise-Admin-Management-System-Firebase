@@ -14,10 +14,26 @@ import {
   Check,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { useUI } from "../../context/UIProvider";
+
+// 🚀 NEW INVOICE VIEW SKELETON
+const InvoiceViewSkeleton = () => (
+  <div className="max-w-full lg:max-w-[900px] mx-auto my-2 md:my-4 px-4 w-full flex flex-col items-center">
+    <div className="w-24 h-5 bg-zinc-800/50 rounded-md animate-pulse mb-6 self-start"></div>
+    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-6 w-full animate-pulse">
+      <div className="h-11 w-48 bg-zinc-800/50 rounded-xl"></div>
+      <div className="flex gap-3 w-full lg:w-auto">
+        <div className="h-11 w-32 bg-zinc-800/50 rounded-xl"></div>
+        <div className="h-11 w-32 bg-zinc-800/50 rounded-xl"></div>
+        <div className="h-11 w-28 bg-zinc-800/60 rounded-xl"></div>
+        <div className="h-11 w-32 bg-zinc-800/60 rounded-xl"></div>
+      </div>
+    </div>
+    <div className="w-full max-w-[800px] aspect-[1/1.4] bg-white/5 animate-pulse rounded-sm shadow-2xl"></div>
+  </div>
+);
 
 // Common country codes for the dropdown
 const COUNTRY_CODES = [
@@ -370,7 +386,8 @@ const InvoiceView = () => {
     setWhatsappNumber("");
   };
 
-  if (loading) return <Loader />;
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading) return <InvoiceViewSkeleton />;
 
   const formatRsP = (amount) => {
     const val = Number(amount).toFixed(2);

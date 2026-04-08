@@ -6,7 +6,62 @@ import { useAuth } from "../../context/AuthContext";
 import { Banknote, Plus, History, Calendar, RefreshCcw } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
+
+// 🚀 NEW SALARY MANAGEMENT SKELETON
+const SalaryManagementSkeleton = () => (
+  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    {/* Form Section Skeleton */}
+    <div className="lg:col-span-1">
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 animate-pulse h-[460px]">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="h-11 w-11 rounded-xl bg-zinc-800/60"></div>
+          <div>
+            <div className="h-6 w-32 bg-zinc-800/60 rounded mb-2"></div>
+            <div className="h-3 w-40 bg-zinc-800/40 rounded"></div>
+          </div>
+        </div>
+        <div className="space-y-5">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="flex gap-4">
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          </div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-11 w-full bg-zinc-800/50 rounded-xl mt-4"></div>
+        </div>
+      </div>
+    </div>
+
+    {/* Table Section Skeleton */}
+    <div className="lg:col-span-2">
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-hidden h-[600px] animate-pulse flex flex-col">
+        <div className="p-6 border-b border-zinc-800/60 flex items-center justify-between">
+          <div className="h-8 w-48 bg-zinc-800/60 rounded-lg"></div>
+        </div>
+        <div className="p-4 border-b border-zinc-800/60 flex justify-between px-6">
+          <div className="h-4 w-20 bg-zinc-800/50 rounded"></div>
+          <div className="h-4 w-24 bg-zinc-800/50 rounded"></div>
+          <div className="h-4 w-16 bg-zinc-800/50 rounded"></div>
+          <div className="h-4 w-20 bg-zinc-800/50 rounded"></div>
+        </div>
+        <div className="flex-1 p-6 space-y-8">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="flex justify-between items-center">
+              <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
+              <div className="flex flex-col gap-2">
+                <div className="h-4 w-32 bg-zinc-800/40 rounded"></div>
+                <div className="h-3 w-16 bg-zinc-800/30 rounded"></div>
+              </div>
+              <div className="h-6 w-16 bg-zinc-800/50 rounded-md"></div>
+              <div className="h-4 w-20 bg-zinc-800/40 rounded"></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const SalaryManagement = () => {
   const { toast } = useUI();
@@ -179,16 +234,8 @@ const SalaryManagement = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="w-full h-full min-h-[80vh] flex flex-col items-center justify-center animate-in fade-in duration-500">
-        <Loader />
-        <p className="text-zinc-500 mt-4 font-mono text-[10px] font-bold uppercase tracking-widest animate-pulse">
-          Loading Salary Data...
-        </p>
-      </div>
-    );
-  }
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading) return <SalaryManagementSkeleton />;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

@@ -7,12 +7,65 @@ import { UserPlus, ArrowLeft, Save, ChevronDown } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 
+// 🚀 NEW ADD EMPLOYEE SKELETON
+const AddEmployeeSkeleton = () => (
+  <div className="max-w-4xl mx-auto w-full flex flex-col space-y-6 pb-10">
+    {/* Back Button Skeleton */}
+    <div className="w-40 h-5 bg-zinc-800/50 rounded-md animate-pulse mb-2"></div>
+
+    <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 animate-pulse">
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6">
+        <div className="h-14 w-14 rounded-xl bg-zinc-800/60"></div>
+        <div>
+          <div className="h-6 w-40 bg-zinc-800/60 rounded mb-2"></div>
+          <div className="h-3 w-48 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+
+      {/* Form Fields */}
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-900/30 p-5 rounded-2xl border border-zinc-800/50">
+          <div className="md:col-span-1 h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="md:col-span-2 h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+
+        <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-zinc-900/30 p-5 rounded-2xl border border-zinc-800/50">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+
+        {/* Footer Buttons */}
+        <div className="flex justify-end gap-3 border-t border-zinc-800/60 mt-2 pt-6">
+          <div className="h-11 w-24 bg-zinc-800/50 rounded-xl"></div>
+          <div className="h-11 w-36 bg-zinc-800/60 rounded-xl"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const AddEmployee = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useUI();
   const { admin } = useAuth();
-  const [loading, setLoading] = useState(false);
+
+  // 🚀 SEPARATED STATES: One for page load, one for submitting
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const currentPath =
     typeof window !== "undefined" && location.pathname === "/"
@@ -84,7 +137,7 @@ const AddEmployee = () => {
     if (formData.idType === "PAN" && formData.idNumber.length !== 10)
       return toast.error("PAN Card must be exactly 10 characters");
 
-    setLoading(true);
+    setSaving(true);
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
@@ -94,9 +147,12 @@ const AddEmployee = () => {
     } catch (error) {
       toast.error(error.message || "Failed to add employee");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
+
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (isInitializing) return <AddEmployeeSkeleton />;
 
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -250,10 +306,10 @@ const AddEmployee = () => {
               type="submit"
               variant="primary"
               className="px-10 rounded-xl"
-              disabled={loading}
+              disabled={saving}
             >
               <Save size={18} className="mr-2" />{" "}
-              {loading ? "Saving..." : "Save Employee"}
+              {saving ? "Saving..." : "Save Employee"}
             </Button>
           </div>
         </form>

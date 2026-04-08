@@ -41,8 +41,66 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 NEW INVOICE LIST SKELETON
+const InvoiceListSkeleton = () => (
+  <div className="space-y-8 pb-12 px-4 max-w-[1400px] mx-auto w-full flex flex-col">
+    {/* Header */}
+    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 pt-4 animate-pulse">
+      <div className="flex items-center gap-4">
+        <div className="w-14 h-14 bg-zinc-800/60 rounded-xl"></div>
+        <div>
+          <div className="w-48 h-8 bg-zinc-800/60 rounded mb-2"></div>
+          <div className="w-40 h-3 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="flex gap-3">
+        <div className="w-36 h-11 bg-zinc-800/50 rounded-xl"></div>
+        <div className="w-32 h-11 bg-zinc-800/50 rounded-xl"></div>
+        <div className="w-36 h-11 bg-zinc-800/60 rounded-xl"></div>
+      </div>
+    </div>
+    {/* Stat Cards */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      {[1, 2, 3, 4].map((i) => (
+        <div
+          key={i}
+          className="bg-[#0A0A0C] border border-white/5 p-6 rounded-2xl h-[120px] animate-pulse flex flex-col justify-between"
+        >
+          <div className="flex justify-between">
+            <div className="h-3 w-20 bg-zinc-800/50 rounded"></div>
+            <div className="h-8 w-8 bg-zinc-800/60 rounded-xl"></div>
+          </div>
+          <div className="h-8 w-32 bg-zinc-800/60 rounded"></div>
+        </div>
+      ))}
+    </div>
+    {/* Table Section */}
+    <div className="bg-[#0A0A0C] rounded-2xl border border-white/5 overflow-hidden animate-pulse">
+      <div className="p-5 border-b border-white/5 bg-[#121214] flex flex-col gap-5">
+        <div className="h-12 w-full max-w-xl bg-zinc-800/50 rounded-xl"></div>
+        <div className="flex gap-4">
+          <div className="h-10 w-24 bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-10 w-32 bg-zinc-800/50 rounded-xl"></div>
+          <div className="h-10 w-32 bg-zinc-800/50 rounded-xl"></div>
+          <div className="h-10 w-40 bg-zinc-800/60 rounded-xl"></div>
+        </div>
+      </div>
+      <div className="p-6 space-y-6">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="flex justify-between items-center">
+            <div className="h-10 w-32 bg-zinc-800/40 rounded"></div>
+            <div className="h-10 w-48 bg-zinc-800/40 rounded"></div>
+            <div className="h-6 w-24 bg-zinc-800/50 rounded"></div>
+            <div className="h-6 w-20 bg-zinc-800/50 rounded-full"></div>
+            <div className="h-8 w-24 bg-zinc-800/60 rounded"></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ANIMATION VARIANTS
@@ -732,16 +790,8 @@ const InvoiceList = () => {
     ? "/transportation/invoices"
     : "/enterprise/invoices";
 
-  // ── Loading state ──────────────────────────────────────────────────────────
-  if (loading && invoices.length === 0)
-    return (
-      <div className="w-full min-h-[80vh] flex flex-col items-center justify-center">
-        <Loader />
-        <p className="text-zinc-500 mt-4 font-mono text-[10px] font-bold uppercase tracking-widest animate-pulse">
-          Loading Invoices…
-        </p>
-      </div>
-    );
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading && invoices.length === 0) return <InvoiceListSkeleton />;
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -1093,7 +1143,7 @@ const InvoiceList = () => {
                   setFilterAmount(e.target.value);
                   if (e.target.value !== "All") {
                     setFilterDate("All");
-                    setFilterExactDate(""); 
+                    setFilterExactDate("");
                   }
                 }}
                 className={`appearance-none bg-[#0A0A0C] border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-sm font-medium text-white hover:border-white/20 outline-none cursor-pointer transition-all ${theme.primaryFocus}`}
@@ -1116,7 +1166,7 @@ const InvoiceList = () => {
                 onChange={(e) => {
                   setFilterDate(e.target.value);
                   if (e.target.value !== "All") {
-                    setFilterAmount("All"); 
+                    setFilterAmount("All");
                     setFilterExactDate("");
                   }
                 }}
@@ -1146,7 +1196,7 @@ const InvoiceList = () => {
                   setFilterExactDate(e.target.value);
                   if (e.target.value) {
                     setFilterDate("All");
-                    setFilterAmount("All"); 
+                    setFilterAmount("All");
                   }
                 }}
                 style={{ colorScheme: "dark" }}
