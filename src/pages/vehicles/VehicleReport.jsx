@@ -27,10 +27,122 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
+
+// 🚀 NEW VEHICLE REPORT TABLE SKELETON
+const VehicleReportSkeleton = ({ activeTab }) => {
+  if (activeTab === "trips") {
+    return (
+      <table className="w-full text-left min-w-[900px] animate-in fade-in duration-300">
+        <thead className="bg-[#09090B] border-b border-zinc-800/60">
+          <tr>
+            <th className="py-5 px-6">
+              <div className="h-3 w-32 bg-zinc-800/40 rounded animate-pulse"></div>
+            </th>
+            <th className="py-5 px-6">
+              <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
+            </th>
+            <th className="py-5 px-6">
+              <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
+            </th>
+            <th className="py-5 px-6 text-right">
+              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse ml-auto"></div>
+            </th>
+            <th className="py-5 px-6 text-right">
+              <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse ml-auto"></div>
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-800/60">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <tr key={i}>
+              <td className="p-4 align-top">
+                <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse mb-3"></div>
+                <div className="h-5 w-32 bg-zinc-800/60 rounded animate-pulse mb-3"></div>
+                <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
+              </td>
+              <td className="p-4 align-top">
+                <div className="space-y-4 mt-1">
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 rounded-full bg-zinc-800/60 animate-pulse"></div>
+                    <div className="space-y-1.5">
+                      <div className="h-2 w-10 bg-zinc-800/40 rounded animate-pulse"></div>
+                      <div className="h-3 w-24 bg-zinc-800/50 rounded animate-pulse"></div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 rounded-full bg-zinc-800/60 animate-pulse"></div>
+                    <div className="h-3 w-24 bg-zinc-800/50 rounded animate-pulse"></div>
+                  </div>
+                </div>
+              </td>
+              <td className="p-4 align-top">
+                <div className="h-6 w-32 bg-zinc-800/50 rounded-md animate-pulse mb-2.5"></div>
+                <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse"></div>
+              </td>
+              <td className="p-4 align-top text-right">
+                <div className="h-6 w-24 bg-zinc-800/60 rounded animate-pulse ml-auto mb-3"></div>
+                <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse ml-auto mb-1.5"></div>
+                <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse ml-auto"></div>
+              </td>
+              <td className="p-5 px-6 align-top">
+                <div className="flex justify-end gap-2 mt-1">
+                  <div className="h-8 w-8 bg-zinc-800/50 rounded-lg animate-pulse"></div>
+                  <div className="h-8 w-8 bg-zinc-800/50 rounded-lg animate-pulse"></div>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
+  return (
+    <table className="w-full text-left min-w-[500px] animate-in fade-in duration-300">
+      <thead className="bg-transparent border-b border-rose-900/20">
+        <tr>
+          <th className="py-4 px-4">
+            <div className="h-3 w-24 bg-rose-900/20 rounded animate-pulse"></div>
+          </th>
+          <th className="py-4 px-4">
+            <div className="h-3 w-32 bg-rose-900/20 rounded animate-pulse"></div>
+          </th>
+          <th className="py-4 px-4 text-right">
+            <div className="h-3 w-16 bg-rose-900/20 rounded animate-pulse ml-auto"></div>
+          </th>
+          <th className="py-4 px-4 text-right">
+            <div className="h-3 w-16 bg-rose-900/20 rounded animate-pulse ml-auto"></div>
+          </th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-rose-900/10">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <tr key={i}>
+            <td className="p-4 align-top">
+              <div className="h-3 w-24 bg-rose-900/20 rounded animate-pulse mb-3"></div>
+              <div className="h-6 w-24 bg-rose-900/30 rounded animate-pulse"></div>
+            </td>
+            <td className="p-4 align-top">
+              <div className="h-4 w-40 bg-rose-900/20 rounded animate-pulse mt-1"></div>
+            </td>
+            <td className="p-4 align-top text-right">
+              <div className="h-7 w-24 bg-rose-900/30 rounded-lg animate-pulse ml-auto mt-0.5"></div>
+            </td>
+            <td className="p-4 align-top">
+              <div className="flex justify-end gap-2 mt-1">
+                <div className="h-8 w-8 bg-rose-900/20 rounded-lg animate-pulse"></div>
+                <div className="h-8 w-8 bg-rose-900/20 rounded-lg animate-pulse"></div>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
 
 const MAX_RECORDS_LIMIT = 5000;
 
@@ -740,9 +852,7 @@ const VehicleReport = () => {
 
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
           {loading && !loadingMore ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader />
-            </div>
+            <VehicleReportSkeleton activeTab={activeTab} />
           ) : activeTab === "trips" ? (
             <table className="w-full text-left min-w-[900px] animate-in fade-in duration-300">
               <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800/60">
