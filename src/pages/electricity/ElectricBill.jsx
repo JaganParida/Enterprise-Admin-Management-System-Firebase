@@ -36,12 +36,97 @@ import {
   Sigma,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 
 const BarChart = lazy(() => import("../../components/charts/BarChart"));
 const ChartSkeleton = () => (
   <div className="w-full h-full bg-zinc-800/30 animate-pulse rounded-2xl border border-zinc-800/60"></div>
+);
+
+// 🚀 NEW ELECTRIC BILL SKELETON
+const ElectricBillSkeleton = () => (
+  <div className="w-full h-full space-y-8 pb-10 flex flex-col">
+    {/* Header Skeleton */}
+    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-20 w-full">
+      <div>
+        <div className="h-9 w-64 bg-zinc-800/60 rounded-lg animate-pulse mb-3"></div>
+        <div className="h-4 w-80 bg-zinc-800/40 rounded-md animate-pulse"></div>
+      </div>
+      <div className="flex gap-3">
+        <div className="h-11 w-44 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+        <div className="h-11 w-32 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+      </div>
+    </div>
+
+    {/* Stats Grid Skeleton */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="bg-[#09090B] border border-zinc-800/60 p-6 rounded-2xl h-[124px] animate-pulse flex flex-col justify-end"
+        >
+          <div className="h-3 w-24 bg-zinc-800/60 rounded mb-3"></div>
+          <div className="h-8 w-32 bg-zinc-800/50 rounded"></div>
+        </div>
+      ))}
+    </div>
+
+    {/* Form and Chart Grid Skeleton */}
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:items-stretch w-full">
+      {/* Form Skeleton */}
+      <div className="lg:col-span-1 rounded-2xl bg-[#09090B] border border-zinc-800/60 p-6 md:p-8 animate-pulse h-[450px]">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="h-12 w-12 rounded-xl bg-zinc-800/60"></div>
+          <div>
+            <div className="h-6 w-32 bg-zinc-800/60 rounded mb-2"></div>
+            <div className="h-3 w-20 bg-zinc-800/40 rounded"></div>
+          </div>
+        </div>
+        <div className="space-y-5">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="flex gap-4">
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          </div>
+          <div className="flex gap-4">
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Chart Skeleton */}
+      <div className="lg:col-span-2 rounded-2xl bg-[#09090B] border border-zinc-800/60 p-6 md:p-8 animate-pulse h-[450px] flex flex-col">
+        <div className="flex justify-between items-center mb-6">
+          <div className="h-6 w-32 bg-zinc-800/60 rounded"></div>
+          <div className="h-6 w-24 bg-zinc-800/50 rounded"></div>
+        </div>
+        <div className="flex-1 w-full bg-zinc-800/30 rounded-xl"></div>
+      </div>
+    </div>
+
+    {/* Table Skeleton */}
+    <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden w-full h-[400px] animate-pulse flex flex-col">
+      <div className="p-6 md:p-8 border-b border-zinc-800/60 flex justify-between">
+        <div className="h-10 w-96 bg-zinc-800/50 rounded-full"></div>
+        <div className="h-10 w-64 bg-zinc-800/50 rounded-full"></div>
+      </div>
+      <div className="p-4 border-b border-zinc-800/60 flex gap-4">
+        <div className="h-8 w-24 bg-zinc-800/40 rounded-full"></div>
+        <div className="h-8 w-32 bg-zinc-800/40 rounded-full"></div>
+      </div>
+      <div className="flex-1 p-6 space-y-6">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="flex justify-between items-center">
+            <div className="h-4 w-32 bg-zinc-800/40 rounded"></div>
+            <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
+            <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
+            <div className="h-4 w-16 bg-zinc-800/40 rounded"></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
 );
 
 // ⚠️ RISK REMOVED: Capped UI display at 1,000 to prevent accidental read explosions on scroll
@@ -718,6 +803,9 @@ const ElectricBill = () => {
     },
   };
 
+  // 🚀 REPLACED LOADER WITH FULL PAGE SKELETON
+  if (loading) return <ElectricBillSkeleton />;
+
   return (
     <div className="w-full h-full space-y-8 pb-10 relative overflow-hidden">
       <motion.div
@@ -1136,11 +1224,7 @@ const ElectricBill = () => {
         className="w-full"
       >
         <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden flex flex-col w-full relative">
-          {loading && (
-            <div className="absolute inset-0 bg-[#09090B]/80 z-50 flex items-center justify-center backdrop-blur-[2px]">
-              <Loader />
-            </div>
-          )}
+          {/* LOADER OVERLAY REMOVED FROM HERE */}
 
           <div className="p-6 md:p-8 border-b border-zinc-800/60 bg-[#09090B] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
             <div className="bg-[#09090b] border border-zinc-800/80 rounded-full p-1 flex items-center h-10 w-full sm:w-auto overflow-x-auto shadow-sm shrink-0 hide-scrollbar">
