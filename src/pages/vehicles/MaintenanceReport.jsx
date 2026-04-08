@@ -25,11 +25,87 @@ import {
   EyeOff,
   CheckCircle2,
 } from "lucide-react";
-import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
+
+// 🚀 NEW MAINTENANCE REPORT SKELETON
+const MaintenanceReportSkeleton = () => (
+  <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4 w-full">
+    {/* Header Skeleton */}
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <div className="h-[46px] w-[46px] bg-zinc-800/60 rounded-xl animate-pulse"></div>
+        <div>
+          <div className="h-7 w-48 bg-zinc-800/60 rounded-lg animate-pulse mb-2"></div>
+          <div className="h-3 w-32 bg-zinc-800/40 rounded-md animate-pulse"></div>
+        </div>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3 items-center w-full md:w-auto">
+        <div className="h-[44px] w-full sm:w-32 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+        <div className="h-[44px] w-full sm:w-36 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+        <div className="h-[44px] w-full sm:w-40 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+      </div>
+    </div>
+
+    {/* Main Table Container Skeleton */}
+    <div className="bg-[#09090B] rounded-3xl border border-zinc-800/60 overflow-hidden shadow-2xl flex flex-col">
+      {/* Search & Reload Top Bar Skeleton */}
+      <div className="p-5 border-b border-zinc-800/60 bg-zinc-900/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5">
+        <div className="flex gap-2 w-full sm:w-auto flex-1 max-w-lg">
+          <div className="h-[42px] w-full bg-zinc-800/50 rounded-xl animate-pulse"></div>
+          <div className="h-[42px] w-24 bg-zinc-800/50 rounded-xl shrink-0 animate-pulse"></div>
+        </div>
+        <div className="h-[42px] w-28 bg-zinc-800/50 rounded-xl animate-pulse"></div>
+      </div>
+
+      {/* Dropdown Filters Skeleton */}
+      <div className="p-4 border-b border-zinc-800/60 bg-[#09090B] flex flex-wrap items-center gap-4">
+        <div className="h-6 w-20 bg-zinc-800/40 rounded-md animate-pulse"></div>
+        <div className="h-[42px] w-32 bg-zinc-800/50 rounded-xl animate-pulse"></div>
+        <div className="h-[42px] w-32 bg-zinc-800/50 rounded-xl animate-pulse"></div>
+        <div className="h-[42px] w-36 bg-zinc-800/50 rounded-xl animate-pulse"></div>
+        <div className="h-[34px] w-28 bg-zinc-800/50 rounded-xl animate-pulse"></div>
+      </div>
+
+      {/* Table Body Skeleton */}
+      <div className="w-full min-w-[750px] overflow-x-auto custom-scrollbar">
+        <div className="flex justify-between items-center bg-[#09090B] border-b border-zinc-800/60 p-5 px-6">
+          <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
+          <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
+          <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse text-right"></div>
+          <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse text-right"></div>
+        </div>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            className="flex justify-between items-start p-5 px-6 border-b border-zinc-800/60 gap-4 group"
+          >
+            <div className="w-1/4">
+              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse mb-3"></div>
+              <div className="h-5 w-32 bg-zinc-800/60 rounded animate-pulse mb-3"></div>
+              <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse mb-3"></div>
+              <div className="h-6 w-24 bg-zinc-800/40 rounded-lg animate-pulse"></div>
+            </div>
+            <div className="w-1/4">
+              <div className="h-6 w-28 bg-zinc-800/50 rounded-md animate-pulse mb-2.5"></div>
+              <div className="h-3 w-full bg-zinc-800/40 rounded animate-pulse mb-1.5"></div>
+              <div className="h-3 w-3/4 bg-zinc-800/40 rounded animate-pulse"></div>
+            </div>
+            <div className="w-1/4 flex justify-end">
+              <div className="h-6 w-24 bg-zinc-800/60 rounded animate-pulse mb-2"></div>
+            </div>
+            <div className="w-1/4 flex gap-2 justify-end items-start mt-1">
+              <div className="h-8 w-8 bg-zinc-800/50 rounded-lg animate-pulse"></div>
+              <div className="h-8 w-8 bg-zinc-800/50 rounded-lg animate-pulse"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 const getPreviousMonthString = () => {
   const d = new Date();
@@ -200,6 +276,7 @@ const MaintenanceReport = () => {
   // 🚀 STRICT MANUAL TRIGGER - No more debounce
   useEffect(() => {
     fetchLogs(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
   const handleDisabledClick = (action) => {
@@ -242,9 +319,11 @@ const MaintenanceReport = () => {
     (filters.exactDate ? 1 : 0) +
     (filters.search ? 1 : 0);
 
-  // 🚀 FIXED: MERGE FILTER STATES INSTEAD OF OVERWRITING
+  // 🚀 FIXED: CLEAR LOGS FIRST TO TRIGGER SKELETON LOADER
   const applySearch = () => {
     if (!localSearch.trim() && !filters.search) return;
+    setLogs([]);
+    setLoading(true);
     setFilters((prev) => ({
       ...prev,
       search: localSearch.trim(),
@@ -252,6 +331,8 @@ const MaintenanceReport = () => {
   };
 
   const applyFilters = () => {
+    setLogs([]);
+    setLoading(true);
     setFilters((prev) => ({
       ...prev,
       amountFilter: localFilters.amountFilter,
@@ -269,6 +350,8 @@ const MaintenanceReport = () => {
     };
     setLocalSearch("");
     setLocalFilters(reset);
+    setLogs([]);
+    setLoading(true);
     setFilters(reset);
   };
 
@@ -427,6 +510,10 @@ const MaintenanceReport = () => {
     localFilters.dateFilter === "All" &&
     !localFilters.exactDate;
 
+  // 🚀 INTERCEPT FULL PAGE WITH SKELETON LOADER
+  if ((loading || syncStatus === "syncing") && logs.length === 0)
+    return <MaintenanceReportSkeleton />;
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -449,7 +536,11 @@ const MaintenanceReport = () => {
         <div className="flex flex-col sm:flex-row gap-3">
           <Button
             variant="ghost"
-            onClick={() => fetchLogs(false, true)}
+            onClick={() => {
+              setLogs([]);
+              setLoading(true);
+              fetchLogs(false, true);
+            }}
             disabled={syncStatus === "synced" || syncStatus === "syncing"}
             className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-700 ${syncStatus === "synced" ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : syncStatus === "error" ? "text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 shadow-[0_0_15px_rgba(243,64,84,0.2)] animate-pulse" : "text-zinc-300 bg-zinc-800/40 border border-zinc-700/50"}`}
           >
@@ -574,7 +665,11 @@ const MaintenanceReport = () => {
 
           {/* 🚀 MANUAL REFRESH SECTION BUTTON */}
           <Button
-            onClick={() => fetchLogs(false, true)}
+            onClick={() => {
+              setLogs([]);
+              setLoading(true);
+              fetchLogs(false, true);
+            }}
             disabled={syncStatus === "syncing"}
             variant="outline"
             title="Reload Section"
@@ -691,183 +786,163 @@ const MaintenanceReport = () => {
         </div>
 
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
-          {syncStatus === "syncing" && logs.length === 0 ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader />
-            </div>
-          ) : (
-            <>
-              <table className="w-full text-left min-w-[750px] animate-in fade-in duration-300">
-                <thead
-                  className={`bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800`}
-                >
-                  <tr>
-                    <th className="py-5 px-6 whitespace-nowrap">
-                      Vehicle Details
-                    </th>
-                    <th className="py-5 px-6 whitespace-nowrap">
-                      Service Info
-                    </th>
-                    <th className="py-5 px-6 text-right whitespace-nowrap">
-                      Cost
-                    </th>
-                    <th className="py-5 px-6 text-right whitespace-nowrap">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
-                  {logs.map((log) => {
-                    const hasEdits =
-                      log.editHistory && log.editHistory.length > 0;
-                    const latestLog = hasEdits
-                      ? log.editHistory[log.editHistory.length - 1]
-                      : null;
+          <table className="w-full text-left min-w-[750px] animate-in fade-in duration-300">
+            <thead
+              className={`bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800`}
+            >
+              <tr>
+                <th className="py-5 px-6 whitespace-nowrap">Vehicle Details</th>
+                <th className="py-5 px-6 whitespace-nowrap">Service Info</th>
+                <th className="py-5 px-6 text-right whitespace-nowrap">Cost</th>
+                <th className="py-5 px-6 text-right whitespace-nowrap">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
+              {logs.map((log) => {
+                const hasEdits = log.editHistory && log.editHistory.length > 0;
+                const latestLog = hasEdits
+                  ? log.editHistory[log.editHistory.length - 1]
+                  : null;
 
-                    return (
-                      <tr
-                        key={log._id}
-                        id={log._id}
-                        onClick={(e) => handleRowClick(e, log._id)}
-                        className={`transition-all duration-1000 ease-out group cursor-pointer ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}` : "hover:bg-zinc-800/30"}`}
-                      >
-                        <td className="p-5 px-6 align-top">
-                          <p
-                            className={`text-[11px] font-mono text-zinc-400 mb-1`}
-                          >
-                            {new Date(log.date).toLocaleDateString("en-GB")}
-                          </p>
-                          <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
-                            <Truck size={14} className={`text-zinc-500`} />{" "}
-                            {log.vehicleNo || "N/A"}
-                          </p>
-                          {log.meterKm && (
-                            <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-widest font-semibold flex items-center gap-1.5">
-                              <Map size={10} className="text-zinc-500" />{" "}
-                              {log.meterKm} KM
-                            </p>
-                          )}
-                          {hasEdits && (
-                            <div
-                              onClick={(e) => openHistory(e, log)}
-                              className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
-                            >
-                              <History size={10} className="text-zinc-400" />
-                              <span
-                                className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
-                              >
-                                {latestLog.role || "ADMIN"}
-                              </span>
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-5 px-6 align-top">
-                          <div
-                            className={`text-xs text-zinc-200 mb-2 flex items-center gap-1.5 ${theme.primaryBg} w-max px-2.5 py-1 rounded-md font-medium border ${theme.primaryBorder} uppercase tracking-wide`}
-                          >
-                            <Wrench size={12} className={theme.primaryText} />{" "}
-                            {log.serviceType || "Routine"}
-                          </div>
-                          {log.description && (
-                            <div className="text-[10px] text-zinc-400 font-mono mt-1.5 line-clamp-2 pr-4">
-                              {log.description}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-5 px-6 align-top text-right">
-                          <p className="text-lg font-black text-white font-mono drop-shadow-sm mb-2">
-                            ₹{(Number(log.cost) || 0).toLocaleString("en-IN")}
-                          </p>
-                        </td>
-                        <td className="p-5 px-6 text-right align-top">
-                          <div className="flex justify-end gap-2 items-center relative mt-1">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(
-                                  `${isTransport ? "/transportation/maintenance" : "/enterprise/maintenance"}`,
-                                  { state: { editLog: log } },
-                                );
-                              }}
-                              className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                isManager
-                                  ? handleDisabledClick(log._id)
-                                  : setDeleteModal({
-                                      isOpen: true,
-                                      id: log._id,
-                                    });
-                              }}
-                              className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                            {warningTooltip === log._id && (
-                              <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
-                                🚫 Access Denied
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {logs.length === 0 && !loading && (
-                    <tr>
-                      <td
-                        colSpan="4"
-                        className="p-10 text-center text-zinc-500 italic"
-                      >
-                        No maintenance records found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-
-              {hasMore && loadedCount < 5000 && logs.length > 0 && (
-                <div className="flex justify-center p-6 border-t border-zinc-800/60">
-                  <Button
-                    onClick={() => fetchLogs(true)}
-                    disabled={loadingMore}
-                    variant="outline"
-                    className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+                return (
+                  <tr
+                    key={log._id}
+                    id={log._id}
+                    onClick={(e) => handleRowClick(e, log._id)}
+                    className={`transition-all duration-1000 ease-out group cursor-pointer ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)]"}` : "hover:bg-zinc-800/30"}`}
                   >
-                    {loadingMore ? (
-                      <RefreshCcw size={16} className="animate-spin mr-2" />
-                    ) : null}{" "}
-                    {loadingMore
-                      ? "Loading..."
-                      : `Load Next 50 Records (Loaded: ${loadedCount})`}
-                  </Button>
-                </div>
+                    <td className="p-5 px-6 align-top">
+                      <p className={`text-[11px] font-mono text-zinc-400 mb-1`}>
+                        {new Date(log.date).toLocaleDateString("en-GB")}
+                      </p>
+                      <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
+                        <Truck size={14} className={`text-zinc-500`} />{" "}
+                        {log.vehicleNo || "N/A"}
+                      </p>
+                      {log.meterKm && (
+                        <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                          <Map size={10} className="text-zinc-500" />{" "}
+                          {log.meterKm} KM
+                        </p>
+                      )}
+                      {hasEdits && (
+                        <div
+                          onClick={(e) => openHistory(e, log)}
+                          className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
+                        >
+                          <History size={10} className="text-zinc-400" />
+                          <span
+                            className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
+                          >
+                            {latestLog.role || "ADMIN"}
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-5 px-6 align-top">
+                      <div
+                        className={`text-xs text-zinc-200 mb-2 flex items-center gap-1.5 ${theme.primaryBg} w-max px-2.5 py-1 rounded-md font-medium border ${theme.primaryBorder} uppercase tracking-wide`}
+                      >
+                        <Wrench size={12} className={theme.primaryText} />{" "}
+                        {log.serviceType || "Routine"}
+                      </div>
+                      {log.description && (
+                        <div className="text-[10px] text-zinc-400 font-mono mt-1.5 line-clamp-2 pr-4">
+                          {log.description}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-5 px-6 align-top text-right">
+                      <p className="text-lg font-black text-white font-mono drop-shadow-sm mb-2">
+                        ₹{(Number(log.cost) || 0).toLocaleString("en-IN")}
+                      </p>
+                    </td>
+                    <td className="p-5 px-6 text-right align-top">
+                      <div className="flex justify-end gap-2 items-center relative mt-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(
+                              `${isTransport ? "/transportation/maintenance" : "/enterprise/maintenance"}`,
+                              { state: { editLog: log } },
+                            );
+                          }}
+                          className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            isManager
+                              ? handleDisabledClick(log._id)
+                              : setDeleteModal({
+                                  isOpen: true,
+                                  id: log._id,
+                                });
+                          }}
+                          className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                        {warningTooltip === log._id && (
+                          <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
+                            🚫 Access Denied
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {logs.length === 0 && !loading && (
+                <tr>
+                  <td
+                    colSpan="4"
+                    className="p-10 text-center text-zinc-500 italic"
+                  >
+                    No maintenance records found.
+                  </td>
+                </tr>
               )}
+            </tbody>
+          </table>
 
-              {loadedCount >= 5000 && (
-                <div className="p-6 border-t border-zinc-800/60 flex justify-center">
-                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md animate-in fade-in slide-in-from-bottom-2 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
-                    <AlertOctagon
-                      className="mx-auto mb-2 opacity-80"
-                      size={24}
-                    />
-                    <h4 className="font-bold text-sm mb-1">
-                      Display Limit Reached
-                    </h4>
-                    <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
-                      To preserve system performance and Firebase Read limits,
-                      infinite scrolling stops at 5,000 records. Please utilize
-                      the Search and Filters at the top to precisely locate
-                      older records.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </>
+          {hasMore && loadedCount < 5000 && logs.length > 0 && (
+            <div className="flex justify-center p-6 border-t border-zinc-800/60">
+              <Button
+                onClick={() => fetchLogs(true)}
+                disabled={loadingMore}
+                variant="outline"
+                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+              >
+                {loadingMore ? (
+                  <RefreshCcw size={16} className="animate-spin mr-2" />
+                ) : null}{" "}
+                {loadingMore
+                  ? "Loading..."
+                  : `Load Next 50 Records (Loaded: ${loadedCount})`}
+              </Button>
+            </div>
+          )}
+
+          {loadedCount >= 5000 && (
+            <div className="p-6 border-t border-zinc-800/60 flex justify-center">
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md animate-in fade-in slide-in-from-bottom-2 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+                <AlertOctagon className="mx-auto mb-2 opacity-80" size={24} />
+                <h4 className="font-bold text-sm mb-1">
+                  Display Limit Reached
+                </h4>
+                <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
+                  To preserve system performance and Firebase Read limits,
+                  infinite scrolling stops at 5,000 records. Please utilize the
+                  Search and Filters at the top to precisely locate older
+                  records.
+                </p>
+              </div>
+            </div>
           )}
         </div>
       </div>
