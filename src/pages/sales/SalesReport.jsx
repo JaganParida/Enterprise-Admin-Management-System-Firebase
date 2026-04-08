@@ -29,9 +29,96 @@ import {
   CheckCircle,
   Lock,
 } from "lucide-react";
-import Loader from "../../components/common/Loader";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 NEW SALES REPORT SKELETON
+const SalesReportSkeleton = () => (
+  <div className="pb-10 relative space-y-8 overflow-x-hidden w-full flex flex-col">
+    {/* Header Skeleton */}
+    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl bg-zinc-800/60"></div>
+        <div>
+          <div className="h-6 w-32 bg-zinc-800/60 rounded mb-1"></div>
+          <div className="h-3 w-24 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
+        <div className="h-12 w-full sm:w-48 bg-zinc-800/50 rounded-2xl md:rounded-full"></div>
+        <div className="grid grid-cols-2 sm:flex gap-3 w-full sm:w-auto mt-2 sm:mt-0">
+          <div className="h-11 w-full sm:w-28 bg-zinc-800/40 rounded-lg"></div>
+          <div className="h-11 w-full sm:w-28 bg-zinc-800/40 rounded-lg"></div>
+          <div className="h-11 w-full sm:w-32 bg-zinc-800/60 rounded-lg col-span-2 sm:col-span-1"></div>
+        </div>
+      </div>
+    </div>
+
+    {/* Stats Cards Skeleton */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6">
+      {[1, 2, 3, 4].map((i) => (
+        <div
+          key={i}
+          className="bg-[#09090B] border border-zinc-800/60 p-5 md:p-6 rounded-2xl h-[120px] animate-pulse flex flex-col justify-center"
+        >
+          <div className="h-3 w-24 bg-zinc-800/50 rounded mb-3"></div>
+          <div className="h-8 w-32 bg-zinc-800/60 rounded"></div>
+        </div>
+      ))}
+    </div>
+
+    {/* Filter & Table Container Skeleton */}
+    <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-hidden shadow-2xl animate-pulse h-[500px] flex flex-col">
+      {/* Filters Skeleton */}
+      <div className="p-4 md:p-5 border-b border-zinc-800/60 bg-zinc-900/10 flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-4">
+        <div className="h-11 w-full xl:max-w-md bg-zinc-800/50 rounded-xl"></div>
+        <div className="flex gap-2 overflow-hidden w-full xl:w-auto">
+          <div className="h-9 w-24 bg-zinc-800/40 rounded-lg hidden md:block"></div>
+          <div className="h-9 w-28 bg-zinc-800/40 rounded-lg"></div>
+          <div className="h-9 w-28 bg-zinc-800/40 rounded-lg"></div>
+          <div className="h-9 w-28 bg-zinc-800/40 rounded-lg"></div>
+          <div className="h-9 w-28 bg-zinc-800/40 rounded-full"></div>
+          <div className="h-9 w-28 bg-zinc-800/60 rounded-lg"></div>
+        </div>
+      </div>
+
+      {/* Table Body Skeleton */}
+      <div className="flex-1 p-6 space-y-6">
+        <div className="flex justify-between border-b border-zinc-800/40 pb-3">
+          <div className="h-3 w-32 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-32 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-32 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-32 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-16 bg-zinc-800/50 rounded"></div>
+        </div>
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="flex justify-between items-center">
+            <div className="flex flex-col gap-2">
+              <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
+              <div className="h-3 w-16 bg-zinc-800/30 rounded"></div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className="h-4 w-32 bg-zinc-800/40 rounded"></div>
+              <div className="h-3 w-20 bg-zinc-800/30 rounded"></div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className="h-4 w-28 bg-zinc-800/40 rounded"></div>
+              <div className="h-4 w-16 bg-zinc-800/50 rounded-sm"></div>
+            </div>
+            <div className="flex flex-col gap-2 items-end">
+              <div className="h-5 w-24 bg-zinc-800/50 rounded"></div>
+              <div className="h-3 w-20 bg-zinc-800/40 rounded"></div>
+            </div>
+            <div className="flex gap-2">
+              <div className="h-8 w-8 bg-zinc-800/50 rounded-md"></div>
+              <div className="h-8 w-8 bg-zinc-800/50 rounded-md"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 const formatDate = (dateStr) => {
   if (!dateStr) return "-";
@@ -126,6 +213,7 @@ const SalesReport = () => {
     typeof window !== "undefined"
       ? location.pathname.includes("/transportation")
       : false;
+  const basePath = isTransport ? "/transportation" : "/enterprise";
 
   const theme = {
     primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
@@ -613,6 +701,9 @@ const SalesReport = () => {
     },
   };
 
+  // 🚀 REPLACED LOADER WITH FULL PAGE SKELETON
+  if (loading && sales.length === 0) return <SalesReportSkeleton />;
+
   return (
     <div className="pb-10 relative space-y-8 overflow-x-hidden">
       <motion.div
@@ -809,9 +900,7 @@ const SalesReport = () => {
         className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-hidden relative shadow-2xl"
       >
         {loading && !loadingMore && (
-          <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm rounded-2xl">
-            <Loader />
-          </div>
+          <div className="absolute inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm rounded-2xl"></div>
         )}
 
         <div className="p-4 md:p-5 border-b border-zinc-800/60 bg-zinc-900/10">
@@ -1012,9 +1101,9 @@ const SalesReport = () => {
                   <tr>
                     <td
                       colSpan="5"
-                      className="p-16 text-center text-zinc-500 text-sm italic"
+                      className="p-12 text-center text-zinc-500 text-sm italic"
                     >
-                      No sales found matching those filters.
+                      No recent sales found.
                     </td>
                   </tr>
                 )}
@@ -1095,7 +1184,7 @@ const SalesReport = () => {
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
-                            className="border-t border-rose-900/20 overflow-hidden"
+                            className="border-t border-rose-900/20 overflow-hidden bg-[#0c0c0e]"
                           >
                             <div className="p-0 sm:p-4 overflow-x-auto">
                               <table className="w-full text-left min-w-[650px]">
