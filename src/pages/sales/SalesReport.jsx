@@ -945,8 +945,23 @@ const SalesReport = () => {
                     <option value="All">All Products</option>
                     <option value="Bricks (10 inch)">Bricks 10"</option>
                     <option value="Bricks (9 inch)">Bricks 9"</option>
-                    <option value="Zig Zag (60mm)">Zig Zag</option>
+                    <option value="Bricks (8 inch)">Bricks 8"</option>
+
+                    <option value="Zig Zag (60mm)">Zig Zag (60mm)</option>
+                    <option value="Zig Zag (80mm)">Zig Zag (80mm)</option>
+
+                    <option value="6/12 Brick (60mm)">6/12 Brick (60mm)</option>
+                    <option value="6/12 Brick (80mm)">6/12 Brick (80mm)</option>
+
+                    <option value="6/6 Brick (60mm)">6/6 Brick (60mm)</option>
+                    <option value="6/6 Brick (80mm)">6/6 Brick (80mm)</option>
+
                     <option value="Hexagon">Hexagon</option>
+                    <option value="Brick Design (9 inch)">
+                      Brick Design (9")
+                    </option>
+                    <option value="Curve Stone">Curve Stone</option>
+                    <option value="Cover Block">Cover Block</option>
                   </select>
                   <select
                     value={filters.paymentMode}
