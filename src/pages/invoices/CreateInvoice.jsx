@@ -521,31 +521,112 @@ const CreateInvoice = () => {
                           <option
                             value=""
                             disabled
-                            className="bg-[#0F0F12] text-white"
+                            className="bg-[#09090B] text-zinc-500"
                           >
                             Select Product...
                           </option>
-                          <option
-                            value=" FLYASH Bricks (10 inch)"
-                            className="bg-[#0F0F12] text-white"
+                          <optgroup
+                            label="Bricks"
+                            className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                           >
-                            Bricks 10 inch
-                          </option>
-                          <option
-                            value="FLYASH Bricks (9 inch)"
-                            className="bg-[#0F0F12] text-white"
+                            <option
+                              value=" FLYASH Bricks (10 inch)"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              Bricks 10 inch
+                            </option>
+                            <option
+                              value="FLYASH Bricks (9 inch)"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              Bricks 9 inch
+                            </option>
+                            <option
+                              value="FLYASH Bricks 8 inch"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              Bricks 8 inch
+                            </option>
+                          </optgroup>
+                          <optgroup
+                            label="Paver Blocks"
+                            className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                           >
-                            Bricks 9 inch
-                          </option>
-                          <option
-                            value="Paver Blocks Zig Zag (60mm)"
-                            className="bg-[#0F0F12] text-white"
+                            <option
+                              value="Paver Blocks Zig Zag (60mm)"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              Zig Zag (60mm)
+                            </option>
+                            <option
+                              value="Paver Blocks Zig Zag (80mm)"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              Zig Zag (80mm)
+                            </option>
+                            <option
+                              value="Paver Blocks 6/12 Brick (60mm)"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              6/12 Brick (60mm)
+                            </option>
+                            <option
+                              value="Paver Blocks 6/12 Brick (80mm)"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              6/12 Brick (80mm)
+                            </option>
+                            <option
+                              value="Paver Blocks 6/6 Brick (60mm)"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              6/6 Brick 60mm
+                            </option>
+                            <option
+                              value="Paver Blocks 6/6 Brick (80mm)"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              6/6 Brick (80mm)
+                            </option>
+                          </optgroup>
+                          <optgroup
+                            label="Chequered Tiles"
+                            className={`bg-[#09090B] font-bold ${theme.primaryText}`}
                           >
-                            Zig Zag (60mm)
+                            <option
+                              value="Chequered Tiles Hexagon"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              Hexagon
+                            </option>
+                            <option
+                              value="Chequered Tiles Brick Design (9inch)"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              Brick Design (9inch)
+                            </option>
+                            <option
+                              value="Chequered Tiles Curve Stone"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              Curve Stone
+                            </option>
+                            <option
+                              value="Chequered Tiles Cover Block"
+                              className="bg-[#09090B] text-zinc-100 font-normal"
+                            >
+                              Cover Block
+                            </option>
+                          </optgroup>
+                          <option
+                            value="Other Building Materials"
+                            className="bg-[#09090B] text-zinc-100 font-normal"
+                          >
+                            Other Building Materials
                           </option>
                           <option
                             value="Custom"
-                            className="bg-[#0F0F12] text-amber-400 font-bold"
+                            className="bg-[#09090B] text-amber-400 font-bold border-t border-zinc-800/60 pt-2"
                           >
                             Custom Item...
                           </option>
