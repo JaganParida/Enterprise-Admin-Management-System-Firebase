@@ -5,10 +5,44 @@ import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
 import { Package, ArrowLeft, Save, ChevronDown } from "lucide-react";
 
+// 🚀 NEW ADD STOCK SKELETON
+const AddStockSkeleton = () => (
+  <div className="max-w-3xl mx-auto space-y-6 pb-10 w-full flex flex-col">
+    <div className="w-32 h-4 bg-zinc-800/50 rounded-md animate-pulse mb-2"></div>
+    <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 animate-pulse">
+      <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6">
+        <div className="h-14 w-14 rounded-xl bg-zinc-800/60"></div>
+        <div>
+          <div className="h-6 w-40 bg-zinc-800/60 rounded mb-2"></div>
+          <div className="h-3 w-32 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-zinc-800/60 mt-2 pt-6">
+          <div className="h-10 w-24 bg-zinc-800/50 rounded-lg"></div>
+          <div className="h-10 w-32 bg-zinc-800/60 rounded-lg"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const AddStock = () => {
   const navigate = useNavigate();
   const { toast } = useUI();
   const { admin } = useAuth();
+
+  // 🚀 SEPARATED STATES: One for page load, one for submitting
+  const [isInitializing, setIsInitializing] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -88,6 +122,9 @@ const AddStock = () => {
       setLoading(false);
     }
   };
+
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (isInitializing) return <AddStockSkeleton />;
 
   return (
     <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
