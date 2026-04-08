@@ -17,8 +17,85 @@ import {
   Database,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 NEW SALES SKELETON
+const SalesSkeleton = () => (
+  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10 overflow-hidden w-full">
+    {/* Left Column: Form */}
+    <div className="lg:col-span-1">
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 animate-pulse h-[800px]">
+        <div className="flex items-center gap-3 mb-8 border-b border-zinc-800/60 pb-6">
+          <div className="h-12 w-12 rounded-xl bg-zinc-800/60"></div>
+          <div>
+            <div className="h-6 w-32 bg-zinc-800/60 rounded mb-2"></div>
+            <div className="h-3 w-24 bg-zinc-800/40 rounded"></div>
+          </div>
+        </div>
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          </div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          </div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          </div>
+          <div className="h-12 w-full bg-zinc-800/50 rounded-xl mt-4"></div>
+        </div>
+      </div>
+    </div>
+
+    {/* Right Column: Table */}
+    <div className="lg:col-span-2 space-y-6">
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-hidden h-[600px] animate-pulse flex flex-col">
+        <div className="p-5 border-b border-zinc-800/60 flex justify-between items-center">
+          <div className="h-6 w-40 bg-zinc-800/60 rounded"></div>
+          <div className="flex gap-3">
+            <div className="h-9 w-24 bg-zinc-800/50 rounded-lg"></div>
+            <div className="h-9 w-32 bg-zinc-800/50 rounded-lg"></div>
+          </div>
+        </div>
+        <div className="p-5 border-b border-zinc-800/60 flex justify-between px-6">
+          <div className="h-3 w-24 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-32 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-20 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-20 bg-zinc-800/50 rounded"></div>
+        </div>
+        <div className="flex-1 p-6 space-y-8">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="flex justify-between items-center">
+              <div className="flex flex-col gap-2">
+                <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
+                <div className="h-3 w-16 bg-zinc-800/30 rounded"></div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="h-4 w-32 bg-zinc-800/40 rounded"></div>
+                <div className="h-3 w-24 bg-zinc-800/30 rounded"></div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
+                <div className="h-5 w-16 bg-zinc-800/50 rounded"></div>
+              </div>
+              <div className="flex flex-col gap-2 items-end">
+                <div className="h-5 w-24 bg-zinc-800/50 rounded"></div>
+                <div className="h-3 w-20 bg-zinc-800/40 rounded"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const formatDate = (dateStr) => {
   if (!dateStr) return "-";
@@ -275,12 +352,8 @@ const Sales = () => {
     }
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader />
-      </div>
-    );
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading) return <SalesSkeleton />;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10 overflow-hidden">
@@ -377,9 +450,9 @@ const Sales = () => {
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
                 Vehicle No.
               </label>
-              <div className="relative">
+              <div className="relative group">
                 <div
-                  className={`absolute top-1/2 -translate-y-1/2 left-4 text-zinc-500 ${theme.primaryText}`}
+                  className={`absolute top-1/2 -translate-y-1/2 left-4 text-zinc-500 transition-colors ${theme.primaryText}`}
                 >
                   <Truck size={16} />
                 </div>
@@ -520,7 +593,7 @@ const Sales = () => {
                   onChange={handleChange}
                   required
                   placeholder="0"
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none ${theme.primaryFocus}`}
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
                 />
               </div>
             </div>
@@ -536,7 +609,7 @@ const Sales = () => {
                   onChange={handleChange}
                   required
                   placeholder="0.00"
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none ${theme.primaryFocus}`}
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
                 />
               </div>
               <div>
@@ -550,7 +623,7 @@ const Sales = () => {
                   onChange={handleChange}
                   required
                   placeholder="0.00"
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl ${theme.primaryText} font-bold text-lg outline-none ${theme.primaryFocus}`}
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl ${theme.primaryText} font-bold text-lg outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
                 />
               </div>
             </div>
@@ -564,7 +637,7 @@ const Sales = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Cash" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold border transition-colors ${formData.paymentMode === "Cash" ? theme.paymentCash : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:bg-zinc-800"}`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Cash" ? theme.paymentCash : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`}`}
                 >
                   <Banknote size={16} /> Cash
                 </button>
@@ -573,7 +646,7 @@ const Sales = () => {
                   onClick={() =>
                     setFormData({ ...formData, paymentMode: "Online" })
                   }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold border transition-colors ${formData.paymentMode === "Online" ? theme.paymentOnline : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:bg-zinc-800"}`}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Online" ? theme.paymentOnline : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`}`}
                 >
                   <CreditCard size={16} /> Online
                 </button>
@@ -590,7 +663,7 @@ const Sales = () => {
                   value={formData.amountPaid}
                   onChange={handleChange}
                   placeholder="0.00"
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border ${theme.primaryBorder} rounded-xl ${theme.primaryText} font-bold outline-none ${theme.primaryFocus}`}
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border ${theme.primaryBorder} rounded-xl ${theme.primaryText} font-bold outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
                 />
               </div>
               <div>
@@ -603,10 +676,11 @@ const Sales = () => {
                   value={formData.amountDue}
                   onChange={handleChange}
                   placeholder="0.00"
-                  className="w-full px-4 py-3 bg-zinc-900/50 border border-rose-500/30 rounded-xl text-rose-400 font-bold outline-none focus:border-rose-500/50"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-rose-500/30 rounded-xl text-rose-400 font-bold outline-none transition-all focus:ring-1 focus:ring-rose-500/50 focus:border-rose-500/50 placeholder:text-zinc-600"
                 />
               </div>
             </div>
+
             <Button
               type="submit"
               variant="primary"
