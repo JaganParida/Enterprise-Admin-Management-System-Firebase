@@ -20,7 +20,107 @@ import {
   AlertOctagon,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
+
+// 🚀 NEW MAINTENANCE SKELETON
+const MaintenanceSkeleton = () => (
+  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-2 sm:px-4 w-full">
+    {/* Header Skeleton */}
+    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex items-center gap-3">
+        <div className="w-[46px] h-[46px] rounded-xl bg-zinc-800/60 animate-pulse"></div>
+        <div>
+          <div className="h-7 w-48 bg-zinc-800/60 rounded-lg animate-pulse mb-2"></div>
+          <div className="h-3 w-40 bg-zinc-800/40 rounded-md animate-pulse"></div>
+        </div>
+      </div>
+      <div className="h-10 w-full sm:w-32 rounded-xl bg-zinc-800/60 animate-pulse"></div>
+    </div>
+
+    {/* Main Content Grid Skeleton */}
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+      {/* Left Column - Form */}
+      <div className="xl:col-span-5 bg-[#09090B] border border-zinc-800/60 p-6 md:p-8 rounded-3xl shadow-xl flex flex-col">
+        <div className="h-6 w-32 bg-zinc-800/60 rounded-lg animate-pulse mb-6"></div>
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="h-3 w-16 bg-zinc-800/40 mb-1.5 rounded animate-pulse"></div>
+              <div className="h-[42px] w-full bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+            <div>
+              <div className="h-3 w-20 bg-zinc-800/40 mb-1.5 rounded animate-pulse"></div>
+              <div className="h-[42px] w-full bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="h-3 w-24 bg-zinc-800/40 mb-1.5 rounded animate-pulse"></div>
+              <div className="h-[42px] w-full bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+            <div>
+              <div className="h-3 w-20 bg-zinc-800/40 mb-1.5 rounded animate-pulse"></div>
+              <div className="h-[42px] w-full bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+          </div>
+          <div>
+            <div className="h-3 w-24 bg-zinc-800/40 mb-1.5 rounded animate-pulse"></div>
+            <div className="h-24 w-full bg-zinc-800/50 rounded-xl animate-pulse"></div>
+          </div>
+          <div className="h-11 w-full bg-zinc-800/60 rounded-xl animate-pulse mt-4"></div>
+        </div>
+      </div>
+
+      {/* Right Column - Stats & Table */}
+      <div className="xl:col-span-7 space-y-6">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-[#09090B] border border-zinc-800/60 p-5 rounded-2xl h-[104px] animate-pulse flex flex-col justify-center gap-2">
+            <div className="h-3 w-32 bg-zinc-800/40 rounded"></div>
+            <div className="h-7 w-24 bg-zinc-800/60 rounded"></div>
+          </div>
+          <div className="bg-[#09090B] border border-zinc-800/60 p-5 rounded-2xl h-[104px] animate-pulse flex flex-col justify-center gap-2">
+            <div className="h-3 w-32 bg-zinc-800/40 rounded"></div>
+            <div className="h-7 w-24 bg-zinc-800/60 rounded"></div>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl overflow-hidden shadow-xl">
+          <div className="p-6 border-b border-zinc-800/60 flex justify-between items-center bg-zinc-900/10">
+            <div className="h-5 w-40 bg-zinc-800/60 rounded-lg animate-pulse"></div>
+            <div className="h-7 w-20 bg-zinc-800/50 rounded-lg animate-pulse"></div>
+          </div>
+          <div className="p-2">
+            <div className="flex justify-between items-center p-3 px-4 border-b border-zinc-800/60">
+              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse w-[35%]"></div>
+              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse w-[40%]"></div>
+              <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse w-[25%] flex justify-end"></div>
+            </div>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div
+                key={i}
+                className="flex justify-between items-start p-3 px-4 border-b border-zinc-800/60"
+              >
+                <div className="w-[35%] pr-2">
+                  <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse mb-2.5"></div>
+                  <div className="h-4 w-24 bg-zinc-800/60 rounded animate-pulse mb-2.5"></div>
+                  <div className="h-3 w-12 bg-zinc-800/40 rounded animate-pulse"></div>
+                </div>
+                <div className="w-[40%] pr-2">
+                  <div className="h-6 w-20 bg-zinc-800/50 rounded-md animate-pulse mb-2"></div>
+                  <div className="h-3 w-32 bg-zinc-800/40 rounded animate-pulse"></div>
+                </div>
+                <div className="w-[25%] flex justify-end">
+                  <div className="h-5 w-16 bg-zinc-800/60 rounded animate-pulse"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const GlassInput = ({
   label,
@@ -286,12 +386,8 @@ const Maintenance = () => {
     navigate(`${basePath}/maintenance/report?highlight=${id}`);
   };
 
-  if (loading && logs.length === 0)
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader />
-      </div>
-    );
+  // 🚀 REPLACED INNER LOADER WITH SKELETON
+  if (loading && logs.length === 0) return <MaintenanceSkeleton />;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-2 sm:px-4">
