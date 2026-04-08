@@ -11,8 +11,35 @@ import {
   ChevronDown,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 NEW EDIT PRODUCTION SKELETON
+const EditProductionSkeleton = () => (
+  <div className="max-w-3xl mx-auto space-y-6 pb-10 w-full flex flex-col">
+    <div className="w-32 h-5 bg-zinc-800/50 rounded-md animate-pulse mb-2"></div>
+    <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-8 animate-pulse">
+      <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6">
+        <div className="h-14 w-14 rounded-xl bg-zinc-800/60"></div>
+        <div>
+          <div className="h-6 w-48 bg-zinc-800/60 rounded mb-2"></div>
+          <div className="h-3 w-32 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="space-y-6">
+        <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="flex justify-end gap-3 border-b border-zinc-800/60 mt-2 pt-6 pb-6">
+          <div className="h-11 w-32 bg-zinc-800/50 rounded-xl"></div>
+          <div className="h-11 w-40 bg-zinc-800/60 rounded-xl"></div>
+        </div>
+        <div className="h-3 w-48 mx-auto bg-zinc-800/40 rounded pt-2"></div>
+      </div>
+    </div>
+  </div>
+);
 
 const EditProduction = () => {
   const navigate = useNavigate();
@@ -107,12 +134,8 @@ const EditProduction = () => {
     }
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader />
-      </div>
-    );
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading) return <EditProductionSkeleton />;
 
   return (
     <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">

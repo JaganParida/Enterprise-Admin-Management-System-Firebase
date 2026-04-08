@@ -29,7 +29,6 @@ import {
   FileText,
   ChevronDown,
 } from "lucide-react";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import {
   collection,
@@ -42,6 +41,81 @@ import {
   documentId,
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
+
+// 🚀 NEW PRODUCTION REPORT SKELETON
+const ProductionReportSkeleton = () => (
+  <div className="space-y-5 pb-10 w-full flex flex-col">
+    {/* Header Skeleton */}
+    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-zinc-800/60"></div>
+        <div>
+          <div className="h-6 w-48 bg-zinc-800/60 rounded mb-1"></div>
+          <div className="h-3 w-24 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+        <div className="h-10 w-full sm:w-64 bg-zinc-800/50 rounded-full"></div>
+        <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
+          <div className="h-10 w-32 bg-zinc-800/50 rounded-lg"></div>
+          <div className="h-10 w-24 bg-zinc-800/50 rounded-lg"></div>
+          <div className="h-10 w-28 bg-zinc-800/60 rounded-lg"></div>
+        </div>
+      </div>
+    </div>
+
+    {/* Stats Cards Skeleton */}
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="p-5 md:p-6 rounded-xl bg-[#09090b] border border-zinc-800/80 min-h-[100px] animate-pulse flex flex-col justify-center"
+        >
+          <div className="h-3 w-24 bg-zinc-800/50 rounded mb-3"></div>
+          <div className="h-8 w-32 bg-zinc-800/60 rounded"></div>
+        </div>
+      ))}
+    </div>
+
+    {/* Filter & Table Container Skeleton */}
+    <div className="bg-[#0a0a0c] rounded-xl border border-zinc-800/60 overflow-hidden shadow-lg animate-pulse h-[500px] flex flex-col">
+      {/* Filters Skeleton */}
+      <div className="p-4 border-b border-zinc-800/60 flex flex-col xl:flex-row flex-wrap items-start xl:items-center justify-between gap-4">
+        <div className="h-10 w-full xl:w-[320px] bg-zinc-800/50 rounded-full"></div>
+        <div className="flex gap-2 overflow-hidden w-full xl:w-auto">
+          <div className="h-10 w-24 bg-zinc-800/40 rounded-full"></div>
+          <div className="h-10 w-32 bg-zinc-800/40 rounded-full"></div>
+          <div className="h-10 w-32 bg-zinc-800/40 rounded-full"></div>
+          <div className="h-10 w-32 bg-zinc-800/40 rounded-full"></div>
+          <div className="h-10 w-32 bg-zinc-800/40 rounded-full"></div>
+        </div>
+      </div>
+
+      {/* Table Body Skeleton */}
+      <div className="flex-1 p-5 space-y-6">
+        <div className="flex justify-between border-b border-zinc-800/40 pb-3">
+          <div className="h-3 w-24 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-32 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-24 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-20 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-20 bg-zinc-800/50 rounded"></div>
+        </div>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="flex justify-between items-center">
+            <div className="h-4 w-32 bg-zinc-800/40 rounded"></div>
+            <div className="h-6 w-32 bg-zinc-800/50 rounded-md"></div>
+            <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
+            <div className="h-4 w-20 bg-zinc-800/40 rounded"></div>
+            <div className="flex gap-2">
+              <div className="h-8 w-8 bg-zinc-800/50 rounded-md"></div>
+              <div className="h-8 w-8 bg-zinc-800/50 rounded-md"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 // --- HELPER FUNCTIONS ---
 const getPreviousMonthString = () => {
@@ -796,6 +870,9 @@ const ProductionReport = () => {
     },
   };
 
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading && currentLogs.length === 0) return <ProductionReportSkeleton />;
+
   return (
     <div className="space-y-5 animate-in fade-in duration-500 pb-10 text-zinc-200 overflow-x-hidden font-sans">
       {/* 🚀 TOP HEADER - PIXEL PERFECT SIZING */}
@@ -1131,7 +1208,7 @@ const ProductionReport = () => {
               />
             </div>
 
-            <div className="relative shrink-0">
+            <div className="relative flex items-center shrink-0">
               <Calendar
                 size={12}
                 className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${localFilters?.exactDate ? "text-indigo-400" : "text-zinc-500"}`}
@@ -1150,7 +1227,7 @@ const ProductionReport = () => {
                   }));
                 }}
                 style={{ colorScheme: "dark" }}
-                className={`appearance-none bg-[#111116] rounded-full pl-9 pr-3 py-2 text-[11px] md:text-xs font-semibold outline-none cursor-pointer transition-all shadow-sm ${localFilters?.exactDate ? "border border-indigo-500/50 text-indigo-400" : "border border-zinc-800/80 text-zinc-300 hover:bg-[#18181f]"}`}
+                className={`appearance-none bg-[#111116] rounded-full pl-11 pr-3 py-2 text-[11px] md:text-xs font-semibold outline-none cursor-pointer transition-all shadow-sm ${localFilters?.exactDate ? "border border-indigo-500/50 text-indigo-400" : "border border-zinc-800/80 text-zinc-300 hover:bg-[#18181f]"}`}
               />
             </div>
 
