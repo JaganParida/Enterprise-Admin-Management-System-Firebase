@@ -20,7 +20,119 @@ import {
 } from "lucide-react";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
-import Loader from "../../components/common/Loader";
+
+// 🚀 NEW VEHICLE LOG SKELETON
+const VehicleLogSkeleton = () => (
+  <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start animate-in fade-in duration-500 w-full">
+    {/* Left Column Form Skeleton */}
+    <div className="xl:col-span-5">
+      <div className="bg-[#09090B] border border-zinc-800/60 p-6 md:p-8 rounded-3xl shadow-xl space-y-6">
+        <div className="flex justify-between items-center mb-8">
+          <div className="h-6 w-40 bg-zinc-800/60 rounded-lg animate-pulse"></div>
+        </div>
+        <div className="space-y-5">
+          {/* Row 1 */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <div className="h-3 w-12 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+          </div>
+          {/* Row 2 */}
+          <div className="space-y-1.5">
+            <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+            <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+          </div>
+          {/* Row 3 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+          </div>
+          {/* Row 4 */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <div className="h-3 w-12 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="h-3 w-10 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+          </div>
+          {/* Row 5 - bg box */}
+          <div className="grid grid-cols-2 gap-4 p-5 bg-zinc-900/30 rounded-2xl border border-zinc-800/60">
+            <div className="space-y-1.5">
+              <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+              <div className="h-[48px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+            </div>
+          </div>
+          {/* Row 6 - calc box */}
+          <div className="h-[88px] bg-zinc-800/40 rounded-2xl border border-zinc-800/60 animate-pulse mt-2"></div>
+          {/* Button */}
+          <div className="h-[52px] bg-zinc-800/60 rounded-xl animate-pulse mt-4"></div>
+        </div>
+      </div>
+    </div>
+
+    {/* Right Column Table Skeleton */}
+    <div className="xl:col-span-7">
+      <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl overflow-hidden shadow-xl">
+        <div className="p-6 border-b border-zinc-800/60 flex justify-between items-center bg-zinc-900/10">
+          <div className="h-5 w-40 bg-zinc-800/60 rounded animate-pulse"></div>
+          <div className="h-9 w-24 bg-zinc-800/50 rounded-xl animate-pulse"></div>
+        </div>
+        <div className="p-2">
+          <div className="flex justify-between items-center border-b border-zinc-800/60 p-4 px-4">
+            <div className="h-3 w-28 bg-zinc-800/40 rounded animate-pulse"></div>
+            <div className="h-3 w-28 bg-zinc-800/40 rounded animate-pulse"></div>
+            <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse text-right"></div>
+          </div>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div
+              key={i}
+              className="flex justify-between items-start p-4 py-5 border-b border-zinc-800/60 gap-4"
+            >
+              <div className="w-[40%] space-y-2">
+                <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse"></div>
+                <div className="h-4 w-28 bg-zinc-800/60 rounded animate-pulse"></div>
+                <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse mt-1"></div>
+              </div>
+              <div className="w-[35%] space-y-3">
+                <div className="h-4 w-32 bg-zinc-800/50 rounded animate-pulse"></div>
+                <div className="h-4 w-28 bg-zinc-800/50 rounded animate-pulse"></div>
+              </div>
+              <div className="w-[25%] flex justify-end">
+                <div className="h-6 w-24 bg-zinc-800/60 rounded animate-pulse"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const GlassInput = ({
   label,
@@ -410,9 +522,7 @@ const VehicleLog = () => {
       </div>
 
       {loading ? (
-        <div className="h-[50vh] flex items-center justify-center animate-in fade-in zoom-in-95 duration-500 ease-out">
-          <Loader />
-        </div>
+        <VehicleLogSkeleton />
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
           <div className="xl:col-span-5 animate-in fade-in slide-in-from-left-4 duration-500 ease-out">
