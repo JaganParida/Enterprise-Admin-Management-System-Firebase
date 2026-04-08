@@ -19,7 +19,108 @@ import {
   X,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
+
+// 🚀 NEW FUEL TRACKER SKELETON
+const FuelTrackerSkeleton = () => (
+  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-2 sm:px-4 w-full">
+    {/* Header Skeleton */}
+    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex items-center gap-3">
+        <div className="h-[46px] w-[46px] bg-zinc-800/60 rounded-xl animate-pulse"></div>
+        <div>
+          <div className="h-7 w-48 bg-zinc-800/60 rounded-lg animate-pulse mb-2"></div>
+          <div className="h-3 w-64 bg-zinc-800/40 rounded-md animate-pulse"></div>
+        </div>
+      </div>
+      <div className="h-[40px] w-full sm:w-32 bg-zinc-800/60 rounded-xl animate-pulse"></div>
+    </div>
+
+    {/* Main Grid Skeleton */}
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+      {/* Left Column (Form Skeleton) */}
+      <div className="xl:col-span-5">
+        <div className="bg-[#09090B] border border-zinc-800/60 p-6 md:p-8 rounded-3xl shadow-xl space-y-6">
+          <div className="flex justify-between items-center mb-6">
+            <div className="h-6 w-36 bg-zinc-800/60 rounded-lg animate-pulse"></div>
+          </div>
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <div className="h-3 w-12 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+                <div className="h-[44px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+                <div className="h-[44px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+                <div className="h-[44px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse ml-1"></div>
+                <div className="h-[44px] bg-zinc-800/50 rounded-xl animate-pulse"></div>
+              </div>
+            </div>
+            <div className="h-[72px] bg-zinc-800/50 rounded-xl animate-pulse mt-2"></div>
+            <div className="h-12 bg-zinc-800/60 rounded-xl animate-pulse mt-2"></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Column (Stats + Table Skeleton) */}
+      <div className="xl:col-span-7 space-y-6">
+        {/* Stats Grid Skeleton */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="bg-[#09090B] border border-zinc-800/60 p-5 rounded-2xl h-[104px] animate-pulse"
+            >
+              <div className="h-3 w-24 bg-zinc-800/40 rounded mb-3 mt-1"></div>
+              <div className="h-8 w-32 bg-zinc-800/60 rounded"></div>
+            </div>
+          ))}
+        </div>
+
+        {/* Table Container Skeleton */}
+        <div className="bg-[#09090B] border border-zinc-800/60 rounded-3xl overflow-hidden shadow-xl">
+          <div className="p-6 border-b border-zinc-800/60 flex justify-between items-center bg-zinc-900/10">
+            <div className="h-5 w-32 bg-zinc-800/60 rounded animate-pulse"></div>
+            <div className="h-8 w-24 bg-zinc-800/50 rounded-xl animate-pulse"></div>
+          </div>
+          <div className="p-2">
+            <div className="flex justify-between items-center border-b border-zinc-800/60 p-3 px-3">
+              <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
+              <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
+              <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse text-right"></div>
+            </div>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div
+                key={i}
+                className="flex justify-between items-start p-3 py-4 border-b border-zinc-800/60 gap-4"
+              >
+                <div className="w-[40%] space-y-2">
+                  <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse"></div>
+                  <div className="h-4 w-24 bg-zinc-800/60 rounded animate-pulse"></div>
+                </div>
+                <div className="w-[30%] space-y-2">
+                  <div className="h-5 w-20 bg-zinc-800/50 rounded animate-pulse"></div>
+                  <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse"></div>
+                </div>
+                <div className="w-[30%] flex justify-end">
+                  <div className="h-6 w-24 bg-zinc-800/60 rounded animate-pulse"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const GlassInput = ({
   label,
@@ -293,12 +394,8 @@ const FuelTracker = () => {
     navigate(`${basePath}/fuel/report?highlight=${id}`);
   };
 
-  if (loading && logs.length === 0)
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader />
-      </div>
-    );
+  // 🚀 REPLACED: Using the Skeleton instead of the Spinner Loader
+  if (loading && logs.length === 0) return <FuelTrackerSkeleton />;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 px-2 sm:px-4">
