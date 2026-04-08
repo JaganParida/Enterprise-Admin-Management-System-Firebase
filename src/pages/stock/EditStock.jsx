@@ -10,8 +10,39 @@ import {
   RefreshCcw,
   ChevronDown,
 } from "lucide-react";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 NEW EDIT STOCK SKELETON
+const EditStockSkeleton = () => (
+  <div className="max-w-3xl mx-auto space-y-6 pb-10 w-full flex flex-col">
+    <div className="w-40 h-4 bg-zinc-800/50 rounded-md animate-pulse mb-2"></div>
+    <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 animate-pulse">
+      <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6">
+        <div className="h-14 w-14 rounded-xl bg-zinc-800/60"></div>
+        <div>
+          <div className="h-6 w-40 bg-zinc-800/60 rounded mb-2"></div>
+          <div className="h-3 w-32 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-zinc-800/60 mt-2 pt-6 pb-6">
+          <div className="h-10 w-32 bg-zinc-800/50 rounded-lg"></div>
+          <div className="h-10 w-40 bg-zinc-800/60 rounded-lg"></div>
+        </div>
+        <div className="h-3 w-48 mx-auto bg-zinc-800/40 rounded pt-2"></div>
+      </div>
+    </div>
+  </div>
+);
 
 const EditStock = () => {
   const navigate = useNavigate();
@@ -146,15 +177,8 @@ const EditStock = () => {
     }
   };
 
-  if (loading)
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <Loader />
-        <span className="text-zinc-500 text-[10px] font-mono uppercase tracking-widest animate-pulse">
-          Decrypting Record...
-        </span>
-      </div>
-    );
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading) return <EditStockSkeleton />;
 
   return (
     <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10 relative">
@@ -341,16 +365,17 @@ const EditStock = () => {
 
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 ml-1">
-                Base Price (₹)
+                Price per Unit (₹)
               </label>
               <input
                 type="number"
                 name="price"
+                placeholder="0.00"
                 value={formData.price}
                 onChange={handleChange}
                 onWheel={(e) => e.target.blur()}
                 required
-                className="w-full px-4 py-3 bg-[#111116] border border-zinc-800/80 rounded-xl text-sm font-bold text-indigo-400 outline-none focus:border-indigo-500/50 shadow-sm"
+                className="w-full px-4 py-3 bg-[#111116] border border-zinc-800/80 rounded-xl text-sm font-bold text-indigo-400 outline-none focus:border-indigo-500/50 placeholder:text-zinc-600 shadow-sm"
               />
             </div>
           </div>
@@ -365,7 +390,7 @@ const EditStock = () => {
             </div>
           )}
 
-          <div className="pt-6 flex justify-end gap-3 mt-2">
+          <div className="pt-6 flex justify-end gap-3 border-t border-zinc-800/60 mt-2">
             <button
               type="button"
               onClick={() => navigate("/enterprise/stock")}
