@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import stockService, { memoryCache } from "../../services/stockService";
 import { useUI } from "../../context/UIProvider";
@@ -22,8 +22,71 @@ import {
   ChevronDown,
   AlertCircle,
 } from "lucide-react";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 NEW STOCK LIST SKELETON
+const StockListSkeleton = () => (
+  <div className="space-y-6 md:space-y-8 pb-10 w-full flex flex-col">
+    {/* Header Skeleton */}
+    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-zinc-800/60"></div>
+        <div>
+          <div className="h-6 w-40 bg-zinc-800/60 rounded mb-1"></div>
+          <div className="h-3 w-32 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto">
+        <div className="h-10 w-32 bg-zinc-800/50 rounded-lg"></div>
+        <div className="h-10 w-32 bg-zinc-800/50 rounded-lg"></div>
+        <div className="h-10 w-32 bg-zinc-800/60 rounded-lg"></div>
+      </div>
+    </div>
+
+    {/* Filter & Table Container Skeleton */}
+    <div className="bg-[#0a0a0c] rounded-xl border border-zinc-800/60 overflow-hidden shadow-lg animate-pulse h-[600px] flex flex-col">
+      {/* Filters Skeleton */}
+      <div className="p-4 border-b border-zinc-800/60 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="h-10 w-full md:w-[320px] bg-zinc-800/50 rounded-full"></div>
+        <div className="flex gap-2 overflow-hidden w-full md:w-auto">
+          <div className="h-10 w-24 bg-zinc-800/40 rounded-full hidden md:block"></div>
+          <div className="h-10 w-32 bg-zinc-800/40 rounded-full"></div>
+          <div className="h-10 w-32 bg-zinc-800/40 rounded-full"></div>
+        </div>
+      </div>
+
+      {/* Table Body Skeleton */}
+      <div className="flex-1 p-6 space-y-6">
+        <div className="flex justify-between border-b border-zinc-800/40 pb-3">
+          <div className="h-3 w-32 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-32 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-24 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-24 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-24 bg-zinc-800/50 rounded"></div>
+          <div className="h-3 w-16 bg-zinc-800/50 rounded"></div>
+        </div>
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div key={i} className="flex justify-between items-center">
+            <div className="flex flex-col gap-2">
+              <div className="h-4 w-32 bg-zinc-800/40 rounded"></div>
+              <div className="h-3 w-16 bg-zinc-800/30 rounded"></div>
+            </div>
+            <div className="h-6 w-24 bg-zinc-800/50 rounded-md"></div>
+            <div className="flex flex-col gap-2">
+              <div className="h-4 w-20 bg-zinc-800/40 rounded"></div>
+            </div>
+            <div className="h-4 w-20 bg-zinc-800/40 rounded"></div>
+            <div className="h-4 w-24 bg-zinc-800/50 rounded"></div>
+            <div className="flex gap-2">
+              <div className="h-8 w-8 bg-zinc-800/50 rounded-md"></div>
+              <div className="h-8 w-8 bg-zinc-800/50 rounded-md"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 const defaultFilters = { search: "", category: "All", stockLevel: "All" };
 
@@ -320,6 +383,9 @@ const StockList = () => {
     });
   };
 
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading && stocks.length === 0) return <StockListSkeleton />;
+
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-10 text-zinc-200 font-sans">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -392,7 +458,7 @@ const StockList = () => {
       >
         {loading && !loadingMore && (
           <div className="absolute inset-0 bg-[#0a0a0c]/80 z-[100] flex items-center justify-center backdrop-blur-sm rounded-xl">
-            <Loader />
+            {/* Keeping Loader inside the table for non-initial updates */}
           </div>
         )}
 
@@ -820,7 +886,7 @@ const StockList = () => {
                     setDeletePassword("");
                   }}
                   disabled={wiping || isExporting}
-                  className="bg-[#161618] text-zinc-400 hover:text-white px-6 py-2.5 rounded-lg text-xs font-bold w-full sm:w-auto"
+                  className="bg-[#161618] text-zinc-400 hover:text-white px-6 py-2.5 rounded-lg text-xs font-bold w-full sm:w-auto transition-colors"
                 >
                   Cancel
                 </button>
