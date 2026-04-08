@@ -14,8 +14,52 @@ import {
   ChevronDown,
 } from "lucide-react";
 import Button from "../../components/common/Button";
-import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
+
+// 🚀 NEW EDIT SALE SKELETON
+const EditSaleSkeleton = () => (
+  <div className="max-w-3xl mx-auto space-y-6 pb-10 w-full flex flex-col">
+    <div className="w-32 h-5 bg-zinc-800/50 rounded-md animate-pulse mb-2"></div>
+    <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-8 animate-pulse">
+      <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6">
+        <div className="h-14 w-14 rounded-xl bg-zinc-800/60"></div>
+        <div>
+          <div className="h-6 w-48 bg-zinc-800/60 rounded mb-2"></div>
+          <div className="h-3 w-32 bg-zinc-800/40 rounded"></div>
+        </div>
+      </div>
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800/50">
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
+        </div>
+        <div className="flex justify-end gap-3 border-b border-zinc-800/60 mt-2 pt-6 pb-6">
+          <div className="h-11 w-32 bg-zinc-800/50 rounded-xl"></div>
+          <div className="h-11 w-40 bg-zinc-800/60 rounded-xl"></div>
+        </div>
+        <div className="h-3 w-48 mx-auto bg-zinc-800/40 rounded pt-2"></div>
+      </div>
+    </div>
+  </div>
+);
 
 const EditSale = () => {
   const navigate = useNavigate();
@@ -187,12 +231,8 @@ const EditSale = () => {
     }
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader />
-      </div>
-    );
+  // 🚀 REPLACED LOADER WITH SKELETON
+  if (loading) return <EditSaleSkeleton />;
 
   return (
     <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
@@ -444,17 +484,16 @@ const EditSale = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                Price per Qty (₹)
+                Price/Qty
               </label>
               <input
                 type="number"
                 name="pricePerQuantity"
                 value={formData.pricePerQuantity}
                 onChange={handleChange}
-                onWheel={(e) => e.target.blur()}
                 required
                 placeholder="0.00"
                 className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
@@ -462,72 +501,67 @@ const EditSale = () => {
             </div>
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                Total Bill Amount (₹)
+                Total Bill
               </label>
               <input
                 type="number"
                 name="amount"
                 value={formData.amount}
                 onChange={handleChange}
-                onWheel={(e) => e.target.blur()}
                 required
                 placeholder="0.00"
                 className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl ${theme.primaryText} font-bold text-lg outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 ml-1">
-                Payment Mode
-              </label>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFormData({ ...formData, paymentMode: "Cash" })
-                  }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Cash" ? theme.paymentCash : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`}`}
-                >
-                  <Banknote size={16} /> Cash
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFormData({ ...formData, paymentMode: "Online" })
-                  }
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Online" ? theme.paymentOnline : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`}`}
-                >
-                  <CreditCard size={16} /> Online
-                </button>
-              </div>
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 ml-1">
+              Payment Mode
+            </label>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData({ ...formData, paymentMode: "Cash" })
+                }
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Cash" ? theme.paymentCash : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`}`}
+              >
+                <Banknote size={16} /> Cash
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData({ ...formData, paymentMode: "Online" })
+                }
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${formData.paymentMode === "Online" ? theme.paymentOnline : `bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:${theme.primaryFocus.split(" ")[0]} hover:text-white`}`}
+              >
+                <CreditCard size={16} /> Online
+              </button>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800">
+          <div className="grid grid-cols-2 gap-4 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800">
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                Amount Paid (₹)
+                Paid (₹)
               </label>
               <input
                 type="number"
                 name="amountPaid"
                 value={formData.amountPaid}
                 onChange={handleChange}
-                onWheel={(e) => e.target.blur()}
                 placeholder="0.00"
                 className={`w-full px-4 py-3 bg-zinc-900/50 border ${theme.primaryBorder} rounded-xl ${theme.primaryText} font-bold outline-none transition-all placeholder:text-zinc-600 ${theme.primaryFocus}`}
               />
             </div>
             <div>
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
-                Amount Due (₹)
+                Due (₹)
               </label>
               <input
                 type="number"
                 name="amountDue"
                 value={formData.amountDue}
                 onChange={handleChange}
-                onWheel={(e) => e.target.blur()}
                 placeholder="0.00"
                 className="w-full px-4 py-3 bg-zinc-900/50 border border-rose-500/30 rounded-xl text-rose-400 font-bold outline-none transition-all focus:ring-1 focus:ring-rose-500/50 focus:border-rose-500/50 placeholder:text-zinc-600"
               />
