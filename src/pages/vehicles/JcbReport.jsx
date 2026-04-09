@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   FilterX,
 } from "lucide-react";
+import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import Button from "../../components/common/Button";
 import {
@@ -40,83 +41,6 @@ import {
   startAfter,
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
-
-// 🚀 NEW JCB REPORT SKELETON
-const JcbReportSkeleton = () => (
-  <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4 w-full">
-    {/* Header Skeleton */}
-    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div className="flex items-center gap-3">
-        <div className="h-[46px] w-[46px] bg-zinc-800/60 rounded-xl animate-pulse"></div>
-        <div>
-          <div className="h-7 w-48 bg-zinc-800/60 rounded-lg animate-pulse mb-2"></div>
-          <div className="h-3 w-32 bg-zinc-800/40 rounded-md animate-pulse"></div>
-        </div>
-      </div>
-      <div className="flex flex-col sm:flex-row gap-3 items-center w-full md:w-auto">
-        <div className="h-[44px] w-full sm:w-32 bg-zinc-800/60 rounded-xl animate-pulse"></div>
-        <div className="h-[44px] w-full sm:w-36 bg-zinc-800/60 rounded-xl animate-pulse"></div>
-        <div className="h-[44px] w-full sm:w-40 bg-zinc-800/60 rounded-xl animate-pulse"></div>
-      </div>
-    </div>
-
-    {/* Main Table Container Skeleton */}
-    <div className="bg-[#09090B] rounded-3xl border border-zinc-800/60 overflow-hidden shadow-2xl flex flex-col">
-      {/* Search & Reload Top Bar Skeleton */}
-      <div className="p-5 border-b border-zinc-800/60 bg-zinc-900/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5">
-        <div className="flex gap-2 w-full sm:w-auto flex-1 max-w-lg">
-          <div className="h-[42px] w-full bg-zinc-800/50 rounded-xl animate-pulse"></div>
-          <div className="h-[42px] w-24 bg-zinc-800/50 rounded-xl shrink-0 animate-pulse"></div>
-        </div>
-        <div className="h-[42px] w-12 sm:w-28 bg-zinc-800/50 rounded-xl animate-pulse"></div>
-      </div>
-
-      {/* Dropdown Filters Skeleton */}
-      <div className="p-4 border-b border-zinc-800/60 bg-[#09090B] flex flex-wrap items-center gap-4">
-        <div className="h-6 w-20 bg-zinc-800/40 rounded-md animate-pulse"></div>
-        <div className="h-[42px] w-32 bg-zinc-800/50 rounded-xl animate-pulse"></div>
-        <div className="h-[42px] w-32 bg-zinc-800/50 rounded-xl animate-pulse"></div>
-        <div className="h-[42px] w-36 bg-zinc-800/50 rounded-xl animate-pulse"></div>
-        <div className="h-[34px] w-28 bg-zinc-800/50 rounded-xl animate-pulse"></div>
-      </div>
-
-      {/* Table Body Skeleton */}
-      <div className="w-full min-w-[800px] overflow-x-auto custom-scrollbar">
-        <div className="flex justify-between items-center bg-[#09090B] border-b border-zinc-800/60 p-5 px-6">
-          <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
-          <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
-          <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
-          <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse text-right"></div>
-        </div>
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div
-            key={i}
-            className="flex justify-between items-start p-5 px-6 border-b border-zinc-800/60 gap-4 group"
-          >
-            <div className="w-1/4">
-              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse mb-3"></div>
-              <div className="h-5 w-32 bg-zinc-800/60 rounded animate-pulse mb-3"></div>
-              <div className="h-6 w-24 bg-zinc-800/40 rounded-lg animate-pulse"></div>
-            </div>
-            <div className="w-1/4 pr-2">
-              <div className="h-5 w-32 bg-zinc-800/50 rounded animate-pulse mb-2.5"></div>
-              <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse mb-2"></div>
-              <div className="h-3 w-28 bg-zinc-800/40 rounded animate-pulse"></div>
-            </div>
-            <div className="w-1/4 flex flex-col gap-2">
-              <div className="h-6 w-28 bg-zinc-800/50 rounded animate-pulse"></div>
-              <div className="h-6 w-24 bg-zinc-800/60 rounded animate-pulse"></div>
-            </div>
-            <div className="w-1/4 flex gap-2 justify-end items-start mt-1">
-              <div className="h-8 w-8 bg-zinc-800/50 rounded-lg animate-pulse"></div>
-              <div className="h-8 w-8 bg-zinc-800/50 rounded-lg animate-pulse"></div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </div>
-);
 
 // 🚨 SAFETY LIMITS
 const MAX_RECORDS_LIMIT = 1000;
@@ -253,8 +177,7 @@ const JcbReport = () => {
     async (isLoadMore = false, forceSync = false) => {
       if (isLoadMore) setLoadingMore(true);
       else if (forceSync || logs.length === 0) setSyncStatus("syncing");
-
-      // Removed the internal `if` block for `setLoading(true)` because we now handle it at the action origin.
+      if (logs.length === 0 && !isLoadMore && !forceSync) setLoading(true);
 
       try {
         const response = await jcbService.getLogs(
@@ -284,35 +207,23 @@ const JcbReport = () => {
     [activeFilters, lastDoc, logs.length],
   );
 
-  const executeSearch = () => {
-    setLogs([]); // Trigger Skeleton
-    setLoading(true);
+  const executeSearch = () =>
     setActiveFilters((prev) => ({ ...prev, search: localSearch.trim() }));
-  };
-
-  const executeApplyFilters = () => {
-    setLogs([]); // Trigger Skeleton
-    setLoading(true);
+  const executeApplyFilters = () =>
     setActiveFilters((prev) => ({
       ...prev,
       vehicleFilter: pendingFilters.vehicleFilter,
       dateFilter: pendingFilters.dateFilter,
       exactDate: pendingFilters.exactDate,
     }));
-  };
-
   const executeClearAll = () => {
-    const reset = {
-      search: "",
+    setLocalSearch("");
+    setPendingFilters({
       vehicleFilter: "All",
       dateFilter: "All",
       exactDate: "",
-    };
-    setLocalSearch("");
-    setPendingFilters(reset);
-    setLogs([]); // Trigger Skeleton
-    setLoading(true);
-    setActiveFilters(reset);
+    });
+    setActiveFilters(defaultFilters);
   };
 
   useEffect(() => {
@@ -518,10 +429,6 @@ const JcbReport = () => {
     }
   };
 
-  // 🚀 INTERCEPT FULL PAGE WITH SKELETON LOADER
-  if ((loading || syncStatus === "syncing") && logs.length === 0)
-    return <JcbReportSkeleton />;
-
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
       {/* HEADER */}
@@ -545,11 +452,7 @@ const JcbReport = () => {
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <Button
             variant="ghost"
-            onClick={() => {
-              setLogs([]); // Trigger Skeleton
-              setLoading(true);
-              fetchLogs(false, true);
-            }}
+            onClick={() => fetchLogs(false, true)}
             disabled={syncStatus === "up-to-date" || syncStatus === "syncing"}
             className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${syncStatus === "up-to-date" ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : syncStatus === "syncing" ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : syncStatus === "error" ? "bg-red-500/20 text-red-400 border-red-500/40" : "bg-blue-500/20 text-blue-400 border-blue-500/40 animate-pulse hover:bg-blue-500/30"}`}
           >
@@ -657,11 +560,7 @@ const JcbReport = () => {
             </button>
           </div>
           <button
-            onClick={() => {
-              setLogs([]); // Trigger Skeleton
-              setLoading(true);
-              fetchLogs(false, true);
-            }}
+            onClick={() => fetchLogs(false, true)}
             title="Refresh Grid Data"
             className="w-11 h-11 flex items-center justify-center rounded-xl bg-zinc-800/40 border border-zinc-700/50 hover:bg-zinc-700/50 transition-all cursor-pointer group active:scale-95 ml-auto sm:ml-0"
           >
@@ -765,154 +664,162 @@ const JcbReport = () => {
         </div>
 
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
-          <table className="w-full text-left border-collapse min-w-[800px]">
-            <thead>
-              <tr className="text-zinc-500 text-[10px] uppercase font-bold border-b border-zinc-800/60">
-                <th className="py-4 px-6">Date & Vehicle</th>
-                <th className="py-4 px-6">Customer Info</th>
-                <th className="py-4 px-6">Time Log</th>
-                <th className="py-4 px-6 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/60 text-sm">
-              {logs.map((log) => {
-                const latestLog =
-                  log.editHistory?.length > 0
-                    ? log.editHistory[log.editHistory.length - 1]
-                    : null;
-                return (
-                  <tr
-                    key={log._id}
-                    id={log._id}
-                    className={`group ${activeHighlight === log._id ? `${theme.primaryBg} border-${theme.primaryText}` : "hover:bg-zinc-800/30"}`}
-                  >
-                    <td className="p-5 px-6 align-top">
-                      <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
-                        {new Date(log.date).toLocaleDateString("en-GB")}
-                      </p>
-                      <p className="font-bold text-white uppercase tracking-wide flex items-center gap-2">
-                        <Truck size={14} className="text-zinc-500" />{" "}
-                        {log.vehicleNo}
-                      </p>
-                      {latestLog && (
-                        <div
-                          onClick={() => openHistory(log)}
-                          className="mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80"
-                        >
-                          <History size={10} className="text-zinc-400" />
-                          <span className="text-[9px] font-bold text-zinc-300 uppercase">
-                            {latestLog.role || "ADMIN"}
-                          </span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-5 px-6 align-top">
-                      <div className="font-bold text-white flex items-center gap-2 mb-1.5">
-                        <User size={14} className="text-zinc-500" />{" "}
-                        {log.customerName}
-                      </div>
-                      <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 mb-1.5">
-                        <Phone size={10} className="text-zinc-600" />{" "}
-                        {log.phone}
-                      </div>
-                      <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 uppercase">
-                        <MapPin size={10} className="text-zinc-600" />{" "}
-                        {log.location}
-                      </div>
-                    </td>
-                    <td className="p-5 px-6 align-top">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-[10px] bg-zinc-800/50 border border-zinc-700/50 px-2.5 py-1 rounded text-zinc-300 font-mono w-max">
-                          {log.startTime} to {log.endTime}
-                        </span>
-                        <span
-                          className={`text-lg font-black ${theme.primaryText} font-mono`}
-                        >
-                          {log.totalHours}h {log.totalMinutes}m
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-5 px-6 text-right align-top">
-                      <div className="flex justify-end gap-2 items-center relative mt-1">
-                        <button
-                          onClick={() =>
-                            navigate("/transportation/jcb", {
-                              state: { editLog: log },
-                            })
-                          }
-                          className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg`}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            isManager
-                              ? handleDisabledClick(log._id)
-                              : setDeleteModal({
-                                  isOpen: true,
-                                  id: log._id,
-                                })
-                          }
-                          className={`p-2 rounded-lg ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        {warningTooltip === log._id && (
-                          <div className="absolute top-full right-0 mt-2 z-[9999] bg-[#09090B] border border-red-500/30 text-red-400 text-[10px] font-bold px-3 py-2 rounded-lg flex items-center gap-2 w-max shadow-xl">
-                            🚫 Access Denied
-                          </div>
-                        )}
-                      </div>
-                    </td>
+          {loading && !loadingMore ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader />
+            </div>
+          ) : (
+            <>
+              <table className="w-full text-left border-collapse min-w-[800px]">
+                <thead>
+                  <tr className="text-zinc-500 text-[10px] uppercase font-bold border-b border-zinc-800/60">
+                    <th className="py-4 px-6">Date & Vehicle</th>
+                    <th className="py-4 px-6">Customer Info</th>
+                    <th className="py-4 px-6">Time Log</th>
+                    <th className="py-4 px-6 text-right">Actions</th>
                   </tr>
-                );
-              })}
-              {logs.length === 0 && (
-                <tr>
-                  <td
-                    colSpan="4"
-                    className="p-12 text-center text-zinc-500 italic"
-                  >
-                    No records found.
-                  </td>
-                </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60 text-sm">
+                  {logs.map((log) => {
+                    const latestLog =
+                      log.editHistory?.length > 0
+                        ? log.editHistory[log.editHistory.length - 1]
+                        : null;
+                    return (
+                      <tr
+                        key={log._id}
+                        id={log._id}
+                        className={`group ${activeHighlight === log._id ? `${theme.primaryBg} border-${theme.primaryText}` : "hover:bg-zinc-800/30"}`}
+                      >
+                        <td className="p-5 px-6 align-top">
+                          <p className="text-[11px] font-mono text-zinc-400 mb-1.5">
+                            {new Date(log.date).toLocaleDateString("en-GB")}
+                          </p>
+                          <p className="font-bold text-white uppercase tracking-wide flex items-center gap-2">
+                            <Truck size={14} className="text-zinc-500" />{" "}
+                            {log.vehicleNo}
+                          </p>
+                          {latestLog && (
+                            <div
+                              onClick={() => openHistory(log)}
+                              className="mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80"
+                            >
+                              <History size={10} className="text-zinc-400" />
+                              <span className="text-[9px] font-bold text-zinc-300 uppercase">
+                                {latestLog.role || "ADMIN"}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-5 px-6 align-top">
+                          <div className="font-bold text-white flex items-center gap-2 mb-1.5">
+                            <User size={14} className="text-zinc-500" />{" "}
+                            {log.customerName}
+                          </div>
+                          <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 mb-1.5">
+                            <Phone size={10} className="text-zinc-600" />{" "}
+                            {log.phone}
+                          </div>
+                          <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 uppercase">
+                            <MapPin size={10} className="text-zinc-600" />{" "}
+                            {log.location}
+                          </div>
+                        </td>
+                        <td className="p-5 px-6 align-top">
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[10px] bg-zinc-800/50 border border-zinc-700/50 px-2.5 py-1 rounded text-zinc-300 font-mono w-max">
+                              {log.startTime} to {log.endTime}
+                            </span>
+                            <span
+                              className={`text-lg font-black ${theme.primaryText} font-mono`}
+                            >
+                              {log.totalHours}h {log.totalMinutes}m
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-5 px-6 text-right align-top">
+                          <div className="flex justify-end gap-2 items-center relative mt-1">
+                            <button
+                              onClick={() =>
+                                navigate("/transportation/jcb", {
+                                  state: { editLog: log },
+                                })
+                              }
+                              className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg`}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() =>
+                                isManager
+                                  ? handleDisabledClick(log._id)
+                                  : setDeleteModal({
+                                      isOpen: true,
+                                      id: log._id,
+                                    })
+                              }
+                              className={`p-2 rounded-lg ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {logs.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="4"
+                        className="p-12 text-center text-zinc-500 italic"
+                      >
+                        No records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+
+              {/* READS PROTECTION: MAX DISPLAY 1000 */}
+              {hasMore &&
+                loadedCount < MAX_RECORDS_LIMIT &&
+                logs.length > 0 && (
+                  <div className="flex justify-center p-6 border-t border-zinc-800/60">
+                    <Button
+                      onClick={() => fetchLogs(true)}
+                      disabled={loadingMore}
+                      variant="outline"
+                      className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
+                    >
+                      {loadingMore ? (
+                        <RefreshCcw size={16} className="animate-spin mr-2" />
+                      ) : null}
+                      {loadingMore
+                        ? "Loading..."
+                        : `Load Next 50 Records (Loaded: ${loadedCount})`}
+                    </Button>
+                  </div>
+                )}
+
+              {loadedCount >= MAX_RECORDS_LIMIT && (
+                <div className="p-6 border-t border-zinc-800/60 flex justify-center">
+                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md">
+                    <AlertOctagon
+                      className="mx-auto mb-2 opacity-80"
+                      size={24}
+                    />
+                    <h4 className="font-bold text-sm mb-1">
+                      Display Limit Reached
+                    </h4>
+                    <p className="text-[11px] font-medium text-amber-200/60">
+                      To preserve Firebase Read limits, infinite scrolling stops
+                      at {MAX_RECORDS_LIMIT} records. Please utilize the Search
+                      and Filters at the top to locate older records.
+                    </p>
+                  </div>
+                </div>
               )}
-            </tbody>
-          </table>
-
-          {/* READS PROTECTION: MAX DISPLAY 1000 */}
-          {hasMore && loadedCount < MAX_RECORDS_LIMIT && logs.length > 0 && (
-            <div className="flex justify-center p-6 border-t border-zinc-800/60">
-              <Button
-                onClick={() => fetchLogs(true)}
-                disabled={loadingMore}
-                variant="outline"
-                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
-              >
-                {loadingMore ? (
-                  <RefreshCcw size={16} className="animate-spin mr-2" />
-                ) : null}
-                {loadingMore
-                  ? "Loading..."
-                  : `Load Next 50 Records (Loaded: ${loadedCount})`}
-              </Button>
-            </div>
-          )}
-
-          {loadedCount >= MAX_RECORDS_LIMIT && (
-            <div className="p-6 border-t border-zinc-800/60 flex justify-center">
-              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md">
-                <AlertOctagon className="mx-auto mb-2 opacity-80" size={24} />
-                <h4 className="font-bold text-sm mb-1">
-                  Display Limit Reached
-                </h4>
-                <p className="text-[11px] font-medium text-amber-200/60">
-                  To preserve Firebase Read limits, infinite scrolling stops at{" "}
-                  {MAX_RECORDS_LIMIT} records. Please utilize the Search and
-                  Filters at the top to locate older records.
-                </p>
-              </div>
-            </div>
+            </>
           )}
         </div>
       </div>
@@ -1072,7 +979,6 @@ const JcbReport = () => {
                         {new Date(log.at).toLocaleString("en-GB", {
                           day: "2-digit",
                           month: "short",
-                          year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
                         })}

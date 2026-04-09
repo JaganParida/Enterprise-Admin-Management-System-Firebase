@@ -26,84 +26,11 @@ import {
   SearchCode,
   Hourglass,
 } from "lucide-react";
+import Loader from "../../components/common/Loader";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import Button from "../../components/common/Button";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
-
-// 🚀 NEW FUEL REPORT SKELETON
-const FuelReportSkeleton = () => (
-  <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4 w-full">
-    {/* Header Skeleton */}
-    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div className="flex items-center gap-3">
-        <div className="h-[46px] w-[46px] bg-zinc-800/60 rounded-xl animate-pulse"></div>
-        <div>
-          <div className="h-7 w-40 bg-zinc-800/60 rounded-lg animate-pulse mb-2"></div>
-          <div className="h-3 w-32 bg-zinc-800/40 rounded-md animate-pulse"></div>
-        </div>
-      </div>
-      <div className="flex flex-col sm:flex-row gap-3 items-center w-full md:w-auto">
-        <div className="h-[44px] w-full sm:w-32 bg-zinc-800/60 rounded-xl animate-pulse"></div>
-        <div className="h-[44px] w-full sm:w-36 bg-zinc-800/60 rounded-xl animate-pulse"></div>
-        <div className="h-[44px] w-full sm:w-40 bg-zinc-800/60 rounded-xl animate-pulse"></div>
-      </div>
-    </div>
-
-    {/* Main Table Container Skeleton */}
-    <div className="bg-[#09090B] rounded-3xl border border-zinc-800/60 overflow-hidden shadow-2xl flex flex-col">
-      {/* Search & Filter Top Bar Skeleton */}
-      <div className="p-5 border-b border-zinc-800/60 bg-zinc-900/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5">
-        <div className="flex gap-2 w-full sm:w-80">
-          <div className="h-[42px] w-full bg-zinc-800/50 rounded-xl animate-pulse"></div>
-          <div className="h-[42px] w-24 bg-zinc-800/50 rounded-xl shrink-0 animate-pulse"></div>
-        </div>
-      </div>
-
-      {/* Dropdown Filters Skeleton */}
-      <div className="p-4 border-b border-zinc-800/60 bg-[#09090B] flex flex-wrap items-center gap-4">
-        <div className="h-6 w-20 bg-zinc-800/40 rounded-md animate-pulse"></div>
-        <div className="h-[42px] w-32 bg-zinc-800/50 rounded-xl animate-pulse"></div>
-        <div className="h-[42px] w-32 bg-zinc-800/50 rounded-xl animate-pulse"></div>
-        <div className="h-[42px] w-36 bg-zinc-800/50 rounded-xl animate-pulse"></div>
-        <div className="h-[34px] w-28 bg-zinc-800/50 rounded-xl animate-pulse"></div>
-      </div>
-
-      {/* Table Body Skeleton */}
-      <div className="w-full min-w-[750px] overflow-x-auto custom-scrollbar">
-        <div className="flex justify-between items-center bg-[#09090B] border-b border-zinc-800/60 p-5 px-6">
-          <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
-          <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
-          <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse text-right"></div>
-          <div className="h-3 w-16 bg-zinc-800/40 rounded animate-pulse text-right"></div>
-        </div>
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div
-            key={i}
-            className="flex justify-between items-start p-5 px-6 border-b border-zinc-800/60 gap-4 group"
-          >
-            <div className="w-1/4">
-              <div className="h-3 w-20 bg-zinc-800/40 rounded animate-pulse mb-3"></div>
-              <div className="h-5 w-32 bg-zinc-800/60 rounded animate-pulse mb-3"></div>
-              <div className="h-6 w-24 bg-zinc-800/40 rounded-lg animate-pulse"></div>
-            </div>
-            <div className="w-1/4">
-              <div className="h-6 w-28 bg-zinc-800/50 rounded-md animate-pulse mb-2.5"></div>
-              <div className="h-3 w-24 bg-zinc-800/40 rounded animate-pulse"></div>
-            </div>
-            <div className="w-1/4 flex justify-end">
-              <div className="h-6 w-24 bg-zinc-800/60 rounded animate-pulse mb-2"></div>
-            </div>
-            <div className="w-1/4 flex gap-2 justify-end items-start mt-1">
-              <div className="h-8 w-8 bg-zinc-800/50 rounded-lg animate-pulse"></div>
-              <div className="h-8 w-8 bg-zinc-800/50 rounded-lg animate-pulse"></div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </div>
-);
 
 const getPreviousMonthString = () => {
   const d = new Date();
@@ -118,6 +45,7 @@ const defaultFilters = {
   exactDate: "",
 };
 
+// 🚀 FIXED: Set safe batch size limit to 25 to halve initial reads
 const PAGE_SIZE = 25;
 
 const FuelReport = () => {
@@ -199,7 +127,7 @@ const FuelReport = () => {
     setFilterInput({
       search: "",
       amountFilter: "Any Amount",
-      dateFilter: "All",
+      dateFilter: e.target.value,
       exactDate: "",
     });
   const handleExactDateChange = (e) =>
@@ -207,7 +135,7 @@ const FuelReport = () => {
       search: "",
       amountFilter: "Any Amount",
       dateFilter: "All",
-      exactDate: "",
+      exactDate: e.target.value,
     });
 
   useEffect(() => {
@@ -248,13 +176,9 @@ const FuelReport = () => {
     force = false,
     filterObj = activeFilters,
   ) => {
-    if (isLoadMore) {
-      setLoadingMore(true);
-    } else {
-      if (force) setSyncStatus("syncing");
-      const cached = fuelService.getCachedLogs(filterObj);
-      if (!cached || force) setLoading(true);
-    }
+    if (isLoadMore) setLoadingMore(true);
+    else if (logs.length === 0 || force) setSyncStatus("syncing");
+    if (logs.length === 0 && !isLoadMore) setLoading(true);
 
     try {
       const response = await fuelService.getLogs(
@@ -282,10 +206,10 @@ const FuelReport = () => {
     }
   };
 
-  // 🚀 FIXED: Always fetch on mount unconditionally to prevent "Empty Cache Lock"
   useEffect(() => {
-    fetchLogs(false, false, defaultFilters);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!fuelService.getCachedLogs(defaultFilters)) {
+      fetchLogs(false);
+    }
   }, []);
 
   const hasChanges =
@@ -295,8 +219,6 @@ const FuelReport = () => {
   const applyFilters = () => {
     if (isApplyDisabled) return;
     setActiveFilters(filterInput);
-    setLogs([]); // 🚀 FIXED: Clear old data to trigger skeleton!
-    setLoading(true);
     fetchLogs(false, true, filterInput);
     setIsCooldown(true);
     setTimeout(() => setIsCooldown(false), 4000);
@@ -306,8 +228,6 @@ const FuelReport = () => {
     if (isCooldown) return;
     setFilterInput(defaultFilters);
     setActiveFilters(defaultFilters);
-    setLogs([]); // 🚀 FIXED: Clear old data to trigger skeleton!
-    setLoading(true);
     fetchLogs(false, true, defaultFilters);
     setIsCooldown(true);
     setTimeout(() => setIsCooldown(false), 4000);
@@ -322,7 +242,7 @@ const FuelReport = () => {
     try {
       await fuelService.deleteLog(deleteModal.id, admin?.data || admin);
       toast.success("Record deleted");
-      fetchLogs(false, true);
+      fetchLogs(false, true); // Force fetch after delete to sync state
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -449,16 +369,13 @@ const FuelReport = () => {
       else toast.success("Database wiped.");
       setIsDeleteAllOpen(false);
       setDeletePassword("");
-      fetchLogs(false, true);
+      fetchLogs(false, true); // Force refetch
     } catch (error) {
       toast.error(error.message);
     } finally {
       setWiping(false);
     }
   };
-
-  if ((loading || syncStatus === "syncing") && logs.length === 0)
-    return <FuelReportSkeleton />;
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 relative space-y-8 px-2 sm:px-4">
@@ -483,11 +400,7 @@ const FuelReport = () => {
         <div className="flex flex-col sm:flex-row gap-3 items-center">
           <Button
             variant="ghost"
-            onClick={() => {
-              setLogs([]); // 🚀 FIXED: Allow manual sync to trigger Skeleton
-              setLoading(true);
-              fetchLogs(false, true);
-            }}
+            onClick={() => fetchLogs(false, true)}
             disabled={syncStatus === "synced" || syncStatus === "syncing"}
             className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-700 ${syncStatus === "synced" ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : syncStatus === "error" ? "text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 shadow-[0_0_15px_rgba(243,64,84,0.2)] animate-pulse" : "text-zinc-300 bg-zinc-800/40 border border-zinc-700/50"}`}
           >
@@ -669,158 +582,177 @@ const FuelReport = () => {
 
         {/* Data Table */}
         <div className="overflow-x-auto pb-4 custom-scrollbar min-h-[400px]">
-          <table className="w-full text-left min-w-[750px] animate-in fade-in duration-300">
-            <thead
-              className={`bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800`}
-            >
-              <tr>
-                <th className="py-5 px-6 whitespace-nowrap">Vehicle Details</th>
-                <th className="py-5 px-6 whitespace-nowrap">Fuel & Cost</th>
-                <th className="py-5 px-6 text-right whitespace-nowrap">
-                  Total Spent
-                </th>
-                <th className="py-5 px-6 text-right whitespace-nowrap">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
-              {logs.map((log) => {
-                const hasEdits = log.editHistory && log.editHistory.length > 0;
-                const latestLog = hasEdits
-                  ? log.editHistory[log.editHistory.length - 1]
-                  : null;
-                return (
-                  <tr
-                    key={log._id}
-                    id={log._id}
-                    className={`transition-all duration-1000 ease-out group ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
-                  >
-                    <td className="p-5 px-6 align-top">
-                      <p className={`text-[11px] font-mono text-zinc-400 mb-1`}>
-                        {new Date(log.date).toLocaleDateString("en-GB")}
-                      </p>
-                      <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
-                        <Truck size={14} className={`text-zinc-500`} />{" "}
-                        {log.vehicleNo}
-                      </p>
-                      {hasEdits && (
-                        <div
-                          onClick={() => openHistory(log)}
-                          className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
-                        >
-                          <History size={10} className="text-zinc-400" />
-                          <span
-                            className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
-                          >
-                            {latestLog.role || "ADMIN"}
-                          </span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-5 px-6 align-top">
-                      <div
-                        className={`text-xs text-zinc-200 mb-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2.5 py-1 rounded-md font-medium border border-zinc-800 uppercase tracking-wide`}
-                      >
-                        <Droplet size={12} className={theme.primaryText} />{" "}
-                        {log.liters} Liters
-                      </div>
-                      <div className="text-[11px] text-zinc-400 font-medium mt-1 flex items-center gap-1">
-                        <IndianRupee size={10} /> Rate:{" "}
-                        <span
-                          className={`font-bold ${theme.primaryText} font-mono ml-0.5`}
-                        >
-                          ₹{log.pricePerLiter}
-                        </span>{" "}
-                        /L
-                      </div>
-                    </td>
-                    <td className="p-5 px-6 align-top text-right">
-                      <p
-                        className={`text-lg font-black text-white font-mono drop-shadow-sm mb-2`}
-                      >
-                        ₹{(Number(log.totalCost) || 0).toLocaleString("en-IN")}
-                      </p>
-                    </td>
-                    <td className="p-5 px-6 text-right align-top">
-                      <div className="flex justify-end gap-2 items-center relative mt-1">
-                        <button
-                          onClick={() =>
-                            navigate(
-                              `${isTransport ? "/transportation/fuel" : "/enterprise/fuel"}`,
-                              { state: { editLog: log } },
-                            )
-                          }
-                          className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            isManager
-                              ? handleDisabledClick(log._id)
-                              : setDeleteModal({
-                                  isOpen: true,
-                                  id: log._id,
-                                })
-                          }
-                          className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
+          {syncStatus === "syncing" && logs.length === 0 ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader />
+            </div>
+          ) : (
+            <>
+              <table className="w-full text-left min-w-[750px] animate-in fade-in duration-300">
+                <thead
+                  className={`bg-[#09090B] text-zinc-500 text-[10px] uppercase font-bold tracking-[0.15em] border-b border-zinc-800`}
+                >
+                  <tr>
+                    <th className="py-5 px-6 whitespace-nowrap">
+                      Vehicle Details
+                    </th>
+                    <th className="py-5 px-6 whitespace-nowrap">Fuel & Cost</th>
+                    <th className="py-5 px-6 text-right whitespace-nowrap">
+                      Total Spent
+                    </th>
+                    <th className="py-5 px-6 text-right whitespace-nowrap">
+                      Actions
+                    </th>
                   </tr>
-                );
-              })}
-              {logs.length === 0 && (
-                <tr>
-                  <td
-                    colSpan="4"
-                    className="p-10 text-center text-zinc-500 italic"
+                </thead>
+                <tbody className="text-sm text-zinc-300 divide-y divide-zinc-800/60">
+                  {logs.map((log) => {
+                    const hasEdits =
+                      log.editHistory && log.editHistory.length > 0;
+                    const latestLog = hasEdits
+                      ? log.editHistory[log.editHistory.length - 1]
+                      : null;
+                    return (
+                      <tr
+                        key={log._id}
+                        id={log._id}
+                        className={`transition-all duration-1000 ease-out group ${activeHighlight === log._id ? `${isTransport ? "bg-[#0ea5e9]/[0.08] shadow-[inset_0_0_20px_rgba(14,165,233,0.05)] border-[#0ea5e9]" : "bg-indigo-500/[0.08] shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] border-indigo-500"}` : "border-transparent hover:bg-zinc-800/30"}`}
+                      >
+                        <td className="p-5 px-6 align-top">
+                          <p
+                            className={`text-[11px] font-mono text-zinc-400 mb-1`}
+                          >
+                            {new Date(log.date).toLocaleDateString("en-GB")}
+                          </p>
+                          <p className="font-bold text-white text-md uppercase tracking-wide flex items-center gap-2">
+                            <Truck size={14} className={`text-zinc-500`} />{" "}
+                            {log.vehicleNo}
+                          </p>
+                          {hasEdits && (
+                            <div
+                              onClick={() => openHistory(log)}
+                              className={`mt-3 flex items-center gap-1.5 bg-zinc-800/50 border border-zinc-700/50 px-2 py-1 rounded-lg cursor-pointer w-max hover:opacity-80 transition-opacity`}
+                            >
+                              <History size={10} className="text-zinc-400" />
+                              <span
+                                className={`text-[9px] font-bold text-zinc-300 uppercase tracking-widest`}
+                              >
+                                {latestLog.role || "ADMIN"}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-5 px-6 align-top">
+                          <div
+                            className={`text-xs text-zinc-200 mb-2 flex items-center gap-1.5 bg-zinc-900/50 w-max px-2.5 py-1 rounded-md font-medium border border-zinc-800 uppercase tracking-wide`}
+                          >
+                            <Droplet size={12} className={theme.primaryText} />{" "}
+                            {log.liters} Liters
+                          </div>
+                          <div className="text-[11px] text-zinc-400 font-medium mt-1 flex items-center gap-1">
+                            <IndianRupee size={10} /> Rate:{" "}
+                            <span
+                              className={`font-bold ${theme.primaryText} font-mono ml-0.5`}
+                            >
+                              ₹{log.pricePerLiter}
+                            </span>{" "}
+                            /L
+                          </div>
+                        </td>
+                        <td className="p-5 px-6 align-top text-right">
+                          <p
+                            className={`text-lg font-black text-white font-mono drop-shadow-sm mb-2`}
+                          >
+                            ₹
+                            {(Number(log.totalCost) || 0).toLocaleString(
+                              "en-IN",
+                            )}
+                          </p>
+                        </td>
+                        <td className="p-5 px-6 text-right align-top">
+                          <div className="flex justify-end gap-2 items-center relative mt-1">
+                            <button
+                              onClick={() =>
+                                navigate(
+                                  `${isTransport ? "/transportation/fuel" : "/enterprise/fuel"}`,
+                                  { state: { editLog: log } },
+                                )
+                              }
+                              className={`p-2 text-zinc-500 hover:${theme.primaryText} hover:bg-zinc-800/50 rounded-lg transition-colors`}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() =>
+                                isManager
+                                  ? handleDisabledClick(log._id)
+                                  : setDeleteModal({
+                                      isOpen: true,
+                                      id: log._id,
+                                    })
+                              }
+                              className={`p-2 rounded-lg transition-colors ${isManager ? "text-zinc-600 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"}`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {logs.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="4"
+                        className="p-10 text-center text-zinc-500 italic"
+                      >
+                        No fuel records found matching applied filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+
+              {/* Strict Pagination Load More Button */}
+              {hasMore && loadedCount < 5000 && logs.length > 0 && (
+                <div className="flex justify-center p-6 border-t border-zinc-800/60">
+                  <Button
+                    onClick={() => fetchLogs(true)}
+                    disabled={loadingMore}
+                    variant="outline"
+                    className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
                   >
-                    No fuel records found matching applied filters.
-                  </td>
-                </tr>
+                    {loadingMore && (
+                      <RefreshCcw size={16} className="animate-spin mr-2" />
+                    )}
+                    {loadingMore
+                      ? "Loading..."
+                      : `Load Next ${PAGE_SIZE} Records (Loaded: ${loadedCount})`}
+                  </Button>
+                </div>
               )}
-            </tbody>
-          </table>
 
-          {/* Strict Pagination Load More Button */}
-          {hasMore && loadedCount < 5000 && logs.length > 0 && (
-            <div className="flex justify-center p-6 border-t border-zinc-800/60">
-              <Button
-                onClick={() => fetchLogs(true)}
-                disabled={loadingMore}
-                variant="outline"
-                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
-              >
-                {loadingMore && (
-                  <RefreshCcw size={16} className="animate-spin mr-2" />
-                )}
-                {loadingMore
-                  ? "Loading..."
-                  : `Load Next ${PAGE_SIZE} Records (Loaded: ${loadedCount})`}
-              </Button>
-            </div>
-          )}
-
-          {/* Max Display Limit Warning */}
-          {loadedCount >= 5000 && (
-            <div className="p-6 border-t border-zinc-800/60 flex justify-center">
-              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md shadow-lg">
-                <AlertOctagon className="mx-auto mb-2 opacity-80" size={24} />
-                <h4 className="font-bold text-sm mb-1">
-                  Display Limit Reached
-                </h4>
-                <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
-                  To preserve system performance and Firebase Read limits,
-                  infinite scrolling stops at 5,000 records. Please utilize the
-                  Search and Filters at the top to precisely locate older
-                  records.
-                </p>
-              </div>
-            </div>
+              {/* Max Display Limit Warning */}
+              {loadedCount >= 5000 && (
+                <div className="p-6 border-t border-zinc-800/60 flex justify-center">
+                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md shadow-lg">
+                    <AlertOctagon
+                      className="mx-auto mb-2 opacity-80"
+                      size={24}
+                    />
+                    <h4 className="font-bold text-sm mb-1">
+                      Display Limit Reached
+                    </h4>
+                    <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
+                      To preserve system performance and Firebase Read limits,
+                      infinite scrolling stops at 5,000 records. Please utilize
+                      the Search and Filters at the top to precisely locate
+                      older records.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -848,6 +780,7 @@ const FuelReport = () => {
               <h2 className="text-xl font-bold tracking-wide">Wipe Database</h2>
             </div>
 
+            {/* 🚀 FIXED UI WARNING TEXT */}
             <div className="bg-amber-500/10 border border-yellow-600/30 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
