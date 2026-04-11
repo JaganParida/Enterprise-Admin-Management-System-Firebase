@@ -3,87 +3,67 @@ import { useLocation } from "react-router-dom";
 import employeeService from "../../services/employeeService";
 import { useUI } from "../../context/UIProvider";
 import { useAuth } from "../../context/AuthContext";
-import { Banknote, Plus, History, Calendar, RefreshCcw } from "lucide-react";
+import {
+  Banknote,
+  Plus,
+  History,
+  Calendar,
+  RefreshCcw,
+  AlertOctagon,
+} from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
+import { motion } from "framer-motion";
 
-// 🚀 NEW SALARY MANAGEMENT SKELETON
+// HARD CAP FOR PERFORMANCE
+const MAX_RECORDS_LIMIT = 2000;
+
 const SalaryManagementSkeleton = () => (
   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    {/* Form Section Skeleton */}
     <div className="lg:col-span-1">
-      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 animate-pulse h-[460px]">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="h-11 w-11 rounded-xl bg-zinc-800/60"></div>
-          <div>
-            <div className="h-6 w-32 bg-zinc-800/60 rounded mb-2"></div>
-            <div className="h-3 w-40 bg-zinc-800/40 rounded"></div>
-          </div>
-        </div>
-        <div className="space-y-5">
-          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
-          <div className="flex gap-4">
-            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
-            <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
-          </div>
-          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
-          <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
-          <div className="h-11 w-full bg-zinc-800/50 rounded-xl mt-4"></div>
-        </div>
-      </div>
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 animate-pulse h-[460px]"></div>
     </div>
-
-    {/* Table Section Skeleton */}
     <div className="lg:col-span-2">
-      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 overflow-hidden h-[600px] animate-pulse flex flex-col">
-        <div className="p-6 border-b border-zinc-800/60 flex items-center justify-between">
-          <div className="h-8 w-48 bg-zinc-800/60 rounded-lg"></div>
-        </div>
-        <div className="p-4 border-b border-zinc-800/60 flex justify-between px-6">
-          <div className="h-4 w-20 bg-zinc-800/50 rounded"></div>
-          <div className="h-4 w-24 bg-zinc-800/50 rounded"></div>
-          <div className="h-4 w-16 bg-zinc-800/50 rounded"></div>
-          <div className="h-4 w-20 bg-zinc-800/50 rounded"></div>
-        </div>
-        <div className="flex-1 p-6 space-y-8">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="flex justify-between items-center">
-              <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
-              <div className="flex flex-col gap-2">
-                <div className="h-4 w-32 bg-zinc-800/40 rounded"></div>
-                <div className="h-3 w-16 bg-zinc-800/30 rounded"></div>
-              </div>
-              <div className="h-6 w-16 bg-zinc-800/50 rounded-md"></div>
-              <div className="h-4 w-20 bg-zinc-800/40 rounded"></div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 h-[600px] animate-pulse"></div>
     </div>
   </div>
 );
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.1 } },
+};
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
+};
 
 const SalaryManagement = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
 
-  // ─── CONCEPT 1: Initialize from RAM cache — zero reads on re-navigation ──────
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
+
+  // CONCEPT 1: Initialize from RAM cache — zero reads on re-navigation
   const cachedEmployees = employeeService.getCachedEmployees({ status: "All" });
   const cachedLogs = employeeService.getCachedSalaryLogs();
 
   const [employees, setEmployees] = useState(() => cachedEmployees || []);
   const [history, setHistory] = useState(() => cachedLogs || []);
 
-  // Only show full-page loader if BOTH caches are cold (true first-ever load)
   const [loading, setLoading] = useState(() => !cachedEmployees || !cachedLogs);
   const [paying, setPaying] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // ── FIXED: useRef prevents double-fetch in React StrictMode and re-renders ──
+  // useRef prevents double-fetch in React StrictMode
   const hasFetched = useRef(false);
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
+  const [loadedCount, setLoadedCount] = useState(() => cachedLogs?.length || 0);
 
   const searchParams = new URLSearchParams(location.search);
   const highlightId = searchParams.get("highlight");
@@ -95,11 +75,11 @@ const SalaryManagement = () => {
   const isTransport = currentPath.includes("/transportation");
 
   const theme = {
-    primaryText: isTransport ? "text-blue-400" : "text-indigo-400",
-    primaryBg: isTransport ? "bg-blue-500/10" : "bg-indigo-500/10",
-    primaryBorder: isTransport ? "border-blue-500/20" : "border-indigo-500/20",
+    primaryText: isTransport ? "text-cyan-400" : "text-indigo-400",
+    primaryBg: isTransport ? "bg-cyan-500/10" : "bg-indigo-500/10",
+    primaryBorder: isTransport ? "border-cyan-500/20" : "border-indigo-500/20",
     primaryFocus: isTransport
-      ? "focus:border-blue-500/50 focus:ring-blue-500/50"
+      ? "focus:border-cyan-500/50 focus:ring-cyan-500/50"
       : "focus:border-indigo-500/50 focus:ring-indigo-500/50",
   };
 
@@ -111,7 +91,6 @@ const SalaryManagement = () => {
     remarks: "",
   });
 
-  // ─── CONCEPT 1: fetchData respects cache — only hits server when needed ───────
   const fetchData = useCallback(async () => {
     try {
       const [empRes, histRes] = await Promise.all([
@@ -122,40 +101,36 @@ const SalaryManagement = () => {
       setHistory(histRes.data);
       setLastDoc(histRes.lastVisible || null);
       setHasMore(!!(histRes.data && histRes.data.length === 50));
+      setLoadedCount(histRes.data?.length || 0);
     } catch {
-      toast.error("Failed to load salary data");
+      toastRef.current.error("Failed to load salary data");
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
-    // ── FIXED: Only fetch once. If cache was warm, skip the fetch entirely.
-    // This implements zero-read navigation from Concept 1.
     if (hasFetched.current) return;
     hasFetched.current = true;
 
     if (cachedEmployees && cachedLogs) {
-      // Both caches are warm — no server read needed
       setLoading(false);
       return;
     }
-
-    // At least one cache is cold — fetch from server
     fetchData();
   }, [fetchData, cachedEmployees, cachedLogs]);
 
-  // ─── CONCEPT 4: Load More for salary history ─────────────────────────────────
   const loadMoreHistory = async () => {
-    if (!lastDoc) return;
+    if (!lastDoc || loadedCount >= MAX_RECORDS_LIMIT) return;
     setLoadingMore(true);
     try {
       const response = await employeeService.getSalaryHistory(lastDoc);
       setHistory((prev) => [...prev, ...(response.data || [])]);
       setLastDoc(response.lastVisible || null);
       setHasMore(!!(response.data && response.data.length === 50));
+      setLoadedCount((prev) => prev + (response.data?.length || 0));
     } catch {
-      toast.error("Failed to load more history");
+      toastRef.current.error("Failed to load more history");
     } finally {
       setLoadingMore(false);
     }
@@ -174,9 +149,9 @@ const SalaryManagement = () => {
   const handlePayment = async (e) => {
     e.preventDefault();
     if (!paymentData.employeeId)
-      return toast.error("Please select an employee");
+      return toastRef.current.error("Please select an employee");
     if (!paymentData.amount || Number(paymentData.amount) <= 0)
-      return toast.error("Please enter a valid amount");
+      return toastRef.current.error("Please enter a valid amount");
 
     setPaying(true);
     try {
@@ -198,7 +173,7 @@ const SalaryManagement = () => {
         currentUser,
       );
 
-      // ── CONCEPT 2: Optimistic UI — prepend to history without re-fetching ──
+      // Optimistic UI Update
       const newRecord = {
         _id: res.data._id,
         ...payloadToSave,
@@ -208,9 +183,7 @@ const SalaryManagement = () => {
         },
       };
 
-      setHistory((prev) => [newRecord, ...prev].slice(0, 50));
-
-      // ── CONCEPT 2: Optimistic update of employee's salaryTaken in local state ──
+      setHistory((prev) => [newRecord, ...prev].slice(0, MAX_RECORDS_LIMIT));
       setEmployees((prev) =>
         prev.map((emp) =>
           emp._id === paymentData.employeeId
@@ -223,24 +196,27 @@ const SalaryManagement = () => {
         ),
       );
 
-      toast.success("Payment recorded & Salary updated!");
+      toastRef.current.success("Payment recorded & Salary updated!");
       setPaymentData((prev) => ({ ...prev, amount: "", remarks: "" }));
     } catch {
-      toast.error("Failed to record payment");
-      // On error, re-fetch to ensure consistency
-      fetchData();
+      toastRef.current.error("Failed to record payment");
+      fetchData(); // Rollback and sync
     } finally {
       setPaying(false);
     }
   };
 
-  // 🚀 REPLACED LOADER WITH SKELETON
   if (loading) return <SalaryManagementSkeleton />;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+      className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10"
+    >
       {/* ── Record Payment Form ── */}
-      <div className="lg:col-span-1">
+      <motion.div variants={itemVariants} className="lg:col-span-1">
         <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 p-6 md:p-8 sticky top-24">
           <div className="flex items-center gap-3 mb-8">
             <div
@@ -255,41 +231,35 @@ const SalaryManagement = () => {
               </p>
             </div>
           </div>
+
           <form onSubmit={handlePayment} className="space-y-5">
             <div>
               <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2 ml-1">
                 Select Employee
               </label>
-              <div className="relative">
-                <select
-                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none appearance-none transition-all cursor-pointer ${theme.primaryFocus}`}
-                  value={paymentData.employeeId}
-                  onChange={(e) =>
-                    setPaymentData({
-                      ...paymentData,
-                      employeeId: e.target.value,
-                    })
-                  }
-                  required
-                >
-                  <option value="" className="text-zinc-500 bg-[#09090B]">
-                    Select Employee...
+              <select
+                className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all cursor-pointer ${theme.primaryFocus}`}
+                value={paymentData.employeeId}
+                onChange={(e) =>
+                  setPaymentData({ ...paymentData, employeeId: e.target.value })
+                }
+                required
+              >
+                <option value="" className="bg-[#09090B]">
+                  Select Employee...
+                </option>
+                {employees.map((emp) => (
+                  <option
+                    key={emp._id}
+                    value={emp._id}
+                    className="bg-[#09090B]"
+                  >
+                    {emp.name} ({emp.position})
                   </option>
-                  {employees.map((emp) => (
-                    <option
-                      key={emp._id}
-                      value={emp._id}
-                      className="bg-[#09090B]"
-                    >
-                      {emp.name} ({emp.position})
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-[10px]">
-                  ▼
-                </div>
-              </div>
+                ))}
+              </select>
             </div>
+
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Date"
@@ -306,30 +276,26 @@ const SalaryManagement = () => {
                 <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2 ml-1">
                   Type
                 </label>
-                <div className="relative">
-                  <select
-                    className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none appearance-none transition-all cursor-pointer ${theme.primaryFocus}`}
-                    value={paymentData.type}
-                    onChange={(e) =>
-                      setPaymentData({ ...paymentData, type: e.target.value })
-                    }
-                  >
-                    <option value="Salary" className="bg-[#09090B]">
-                      Salary
-                    </option>
-                    <option value="Advance" className="bg-[#09090B]">
-                      Advance
-                    </option>
-                    <option value="Bonus" className="bg-[#09090B]">
-                      Bonus
-                    </option>
-                  </select>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-[10px]">
-                    ▼
-                  </div>
-                </div>
+                <select
+                  className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 outline-none transition-all cursor-pointer ${theme.primaryFocus}`}
+                  value={paymentData.type}
+                  onChange={(e) =>
+                    setPaymentData({ ...paymentData, type: e.target.value })
+                  }
+                >
+                  <option value="Salary" className="bg-[#09090B]">
+                    Salary
+                  </option>
+                  <option value="Advance" className="bg-[#09090B]">
+                    Advance
+                  </option>
+                  <option value="Bonus" className="bg-[#09090B]">
+                    Bonus
+                  </option>
+                </select>
               </div>
             </div>
+
             <Input
               label="Amount (₹)"
               type="number"
@@ -348,6 +314,7 @@ const SalaryManagement = () => {
                 setPaymentData({ ...paymentData, remarks: e.target.value })
               }
             />
+
             <Button
               type="submit"
               variant="primary"
@@ -359,11 +326,11 @@ const SalaryManagement = () => {
             </Button>
           </form>
         </div>
-      </div>
+      </motion.div>
 
       {/* ── Payment History Table ── */}
-      <div className="lg:col-span-2">
-        <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden h-full">
+      <motion.div variants={itemVariants} className="lg:col-span-2">
+        <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden h-full flex flex-col">
           <div className="p-6 border-b border-zinc-800/60 flex items-center justify-between">
             <h2 className="text-lg font-bold text-white flex items-center gap-3">
               <div
@@ -374,7 +341,8 @@ const SalaryManagement = () => {
               Payment History
             </h2>
           </div>
-          <div className="overflow-x-auto pb-4 custom-scrollbar">
+
+          <div className="overflow-x-auto flex-1 custom-scrollbar">
             <table className="w-full text-left min-w-max">
               <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
                 <tr>
@@ -401,11 +369,7 @@ const SalaryManagement = () => {
                     <tr
                       key={record._id}
                       id={record._id}
-                      className={`transition-all duration-700 group ${
-                        highlightId === record._id
-                          ? `bg-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.05)] border-l-4 ${isTransport ? "border-cyan-500" : "border-indigo-500"}`
-                          : "hover:bg-zinc-800/30"
-                      }`}
+                      className={`transition-all duration-700 hover:bg-zinc-800/30 ${highlightId === record._id ? `bg-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.05)] border-l-4 ${isTransport ? "border-cyan-500" : "border-indigo-500"}` : ""}`}
                     >
                       <td className="p-5 md:pl-6 align-middle">
                         <div className="flex items-center gap-2 text-zinc-400 font-mono text-xs whitespace-nowrap">
@@ -436,27 +400,40 @@ const SalaryManagement = () => {
                 )}
               </tbody>
             </table>
+          </div>
 
-            {/* ── CONCEPT 4: Load More for history ── */}
-            {hasMore && history.length > 0 && (
-              <div className="flex justify-center p-6 border-t border-zinc-800/60">
-                <Button
-                  onClick={loadMoreHistory}
-                  disabled={loadingMore}
-                  variant="outline"
-                  className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
-                >
-                  {loadingMore ? (
-                    <RefreshCcw size={16} className="animate-spin mr-2" />
-                  ) : null}
-                  {loadingMore ? "Loading..." : "Load Older Records"}
-                </Button>
+          {/* ── Limit UI & Pagination ── */}
+          <div className="p-6 border-t border-zinc-800/60 flex flex-col items-center gap-4 bg-zinc-900/10">
+            {loadedCount >= MAX_RECORDS_LIMIT ? (
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md w-full">
+                <AlertOctagon className="mx-auto mb-2 opacity-80" size={24} />
+                <h4 className="font-bold text-sm mb-1">
+                  Display Limit Reached
+                </h4>
+                <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
+                  Log display capped at 2,000 records to maintain performance.
+                  Data is safely stored in the database.
+                </p>
               </div>
-            )}
+            ) : hasMore && history.length > 0 ? (
+              <Button
+                onClick={loadMoreHistory}
+                disabled={loadingMore}
+                variant="outline"
+                className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50 w-full sm:w-auto"
+              >
+                {loadingMore && (
+                  <RefreshCcw size={16} className="animate-spin mr-2" />
+                )}
+                {loadingMore
+                  ? "Loading..."
+                  : `Load Older Records (${loadedCount} loaded)`}
+              </Button>
+            ) : null}
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };
 
