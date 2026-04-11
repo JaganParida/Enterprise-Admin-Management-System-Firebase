@@ -27,6 +27,7 @@ const salaryCollection = collection(db, "salaryPayments");
 const statsDocRef = doc(db, "systemStats", "employees");
 const dailyLimitsRef = doc(db, "systemStats", "dailyLimits");
 
+// L1 Cache: In-Memory
 let memoryCache = {
   queries: {},
   salaryLogs: null,
@@ -96,9 +97,10 @@ const getMonthDateRange = (monthStr) => {
   };
 };
 
+// STRICT QUOTA ENFORCER: 2500 per day limit
 const checkAndReserveQuota = async (type, requestedAmount) => {
   const today = new Date().toISOString().split("T")[0];
-  const maxAllowed = 10000;
+  const maxAllowed = 2500; // Hard Limit Enforced
   let reserved = 0;
 
   await runTransaction(db, async (transaction) => {
@@ -114,17 +116,16 @@ const checkAndReserveQuota = async (type, requestedAmount) => {
 
     if (available <= 0) {
       throw new Error(
-        `Daily ${type === "WIPE" ? "wipe" : "backup"} limit of ${maxAllowed.toLocaleString()} reached. Try again tomorrow.`,
+        `Daily ${type === "WIPE" ? "wipe" : "backup"} limit of ${maxAllowed.toLocaleString()} reached. System locked for 24 hours.`,
       );
     }
 
     reserved = Math.min(requestedAmount, available);
 
     const update = { date: today };
-    if (type === "WIPE")
-      update.wipeCount = (storedDate === today ? wipeCount : 0) + reserved;
-    if (type === "BACKUP")
-      update.backupCount = (storedDate === today ? backupCount : 0) + reserved;
+    if (type === "WIPE") update.wipeCount = currentCount + reserved;
+    if (type === "BACKUP") update.backupCount = currentCount + reserved;
+
     transaction.set(dailyLimitsRef, update, { merge: true });
   });
 
@@ -139,20 +140,16 @@ export const validateFilters = (filters) => {
     filters.salary !== "No Salary Taken";
   const hasNoSalary = filters.salary === "No Salary Taken";
 
-  if (hasSearch && hasSalaryRange) {
+  if (hasSearch && hasSalaryRange)
     return {
       valid: false,
-      reason:
-        "Name search and salary range cannot be used together. Please use one filter at a time.",
+      reason: "Name search and salary range cannot be used together.",
     };
-  }
-  if (hasSearch && hasNoSalary) {
+  if (hasSearch && hasNoSalary)
     return {
       valid: false,
-      reason:
-        "Name search and 'Unpaid' filter cannot be used together. Please use one filter at a time.",
+      reason: "Name search and 'Unpaid' filter cannot be used together.",
     };
-  }
   return { valid: true, reason: "" };
 };
 
@@ -189,9 +186,7 @@ const employeeService = {
     }
 
     const validation = validateFilters(filters);
-    if (!validation.valid) {
-      return { data: [], lastVisible: null };
-    }
+    if (!validation.valid) return { data: [], lastVisible: null };
 
     const normalizedSearch = (filters.search || "").trim().toLowerCase();
     let constraints = [];
@@ -210,11 +205,7 @@ const employeeService = {
         orderBy("nameLower"),
       );
       hasInequality = true;
-    } else if (
-      filters.salary &&
-      filters.salary !== "All" &&
-      filters.salary !== "No Salary Taken"
-    ) {
+    } else if (filters.salary && filters.salary !== "All") {
       if (filters.salary === "Under ₹10k") {
         constraints.push(
           where("salaryTaken", ">", 0),
@@ -243,6 +234,7 @@ const employeeService = {
       const q = query(empCollection, ...constraints);
       let snapshot;
 
+      // Prefer Cache Over Network Logic
       const timeSinceFetch = Date.now() - memoryCache.lastFetchTime;
       if (!forceRefresh && timeSinceFetch < 300000) {
         try {
@@ -256,38 +248,6 @@ const employeeService = {
       }
 
       let data = snapshot.docs.map((d) => ({ _id: d.id, ...d.data() }));
-
-      if (filters.salary === "No Salary Taken" && !isLoadMore) {
-        try {
-          const statusConstraints =
-            filters.status && filters.status !== "All"
-              ? [where("status", "==", filters.status)]
-              : [];
-
-          const missingFieldQ = query(
-            empCollection,
-            ...statusConstraints,
-            orderBy("createdAt", "desc"),
-            limit(200),
-          );
-          const missingSnap = await getDocsFromServer(missingFieldQ);
-          const existingIds = new Set(data.map((e) => e._id));
-
-          missingSnap.docs.forEach((d) => {
-            const emp = { _id: d.id, ...d.data() };
-            if (
-              !existingIds.has(emp._id) &&
-              (emp.salaryTaken === undefined || emp.salaryTaken === null)
-            ) {
-              data.push(emp);
-              existingIds.add(emp._id);
-            }
-          });
-        } catch {
-          // Non-critical secondary pass
-        }
-      }
-
       const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
       if (!isLoadMore) {
@@ -319,11 +279,7 @@ const employeeService = {
         where("nameLower", ">=", normalizedSearch),
         where("nameLower", "<=", normalizedSearch + "\uf8ff"),
       );
-    } else if (
-      filters.salary &&
-      filters.salary !== "All" &&
-      filters.salary !== "No Salary Taken"
-    ) {
+    } else if (filters.salary && filters.salary !== "All") {
       if (filters.salary === "Under ₹10k") {
         constraints.push(
           where("salaryTaken", ">", 0),
@@ -348,13 +304,6 @@ const employeeService = {
       });
       const d = snap.data();
 
-      if (
-        typeof d.totalBaseSalary !== "number" ||
-        typeof d.totalSalaryTaken !== "number"
-      ) {
-        throw new Error("Aggregation returned non-numeric data");
-      }
-
       return {
         count: d.totalRecords,
         baseSalarySum: d.totalBaseSalary,
@@ -362,25 +311,7 @@ const employeeService = {
         isFallback: false,
       };
     } catch {
-      try {
-        const q = query(empCollection, ...constraints, limit(500));
-        const snap = await getDocsFromServer(q);
-        let baseSalarySum = 0;
-        let salaryTakenSum = 0;
-        snap.docs.forEach((d) => {
-          const rec = d.data();
-          baseSalarySum += Number(rec.initialSalary || rec.baseSalary || 0);
-          salaryTakenSum += Number(rec.salaryTaken || 0);
-        });
-        return {
-          count: snap.size,
-          baseSalarySum,
-          salaryTakenSum,
-          isFallback: true,
-        };
-      } catch {
-        return null;
-      }
+      return null; // Strict aggregation ONLY. Removed fallback to getDocs.
     }
   },
 
@@ -429,6 +360,8 @@ const employeeService = {
       role: user?.role || "Admin",
       at: getLocalISTDate(),
     };
+
+    // Strict requirement: Max 2 history items
     currentHistory = [...currentHistory, currentEdit].slice(-2);
 
     const payload = {
@@ -475,20 +408,18 @@ const employeeService = {
       throw new Error("Incorrect Admin Password.");
     }
 
-    const { reserved } = await checkAndReserveQuota("WIPE", 10000);
-
-    if (reserved === 0) {
+    const { reserved } = await checkAndReserveQuota("WIPE", 2500);
+    if (reserved === 0)
       throw new Error(
-        "Daily wipe limit of 10,000 records already reached. Try again tomorrow.",
+        "Daily wipe limit of 2,500 records already reached. System locked for 24 hours.",
       );
-    }
 
     let totalDeleted = 0;
-
     while (totalDeleted < reserved) {
-      const chunkSize = Math.min(500, reserved - totalDeleted);
+      const chunkSize = Math.min(500, reserved - totalDeleted); // Max batch size 500
       const q = query(empCollection, limit(chunkSize));
       const snapshot = await getDocsFromServer(q);
+
       if (snapshot.empty) break;
 
       const batch = writeBatch(db);
@@ -501,14 +432,12 @@ const employeeService = {
 
     markDirty();
 
-    if (totalDeleted === 0) {
+    if (totalDeleted === 0)
       return { isPartial: false, message: "Database is already empty." };
-    }
-
-    if (totalDeleted >= reserved && reserved < 10000) {
+    if (totalDeleted >= reserved && reserved < 2500) {
       return {
         isPartial: true,
-        message: `Wiped ${totalDeleted.toLocaleString()} records. Daily limit reached — resume tomorrow.`,
+        message: `Wiped ${totalDeleted.toLocaleString()} records. Daily limit reached — locked for 24 hours.`,
       };
     }
 
@@ -520,14 +449,13 @@ const employeeService = {
   },
 
   getBackupChunk: async (monthToFetch, limitCount, lastDocId = null) => {
-    const safeLimit = Math.min(limitCount, 1000);
+    const safeLimit = Math.min(limitCount, 2500);
     const { reserved } = await checkAndReserveQuota("BACKUP", safeLimit);
 
-    if (reserved === 0) {
+    if (reserved === 0)
       throw new Error(
-        "Daily backup limit of 10,000 records reached. Resume tomorrow.",
+        "Daily backup limit of 2,500 records reached. Locked for 24 hours.",
       );
-    }
 
     const { start, end } = getMonthDateRange(monthToFetch);
 
@@ -544,9 +472,7 @@ const employeeService = {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) constraints.push(startAfter(docSnap));
       } catch {
-        console.warn(
-          "Backup resume pointer invalid — restarting from month start.",
-        );
+        console.warn("Backup resume pointer invalid.");
       }
     }
 
@@ -614,7 +540,6 @@ const employeeService = {
 
   getSalaryHistory: async (lastVisibleDoc = null, limitCount = 50) => {
     const isLoadMore = !!lastVisibleDoc;
-
     if (!memoryCache.isDirty && !isLoadMore && memoryCache.salaryLogs) {
       return { data: memoryCache.salaryLogs, lastVisible: null };
     }
