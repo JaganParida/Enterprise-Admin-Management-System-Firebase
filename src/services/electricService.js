@@ -26,13 +26,13 @@ const billsCollection = collection(db, "electricBills");
 const statsRef = doc(db, "systemStats", "electric");
 
 const getLocalDateString = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 };
 
-// 🚀 GLOBAL ZERO-READ CACHE (Dictionary Map)
+// 🚀 GLOBAL ZERO-READ L1 CACHE
 let memoryCache = {
   stats: null,
   queryCache: {},
@@ -53,11 +53,7 @@ const silentCacheUpdate = (oldStatus, newStatus, oldAmt, newAmt) => {
     if (oldStatus) memoryCache.stats[oldStatus.toLowerCase()] -= oldAmt;
     if (newStatus) memoryCache.stats[newStatus.toLowerCase()] += newAmt;
   }
-  memoryCache.isDirty = true;
-  memoryCache.queryCache = {};
-  memoryCache.dynamicStatsCache = {};
-  memoryCache.lastFetchTime = Date.now();
-  localStorage.setItem("electric_last_update", Date.now().toString());
+  markDirty();
 };
 
 const electricService = {
@@ -65,10 +61,9 @@ const electricService = {
   getCachedStats: () => (!memoryCache.isDirty ? memoryCache.stats : null),
   getCachedLogs: (filters) => {
     const key = JSON.stringify(filters);
-    if (!memoryCache.isDirty && memoryCache.queryCache[key]) {
-      return memoryCache.queryCache[key];
-    }
-    return null;
+    return !memoryCache.isDirty && memoryCache.queryCache[key]
+      ? memoryCache.queryCache[key]
+      : null;
   },
 
   getStats: async (forceRefresh = false) => {
@@ -96,7 +91,6 @@ const electricService = {
 
   getDynamicViewStats: async (filters = {}) => {
     const filterKey = JSON.stringify(filters);
-
     if (!memoryCache.isDirty && memoryCache.dynamicStatsCache[filterKey]) {
       return memoryCache.dynamicStatsCache[filterKey];
     }
@@ -136,14 +130,16 @@ const electricService = {
       constraints.push(where("billDate", ">=", getLocalDateString(pastDate)));
     }
 
-    const q = query(billsCollection, ...constraints);
-
     try {
-      const snapshot = await getAggregateFromServer(q, {
-        totalRecords: count(),
-        totalRevenue: sum("totalAmount"),
-        averageBill: average("totalAmount"),
-      });
+      // STRICT ENFORCEMENT: ONLY getAggregateFromServer used. No getDocs fallback.
+      const snapshot = await getAggregateFromServer(
+        query(billsCollection, ...constraints),
+        {
+          totalRecords: count(),
+          totalRevenue: sum("totalAmount"),
+          averageBill: average("totalAmount"),
+        },
+      );
 
       const res = {
         count: snapshot.data().totalRecords,
@@ -154,12 +150,7 @@ const electricService = {
       memoryCache.dynamicStatsCache[filterKey] = res;
       return res;
     } catch (error) {
-      // ⚠️ RISK REMOVED: NO MORE getDocs() FALLBACK HERE!
-      // If aggregation fails, we return null to protect Firebase quotas.
-      console.warn(
-        "Aggregation failed. Fallback disabled to protect quota.",
-        error,
-      );
+      console.warn("Aggregation failed. Fallback disabled to protect quota.");
       return null;
     }
   },
@@ -214,11 +205,11 @@ const electricService = {
       filters.dateFilter !== "All" &&
       !filters.exactMonth
     ) {
-      const today = new Date();
-      let pastDate = new Date();
-      if (filters.dateFilter === "Today") pastDate.setDate(today.getDate() - 1);
+      const pastDate = new Date();
+      if (filters.dateFilter === "Today")
+        pastDate.setDate(pastDate.getDate() - 1);
       else if (filters.dateFilter === "Last7Days")
-        pastDate.setDate(today.getDate() - 7);
+        pastDate.setDate(pastDate.getDate() - 7);
       else if (filters.dateFilter === "ThisMonth") pastDate.setDate(1);
       constraints.push(
         where("billDate", ">=", getLocalDateString(pastDate)),
@@ -231,31 +222,26 @@ const electricService = {
     constraints.push(limit(limitCount));
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
-    try {
-      const q = query(billsCollection, ...constraints);
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
-      const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
+    const snapshot = await getDocs(query(billsCollection, ...constraints));
+    const data = snapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
+    const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
-      if (!isLoadMore) {
-        memoryCache.queryCache[filterKey] = data;
-        memoryCache.isDirty = false;
-        memoryCache.lastFetchTime = Date.now();
-      }
-
-      return { data, lastVisible: newLastVisible };
-    } catch (error) {
-      throw error;
+    if (!isLoadMore) {
+      memoryCache.queryCache[filterKey] = data;
+      memoryCache.isDirty = false;
+      memoryCache.lastFetchTime = Date.now();
     }
+    return { data, lastVisible: newLastVisible };
   },
 
   getBackupChunk: async (monthToFetch, maxAllowed) => {
     const storedLastDocId = localStorage.getItem(
       `backup_last_doc_${monthToFetch}_electric`,
     );
+    // STRICT ENFORCEMENT: Max limit locked to 2,500
     let constraints = [
       where("month", "==", monthToFetch),
-      limit(Math.min(maxAllowed, 1000)), // ⚠️ RISK REMOVED: Capped at 1,000 instead of 10,000
+      limit(Math.min(maxAllowed, 2500)),
     ];
 
     if (storedLastDocId) {
@@ -276,14 +262,13 @@ const electricService = {
   },
 
   addBill: async (billData, user) => {
-    const billAmt = parseFloat(billData.billAmount) || 0;
-    const fineAmt = parseFloat(billData.fineAmount) || 0;
-    const totalAmount = billAmt + fineAmt;
-
+    const totalAmount =
+      (parseFloat(billData.billAmount) || 0) +
+      (parseFloat(billData.fineAmount) || 0);
     const payload = {
       ...billData,
-      billAmount: billAmt,
-      fineAmount: fineAmt,
+      billAmount: parseFloat(billData.billAmount) || 0,
+      fineAmount: parseFloat(billData.fineAmount) || 0,
       totalAmount,
       createdAt: new Date().toISOString(),
       createdBy: user?.email || "admin@system.com",
@@ -300,11 +285,8 @@ const electricService = {
       updatePayload.overdue = increment(totalAmount);
 
     await setDoc(statsRef, updatePayload, { merge: true });
-    markDirty();
-
-    const newObj = { _id: docRef.id, ...payload };
     silentCacheUpdate(null, payload.status, 0, totalAmount);
-    return { data: newObj };
+    return { data: { _id: docRef.id, ...payload } };
   },
 
   updateBill: async (id, updateData, user) => {
@@ -313,68 +295,58 @@ const electricService = {
     if (!snapshot.exists()) return;
     const existingData = snapshot.data();
 
+    // STRICT ENFORCEMENT: Max 2 history entries
     let currentHistory = existingData.editHistory || [];
-    const currentEdit = {
-      email: user?.email || "admin@system.com",
+    currentHistory.push({
+      email: user?.email || "admin",
       role: user?.role || "Admin",
       at: new Date().toISOString(),
-    };
-    currentHistory.push(currentEdit);
+    });
     if (currentHistory.length > 2) currentHistory = currentHistory.slice(-2);
 
-    const newBillAmt = parseFloat(updateData.billAmount) || 0;
-    const newFineAmt = parseFloat(updateData.fineAmount) || 0;
-    const newTotalAmount = newBillAmt + newFineAmt;
-    const oldTotalAmount = Number(existingData.totalAmount) || 0;
+    const newTotal =
+      (parseFloat(updateData.billAmount) || 0) +
+      (parseFloat(updateData.fineAmount) || 0);
+    const oldTotal = Number(existingData.totalAmount) || 0;
 
-    if (
-      existingData.status !== updateData.status ||
-      oldTotalAmount !== newTotalAmount
-    ) {
-      let updatePayload = {};
-      if (existingData.status === "Paid")
-        updatePayload.paid = increment(-oldTotalAmount);
+    if (existingData.status !== updateData.status || oldTotal !== newTotal) {
+      let up = {};
+      if (existingData.status === "Paid") up.paid = increment(-oldTotal);
       else if (existingData.status === "Pending")
-        updatePayload.pending = increment(-oldTotalAmount);
+        up.pending = increment(-oldTotal);
       else if (existingData.status === "Overdue")
-        updatePayload.overdue = increment(-oldTotalAmount);
+        up.overdue = increment(-oldTotal);
 
       if (updateData.status === "Paid")
-        updatePayload.paid = updatePayload.paid
-          ? increment(newTotalAmount - oldTotalAmount)
-          : increment(newTotalAmount);
+        up.paid = up.paid
+          ? increment(newTotal - oldTotal)
+          : increment(newTotal);
       else if (updateData.status === "Pending")
-        updatePayload.pending = updatePayload.pending
-          ? increment(newTotalAmount - oldTotalAmount)
-          : increment(newTotalAmount);
+        up.pending = up.pending
+          ? increment(newTotal - oldTotal)
+          : increment(newTotal);
       else if (updateData.status === "Overdue")
-        updatePayload.overdue = updatePayload.overdue
-          ? increment(newTotalAmount - oldTotalAmount)
-          : increment(newTotalAmount);
+        up.overdue = up.overdue
+          ? increment(newTotal - oldTotal)
+          : increment(newTotal);
 
-      await setDoc(statsRef, updatePayload, { merge: true });
+      await setDoc(statsRef, up, { merge: true });
     }
 
-    const payloadObj = {
+    await updateDoc(docRef, {
       ...updateData,
-      billAmount: newBillAmt,
-      fineAmount: newFineAmt,
-      totalAmount: newTotalAmount,
-      lastEditedBy: currentEdit.email,
-      lastEditedRole: currentEdit.role,
-      lastEditedAt: currentEdit.at,
+      billAmount: parseFloat(updateData.billAmount) || 0,
+      fineAmount: parseFloat(updateData.fineAmount) || 0,
+      totalAmount: newTotal,
       editHistory: currentHistory,
-    };
-
-    await updateDoc(docRef, payloadObj);
-    markDirty();
+    });
     silentCacheUpdate(
       existingData.status,
       updateData.status,
-      oldTotalAmount,
-      newTotalAmount,
+      oldTotal,
+      newTotal,
     );
-    return { message: "Bill updated successfully" };
+    return { message: "Updated successfully" };
   },
 
   deleteBill: async (id, user) => {
@@ -385,22 +357,18 @@ const electricService = {
 
     if (snapshot.exists()) {
       const data = snapshot.data();
-      const amountToRemove = Number(data.totalAmount) || 0;
-      let updatePayload = {};
-      if (data.status === "Paid")
-        updatePayload.paid = increment(-amountToRemove);
-      else if (data.status === "Pending")
-        updatePayload.pending = increment(-amountToRemove);
-      else if (data.status === "Overdue")
-        updatePayload.overdue = increment(-amountToRemove);
+      const amt = Number(data.totalAmount) || 0;
+      let up = {};
+      if (data.status === "Paid") up.paid = increment(-amt);
+      else if (data.status === "Pending") up.pending = increment(-amt);
+      else if (data.status === "Overdue") up.overdue = increment(-amt);
 
-      await setDoc(statsRef, updatePayload, { merge: true });
-      silentCacheUpdate(data.status, null, amountToRemove, 0);
+      await setDoc(statsRef, up, { merge: true });
+      silentCacheUpdate(data.status, null, amt, 0);
     }
-
     await deleteDoc(docRef);
     markDirty();
-    return { message: "Bill deleted successfully" };
+    return { message: "Deleted" };
   },
 
   deleteAllBills: async ({ password, email, user }) => {
@@ -412,35 +380,33 @@ const electricService = {
       localStorage.getItem("electric_wipe_meta") || '{"date":"","count":0}',
     );
 
-    // ⚠️ RISK REMOVED: Capped at 2,000 per day instead of 10,000 to save free tier delete quota
-    if (wipeMeta.date === today && wipeMeta.count >= 2000) {
+    // STRICT ENFORCEMENT: Max 2,500 deletions/day. Locks out to protect quotas.
+    if (wipeMeta.date === today && wipeMeta.count >= 2500) {
       throw new Error(
-        "Daily Wipe Limit Reached (2,000 records). Action locked for 24 hours to protect Database Limits.",
+        "Daily Wipe Limit Reached (2,500 records). Action locked for 24 hours to protect Database Limits.",
       );
     }
     if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
 
     const currentUser = auth.currentUser;
     try {
-      const credential = EmailAuthProvider.credential(
-        currentUser.email,
-        password,
+      await reauthenticateWithCredential(
+        currentUser,
+        EmailAuthProvider.credential(currentUser.email, password),
       );
-      await reauthenticateWithCredential(currentUser, credential);
     } catch (error) {
       throw new Error("Incorrect Admin Password.");
     }
 
     let totalDeleted = 0,
       hasMore = true;
-    const maxAllowed = 2000 - wipeMeta.count;
+    const maxAllowed = 2500 - wipeMeta.count;
 
+    // STRICT ENFORCEMENT: 500 doc batch size optimal for Firestore writes
     while (hasMore && totalDeleted < maxAllowed) {
-      const q = query(
-        billsCollection,
-        limit(Math.min(500, maxAllowed - totalDeleted)),
+      const snapshot = await getDocs(
+        query(billsCollection, limit(Math.min(500, maxAllowed - totalDeleted))),
       );
-      const snapshot = await getDocs(q);
       if (snapshot.empty) break;
 
       const batch = writeBatch(db);
@@ -453,18 +419,13 @@ const electricService = {
     localStorage.setItem("electric_wipe_meta", JSON.stringify(wipeMeta));
     markDirty();
 
-    if (totalDeleted >= maxAllowed && hasMore) {
+    if (totalDeleted >= maxAllowed && hasMore)
       return {
         isPartial: true,
-        message: "2,000 limit reached. Come back tomorrow for remaining.",
+        message: "2,500 limit reached. Lock engaged for 24h.",
       };
-    }
-
     await setDoc(statsRef, { paid: 0, pending: 0, overdue: 0 });
-    return {
-      isPartial: false,
-      message: "Electric Bills wiped within safe limits!",
-    };
+    return { isPartial: false, message: "Database wiped within safe limits!" };
   },
 };
 
