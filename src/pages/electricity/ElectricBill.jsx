@@ -43,10 +43,8 @@ const ChartSkeleton = () => (
   <div className="w-full h-full bg-zinc-800/30 animate-pulse rounded-2xl border border-zinc-800/60"></div>
 );
 
-// 🚀 NEW ELECTRIC BILL SKELETON
 const ElectricBillSkeleton = () => (
   <div className="w-full h-full space-y-8 pb-10 flex flex-col">
-    {/* Header Skeleton */}
     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-20 w-full">
       <div>
         <div className="h-9 w-64 bg-zinc-800/60 rounded-lg animate-pulse mb-3"></div>
@@ -57,8 +55,6 @@ const ElectricBillSkeleton = () => (
         <div className="h-11 w-32 bg-zinc-800/60 rounded-xl animate-pulse"></div>
       </div>
     </div>
-
-    {/* Stats Grid Skeleton */}
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
       {[1, 2, 3].map((i) => (
         <div
@@ -70,10 +66,7 @@ const ElectricBillSkeleton = () => (
         </div>
       ))}
     </div>
-
-    {/* Form and Chart Grid Skeleton */}
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:items-stretch w-full">
-      {/* Form Skeleton */}
       <div className="lg:col-span-1 rounded-2xl bg-[#09090B] border border-zinc-800/60 p-6 md:p-8 animate-pulse h-[450px]">
         <div className="flex items-center gap-3 mb-8">
           <div className="h-12 w-12 rounded-xl bg-zinc-800/60"></div>
@@ -94,8 +87,6 @@ const ElectricBillSkeleton = () => (
           </div>
         </div>
       </div>
-
-      {/* Chart Skeleton */}
       <div className="lg:col-span-2 rounded-2xl bg-[#09090B] border border-zinc-800/60 p-6 md:p-8 animate-pulse h-[450px] flex flex-col">
         <div className="flex justify-between items-center mb-6">
           <div className="h-6 w-32 bg-zinc-800/60 rounded"></div>
@@ -104,8 +95,6 @@ const ElectricBillSkeleton = () => (
         <div className="flex-1 w-full bg-zinc-800/30 rounded-xl"></div>
       </div>
     </div>
-
-    {/* Table Skeleton */}
     <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden w-full h-[400px] animate-pulse flex flex-col">
       <div className="p-6 md:p-8 border-b border-zinc-800/60 flex justify-between">
         <div className="h-10 w-96 bg-zinc-800/50 rounded-full"></div>
@@ -129,8 +118,9 @@ const ElectricBillSkeleton = () => (
   </div>
 );
 
-// ⚠️ RISK REMOVED: Capped UI display at 1,000 to prevent accidental read explosions on scroll
-const MAX_RECORDS_LIMIT = 1000;
+// 🚀 STRICT LIMITS ENFORCEMENT
+const MAX_RECORDS_LIMIT = 2000;
+const MAX_EXPORT_LIMIT = 2500;
 
 const getCurrentMonth = () => {
   const d = new Date();
@@ -238,7 +228,6 @@ const ElectricBill = () => {
   const location = useLocation();
 
   const [activeTab, setActiveTab] = useState("All");
-
   const [localSearch, setLocalSearch] = useState("");
   const [localMonth, setLocalMonth] = useState("");
 
@@ -576,17 +565,17 @@ const ElectricBill = () => {
       const monthlyKey = `backup_count_${monthToFetch}_electric`;
       const downloadedCount = Number(localStorage.getItem(monthlyKey) || 0);
 
-      // ⚠️ RISK REMOVED: Check against 1,000 instead of 10,000
-      if (downloadedCount >= 1000)
+      if (downloadedCount >= MAX_EXPORT_LIMIT)
         return toast.error(
-          "1,000 daily download limit reached (Database Protection). Try again tomorrow.",
+          "2,500 daily export limit reached (Database Protection). Try again tomorrow.",
         );
 
       toast.info(`Fetching secure backup chunk...`);
       const res = await electricService.getBackupChunk(
         monthToFetch,
-        1000 - downloadedCount,
+        MAX_EXPORT_LIMIT - downloadedCount,
       );
+
       if (res.data.length === 0)
         return toast.info(`No more records found for ${monthToFetch}.`);
 
@@ -601,7 +590,7 @@ const ElectricBill = () => {
       ];
       const rows = res.data.map(
         (bill) =>
-          `"${bill.caNumber || "-"}","${bill.month || "-"}",${bill.billDate ? `\t${new Date(bill.billDate).toLocaleDateString("en-GB")}` : "-"},${bill.billAmount || 0},${bill.fineAmount || 0},${bill.totalAmount || 0},"${bill.status || "-"}"`,
+          `"${bill.caNumber || "-"}","${bill.month || "-"}","${bill.billDate ? new Date(bill.billDate).toLocaleDateString("en-GB") : "-"}","${bill.billAmount || 0}","${bill.fineAmount || 0}","${bill.totalAmount || 0}","${bill.status || "-"}"`,
       );
       const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
 
@@ -619,18 +608,17 @@ const ElectricBill = () => {
         res.lastDocId,
       );
 
-      // ⚠️ RISK REMOVED: Warning triggers at 1,000
-      if (res.data.length === 1000 - downloadedCount)
+      if (res.data.length === MAX_EXPORT_LIMIT - downloadedCount)
         toast.warning(
-          "1,000 Free-Tier Limit reached. Download next batch tomorrow.",
+          "2,500 System Limit reached. Export next batch tomorrow.",
         );
       else {
-        toast.success(`Downloaded ${res.data.length} records securely!`);
+        toast.success(`Exported ${res.data.length} records securely!`);
         localStorage.setItem(`backup_electric_${monthToFetch}`, "true");
         if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
       }
     } catch (e) {
-      toast.error("Backup failed.");
+      toast.error("Export failed.");
     }
   };
 
@@ -785,6 +773,7 @@ const ElectricBill = () => {
       status: "Pending",
     });
   };
+
   const handleCAChange = (e) => {
     const val = e.target.value.replace(/\D/g, "");
     if (val.length <= 12) setFormData({ ...formData, caNumber: val });
@@ -803,7 +792,6 @@ const ElectricBill = () => {
     },
   };
 
-  // 🚀 REPLACED LOADER WITH FULL PAGE SKELETON
   if (loading) return <ElectricBillSkeleton />;
 
   return (
@@ -833,10 +821,18 @@ const ElectricBill = () => {
             variant="ghost"
             onClick={() => fetchBills(false, true)}
             disabled={syncStatus === "up-to-date" || syncStatus === "syncing"}
-            className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${syncStatus === "up-to-date" ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10" : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 animate-pulse"}`}
+            className={`flex items-center gap-2 h-[44px] px-4 w-full sm:w-auto justify-center rounded-xl font-bold text-xs tracking-wider transition-all duration-500 ${
+              syncStatus === "up-to-date"
+                ? "opacity-40 pointer-events-none text-emerald-500 bg-emerald-500/5 border border-emerald-500/10"
+                : syncStatus === "error"
+                  ? "text-rose-400 bg-rose-500/10 border-rose-500/30"
+                  : "text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 animate-pulse"
+            }`}
           >
             {syncStatus === "up-to-date" ? (
               <CheckCircle2 size={16} />
+            ) : syncStatus === "error" ? (
+              <AlertCircle size={16} />
             ) : (
               <RefreshCcw
                 size={16}
@@ -844,11 +840,11 @@ const ElectricBill = () => {
               />
             )}
             {syncStatus === "up-to-date"
-              ? "Database Up to Date"
+              ? "Up to Date"
               : syncStatus === "syncing"
                 ? "Syncing..."
                 : syncStatus === "error"
-                  ? "DB Error"
+                  ? "Retry"
                   : "Sync Required"}
           </Button>
 
@@ -1224,8 +1220,6 @@ const ElectricBill = () => {
         className="w-full"
       >
         <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden flex flex-col w-full relative">
-          {/* LOADER OVERLAY REMOVED FROM HERE */}
-
           <div className="p-6 md:p-8 border-b border-zinc-800/60 bg-[#09090B] flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
             <div className="bg-[#09090b] border border-zinc-800/80 rounded-full p-1 flex items-center h-10 w-full sm:w-auto overflow-x-auto shadow-sm shrink-0 hide-scrollbar">
               {[
@@ -1285,14 +1279,13 @@ const ElectricBill = () => {
                         exit={{ opacity: 0, scale: 0.8 }}
                         onClick={() => {
                           setLocalSearch("");
-                          if (filters.search) {
+                          if (filters.search)
                             setFilters((prev) => ({
                               ...prev,
                               search: "",
                               amountFilter: "Any Amount",
                               dateFilter: "All",
                             }));
-                          }
                         }}
                         className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-full transition-all"
                       >
@@ -1490,9 +1483,9 @@ const ElectricBill = () => {
                       variant="outline"
                       className="text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800/50"
                     >
-                      {loadingMore ? (
+                      {loadingMore && (
                         <RefreshCcw size={16} className="animate-spin mr-2" />
-                      ) : null}{" "}
+                      )}
                       {loadingMore
                         ? "Loading..."
                         : `Load Next 50 Bills (Loaded: ${loadedCount})`}
@@ -1507,11 +1500,12 @@ const ElectricBill = () => {
                       size={24}
                     />
                     <h4 className="font-bold text-sm mb-1">
-                      Display Limit Reached
+                      Pagination Limit Reached
                     </h4>
                     <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
-                      To preserve system performance, infinite scrolling stops
-                      at 1,000 records. Use filters to locate older bills.
+                      To preserve system performance, infinite scrolling is
+                      hard-locked at 2,000 records. Use search/filters to query
+                      specific older data efficiently.
                     </p>
                   </div>
                 </div>
@@ -1556,7 +1550,7 @@ const ElectricBill = () => {
                       Recommended: Safe Backup
                     </h3>
                     <p className="text-amber-100/60 text-xs mb-3 leading-relaxed">
-                      Before wiping, please download the backup. Limit: 1,000
+                      Before wiping, please download the backup. Limit: 2,500
                       daily.
                     </p>
                     <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
@@ -1617,9 +1611,7 @@ const ElectricBill = () => {
                   disabled={wiping || !deletePassword}
                   className="h-11 rounded-xl flex items-center gap-2"
                 >
-                  {wiping ? (
-                    <RefreshCcw size={16} className="animate-spin" />
-                  ) : null}{" "}
+                  {wiping && <RefreshCcw size={16} className="animate-spin" />}{" "}
                   {wiping ? "Wiping..." : "Confirm Wipe"}
                 </Button>
               </div>

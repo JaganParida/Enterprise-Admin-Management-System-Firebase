@@ -16,15 +16,14 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// L2 Cache: IndexedDB + multi-tab coordination + 50 MB ceiling
+// ⚡ L2 Cache: IndexedDB + Multi-Tab Coordination + 50MB Ceiling
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager(),
-    cacheSizeBytes: 52_428_800, // 50 MB — Firestore auto-evicts LRU docs beyond this
+    cacheSizeBytes: 52428800, // 50 MB Max
   }),
 });
 

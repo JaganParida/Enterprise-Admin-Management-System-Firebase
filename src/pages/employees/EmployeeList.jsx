@@ -37,7 +37,7 @@ import { collection, getDocs, query, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 
-// 🚀 NEW EMPLOYEE LIST SKELETON
+// 🚀 FULL EMPLOYEE LIST SKELETON
 const EmployeeListSkeleton = () => (
   <div className="space-y-8 pb-10 flex flex-col w-full">
     {/* Header Skeleton */}
@@ -98,8 +98,8 @@ const EmployeeListSkeleton = () => (
   </div>
 );
 
-// CONCEPT 4 — Hard display cap at 5000 records
-const MAX_RECORDS_LIMIT = 5000;
+// 🚀 UPDATED: Hard display cap at 2000 records
+const MAX_RECORDS_LIMIT = 2000;
 
 const getPreviousMonth = () => {
   const d = new Date();
@@ -127,7 +127,7 @@ const EmployeeList = () => {
     toastRef.current = toast;
   }, [toast]);
 
-  // ─── CONCEPT 8 — Fully decoupled local vs applied filter states ──────────────
+  // Fully decoupled local vs applied filter states
   const [localSearchTerm, setLocalSearchTerm] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [localFilterStatus, setLocalFilterStatus] = useState("All");
@@ -142,7 +142,7 @@ const EmployeeList = () => {
     localFilterStatus !== filterStatus ||
     localFilterSalary !== filterSalary;
 
-  // ─── CONCEPT 1 — Init from RAM cache for zero-read navigation ────────────────
+  // Init from RAM cache for zero-read navigation
   const initialFilters = { status: "All", search: "", salary: "All" };
   const [employees, setEmployees] = useState(
     () => employeeService.getCachedEmployees(initialFilters) || [],
@@ -254,7 +254,7 @@ const EmployeeList = () => {
     checkBackupNeeded();
   }, []);
 
-  // ─── Core fetch function (Protected against Infinite Loops) ───
+  // Core fetch function (Protected against Infinite Loops)
   const fetchEmployees = useCallback(
     async (isLoadMore = false, forceSync = false, passedLastDoc = null) => {
       if (isLoadMore) {
@@ -395,7 +395,7 @@ const EmployeeList = () => {
     setFilterSalary("All");
   };
 
-  // ─── UX FIX: Auto-Clear Conflicting Filters (Prevents blocking inputs) ───
+  // UX FIX: Auto-Clear Conflicting Filters (Prevents blocking inputs)
   const handleLocalSearchChange = (val) => {
     setLocalSearchTerm(val);
 
@@ -593,7 +593,6 @@ const EmployeeList = () => {
     return number;
   };
 
-  // 🚀 REPLACED LOADER WITH FULL PAGE SKELETON
   if (loading && employees.length === 0) return <EmployeeListSkeleton />;
 
   return (
@@ -1125,7 +1124,7 @@ const EmployeeList = () => {
             <AlertOctagon className="mx-auto mb-2 opacity-80" size={24} />
             <h4 className="font-bold text-sm mb-1">Display Limit Reached</h4>
             <p className="text-[11px] font-medium text-amber-200/60 leading-relaxed">
-              Infinite scrolling stops at 5,000 records to preserve performance.
+              Infinite scrolling stops at 2,000 records to preserve performance.
               Use Search or Filters to locate older records.
             </p>
           </div>
@@ -1303,7 +1302,7 @@ const EmployeeList = () => {
                     Step 1 — Download Backup First
                   </h3>
                   <p className="text-amber-100/60 text-xs mb-3 leading-relaxed">
-                    Up to 10,000 records/day. Your resume pointer is saved in
+                    Up to 2,500 records/day. Your resume pointer is saved in
                     your browser — if the daily limit is hit, return tomorrow
                     and the download will continue exactly where it left off.
                   </p>
@@ -1339,7 +1338,7 @@ const EmployeeList = () => {
             <p className="text-red-100/70 text-sm mb-4">
               Step 2 — Enter Admin password to permanently delete ALL records.{" "}
               <strong className="text-red-500">This cannot be undone.</strong>{" "}
-              Up to 10,000 records wiped per day.
+              Up to 2,500 records wiped per day.
             </p>
             <div className="relative mb-8">
               <input
