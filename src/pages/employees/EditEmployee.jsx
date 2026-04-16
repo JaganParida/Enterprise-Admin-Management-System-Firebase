@@ -14,7 +14,6 @@ import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 
-// 🚀 NEW EDIT EMPLOYEE SKELETON
 const EditEmployeeSkeleton = () => (
   <div className="max-w-4xl mx-auto w-full flex flex-col space-y-6 pb-10">
     <div className="w-40 h-5 bg-zinc-800/50 rounded-md animate-pulse mb-2"></div>
@@ -94,6 +93,7 @@ const EditEmployee = () => {
     idNumber: "",
     status: "Active",
     joinDate: "",
+    version: 1,
   });
 
   useEffect(() => {
@@ -113,6 +113,7 @@ const EditEmployee = () => {
           joinDate: data.joinDate
             ? new Date(data.joinDate).toISOString().split("T")[0]
             : "",
+          version: data.version || 1,
         });
 
         if (data.lastEditedAt) {
@@ -151,7 +152,7 @@ const EditEmployee = () => {
   const getIdPlaceholder = () => {
     switch (formData.idType) {
       case "Aadhar":
-        return "e.g. 123456789012";
+        return "[Aadhaar Redacted]";
       case "PAN":
         return "e.g. ABCDE1234F";
       case "Voter ID":
@@ -179,18 +180,22 @@ const EditEmployee = () => {
     try {
       const currentUser = admin?.data ||
         admin || { email: "Unknown", role: "admin" };
-      await employeeService.updateEmployee(id, formData, currentUser);
+      await employeeService.updateEmployee(
+        id,
+        formData,
+        currentUser,
+        formData.version || 1,
+      );
       toast.success("Employee profile updated successfully.");
       navigate(-1);
     } catch (err) {
-      toast.error("Failed to update employee.");
+      toast.error(err.message || "Failed to update employee. Please Sync.");
     } finally {
       setSaving(false);
       setIsDialogOpen(false);
     }
   };
 
-  // 🚀 REPLACED LOADER WITH FULL PAGE SKELETON
   if (loading) return <EditEmployeeSkeleton />;
 
   return (
@@ -205,7 +210,6 @@ const EditEmployee = () => {
         />{" "}
         Return to Directory
       </button>
-
       <div className="bg-[#09090B] rounded-2xl shadow-2xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden">
         <div
           className={`absolute top-0 right-0 w-64 h-64 blur-3xl rounded-full pointer-events-none ${theme.glowOrb}`}
@@ -225,7 +229,6 @@ const EditEmployee = () => {
             </p>
           </div>
         </div>
-
         <form
           onSubmit={handleFormSubmitClick}
           className="space-y-6 relative z-10"
@@ -246,7 +249,6 @@ const EditEmployee = () => {
               required
             />
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Input
               label="Phone Number"
@@ -282,7 +284,6 @@ const EditEmployee = () => {
               </div>
             </div>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-900/30 p-5 rounded-2xl border border-zinc-800">
             <div className="md:col-span-1">
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -318,14 +319,12 @@ const EditEmployee = () => {
               />
             </div>
           </div>
-
           <Input
             label="Address"
             name="address"
             value={formData.address}
             onChange={handleChange}
           />
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-[#020403]/50 p-5 rounded-2xl border border-zinc-800/60">
             <Input
               label="Initial Salary (₹)"
@@ -356,7 +355,6 @@ const EditEmployee = () => {
               style={{ colorScheme: "dark" }}
             />
           </div>
-
           {auditInfo && (
             <div className="pt-2 text-center text-[10px] font-mono text-zinc-500 uppercase tracking-widest border-t border-zinc-800/60 mt-6 pt-4">
               Last updated by{" "}
@@ -368,7 +366,6 @@ const EditEmployee = () => {
               on {auditInfo.at}
             </div>
           )}
-
           <div className="pt-6 flex justify-end gap-3 border-t border-zinc-800/60 mt-2">
             <Button
               type="button"
@@ -394,7 +391,6 @@ const EditEmployee = () => {
           </div>
         </form>
       </div>
-
       <ConfirmDialog
         isOpen={isDialogOpen}
         onClose={() => setIsDialogOpen(false)}
