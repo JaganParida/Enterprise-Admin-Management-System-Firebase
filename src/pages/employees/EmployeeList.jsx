@@ -33,14 +33,20 @@ import {
 } from "lucide-react";
 import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
-import { collection, getDocs, query, limit } from "firebase/firestore";
+import { collection, getDocs, query, limit, where } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 
-// 🚀 FULL EMPLOYEE LIST SKELETON
+const MAX_RECORDS_LIMIT = 2000;
+
+const getPreviousMonth = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
 const EmployeeListSkeleton = () => (
   <div className="space-y-8 pb-10 flex flex-col w-full">
-    {/* Header Skeleton */}
     <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 w-full">
       <div>
         <div className="h-9 w-64 bg-zinc-800/60 rounded-lg animate-pulse mb-3"></div>
@@ -49,20 +55,14 @@ const EmployeeListSkeleton = () => (
       <div className="flex gap-3">
         <div className="h-11 w-36 bg-zinc-800/60 rounded-xl animate-pulse"></div>
         <div className="h-11 w-36 bg-zinc-800/60 rounded-xl animate-pulse"></div>
-        <div className="h-11 w-36 bg-zinc-800/60 rounded-xl animate-pulse"></div>
       </div>
     </div>
-
-    {/* Filter Bar Skeleton */}
     <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-4 h-[76px] w-full animate-pulse flex justify-between items-center">
       <div className="h-11 w-[32rem] bg-zinc-800/50 rounded-xl"></div>
       <div className="flex gap-3">
         <div className="h-8 w-24 bg-zinc-800/50 rounded-full"></div>
-        <div className="h-8 w-32 bg-zinc-800/50 rounded-full"></div>
       </div>
     </div>
-
-    {/* Employee Cards Skeleton */}
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {[1, 2, 3, 4, 5, 6].map((i) => (
         <div
@@ -73,15 +73,12 @@ const EmployeeListSkeleton = () => (
             <div className="h-12 w-12 rounded-xl bg-zinc-800/50"></div>
             <div className="flex gap-2">
               <div className="h-8 w-8 rounded-lg bg-zinc-800/40"></div>
-              <div className="h-8 w-8 rounded-lg bg-zinc-800/40"></div>
-              <div className="h-8 w-8 rounded-lg bg-zinc-800/40"></div>
             </div>
           </div>
           <div className="mt-2">
             <div className="h-5 w-40 bg-zinc-800/60 rounded mb-2"></div>
             <div className="flex gap-2 mb-4">
               <div className="h-4 w-24 bg-zinc-800/40 rounded"></div>
-              <div className="h-4 w-16 bg-zinc-800/50 rounded"></div>
             </div>
           </div>
           <div className="space-y-2 mb-4">
@@ -98,15 +95,6 @@ const EmployeeListSkeleton = () => (
   </div>
 );
 
-// 🚀 UPDATED: Hard display cap at 2000 records
-const MAX_RECORDS_LIMIT = 2000;
-
-const getPreviousMonth = () => {
-  const d = new Date();
-  d.setMonth(d.getMonth() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
-
 const containerVariants = {
   hidden: { opacity: 0 },
   show: { opacity: 1, transition: { staggerChildren: 0.1 } },
@@ -120,21 +108,18 @@ const EmployeeList = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
   const location = useLocation();
-
-  // Fix for Infinite Toast Loop: Use a ref so toast doesn't trigger re-renders in hooks
   const toastRef = useRef(toast);
+
   useEffect(() => {
     toastRef.current = toast;
   }, [toast]);
 
-  // Fully decoupled local vs applied filter states
   const [localSearchTerm, setLocalSearchTerm] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [localFilterStatus, setLocalFilterStatus] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
   const [localFilterSalary, setLocalFilterSalary] = useState("All");
   const [filterSalary, setFilterSalary] = useState("All");
-
   const [filterConflictWarning, setFilterConflictWarning] = useState("");
 
   const hasUnappliedChanges =
@@ -142,7 +127,6 @@ const EmployeeList = () => {
     localFilterStatus !== filterStatus ||
     localFilterSalary !== filterSalary;
 
-  // Init from RAM cache for zero-read navigation
   const initialFilters = { status: "All", search: "", salary: "All" };
   const [employees, setEmployees] = useState(
     () => employeeService.getCachedEmployees(initialFilters) || [],
@@ -153,18 +137,13 @@ const EmployeeList = () => {
   );
 
   const [syncStatus, setSyncStatus] = useState(() =>
-    employeeService.getCachedEmployees(initialFilters)
-      ? "up-to-date"
-      : "syncing",
+    employeeService.checkSyncStatus(),
   );
 
   const [loadingMore, setLoadingMore] = useState(false);
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
-  const [loadedCount, setLoadedCount] = useState(
-    () => employeeService.getCachedEmployees(initialFilters)?.length || 0,
-  );
-
+  const [loadedCount, setLoadedCount] = useState(() => employees.length || 0);
   const lastDocRef = useRef(null);
 
   const searchParams = new URLSearchParams(location.search);
@@ -225,36 +204,42 @@ const EmployeeList = () => {
   const isManager =
     admin?.data?.role === "manager" || admin?.role === "manager";
 
-  useEffect(() => {
-    const checkSync = () => {
-      const globalLastUpdate = parseInt(
-        localStorage.getItem("emp_last_update") || "0",
-        10,
-      );
-      if (globalLastUpdate > employeeService.getLastFetchTime())
-        setSyncStatus("required");
-    };
-    const interval = setInterval(checkSync, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
+  // 🚀 FIXED BACKUP CHECK LOGIC
   useEffect(() => {
     const checkBackupNeeded = async () => {
-      const prevMonth = getPreviousMonth();
+      const prevMonth = getPreviousMonth(); // e.g., "2026-03"
       if (!localStorage.getItem(`backup_employees_${prevMonth}`)) {
         try {
-          const q = query(collection(db, "employees"), limit(1));
+          // Calculate exact start and end of that specific month
+          const [year, month] = prevMonth.split("-").map(Number);
+          const lastDay = new Date(year, month, 0).getDate();
+          const start = `${prevMonth}-01T00:00:00.000Z`;
+          const end = `${prevMonth}-${String(lastDay).padStart(2, "0")}T23:59:59.999Z`;
+
+          // Query strictly for records created in that month
+          const q = query(
+            collection(db, "employees"),
+            where("createdAt", ">=", start),
+            where("createdAt", "<=", end),
+            limit(1),
+          );
+
           const snap = await getDocs(q);
-          if (!snap.empty) setShowBackupWarning(prevMonth);
-        } catch {
-          /* non-critical */
+
+          if (!snap.empty) {
+            setShowBackupWarning(prevMonth);
+          } else {
+            // Silently dismiss for empty months
+            localStorage.setItem(`backup_employees_${prevMonth}`, "true");
+          }
+        } catch (error) {
+          console.warn("Backup check failed:", error);
         }
       }
     };
     checkBackupNeeded();
   }, []);
 
-  // Core fetch function (Protected against Infinite Loops)
   const fetchEmployees = useCallback(
     async (isLoadMore = false, forceSync = false, passedLastDoc = null) => {
       if (isLoadMore) {
@@ -277,7 +262,6 @@ const EmployeeList = () => {
           search: searchTerm,
           salary: filterSalary,
         };
-
         const validation = validateFilters(filters);
         if (!validation.valid) {
           setFilterConflictWarning(validation.reason);
@@ -286,7 +270,6 @@ const EmployeeList = () => {
 
         const isFiltered =
           filterStatus !== "All" || !!searchTerm || filterSalary !== "All";
-
         const listPromise = employeeService.getAllEmployees(
           filters,
           isLoadMore ? passedLastDoc : null,
@@ -318,9 +301,6 @@ const EmployeeList = () => {
         setHasMore(!!(response.data && response.data.length === 50));
         setSyncStatus("up-to-date");
       } catch (error) {
-        console.error("Firebase Query Error:", error);
-
-        // Catch Firebase missing index error to stop spamming the user with generic errors
         if (
           error.message?.includes("requires an index") ||
           error.message?.includes("index is needed")
@@ -342,7 +322,6 @@ const EmployeeList = () => {
         setLoadingMore(false);
       }
     },
-    // NO TOAST in dependencies to prevent the infinite loop bug
     [filterStatus, searchTerm, filterSalary],
   );
 
@@ -378,7 +357,6 @@ const EmployeeList = () => {
       setFilterConflictWarning(validation.reason);
       return;
     }
-
     setFilterConflictWarning("");
     setSearchTerm(localSearchTerm);
     setFilterStatus(localFilterStatus);
@@ -395,14 +373,11 @@ const EmployeeList = () => {
     setFilterSalary("All");
   };
 
-  // UX FIX: Auto-Clear Conflicting Filters (Prevents blocking inputs)
   const handleLocalSearchChange = (val) => {
     setLocalSearchTerm(val);
-
-    // Auto-resolve conflict
     if (val.trim() !== "" && localFilterSalary !== "All") {
       setLocalFilterSalary("All");
-      setFilterSalary("All"); // Force applied state clear to prevent background sync errors
+      setFilterSalary("All");
       setFilterConflictWarning(
         "Salary filter auto-cleared to allow Name Search.",
       );
@@ -412,11 +387,9 @@ const EmployeeList = () => {
 
   const handleLocalSalaryChange = (val) => {
     setLocalFilterSalary(val);
-
-    // Auto-resolve conflict
     if (val !== "All" && localSearchTerm.trim() !== "") {
       setLocalSearchTerm("");
-      setSearchTerm(""); // Force applied state clear
+      setSearchTerm("");
       setFilterConflictWarning(
         "Name Search auto-cleared to allow Salary Filter.",
       );
@@ -440,8 +413,11 @@ const EmployeeList = () => {
     try {
       const currentUser = admin?.data || admin || {};
       const empToDelete = employees.find((e) => e._id === deleteModal.id);
-
-      await employeeService.deleteEmployee(deleteModal.id, currentUser);
+      await employeeService.deleteEmployee(
+        deleteModal.id,
+        currentUser,
+        empToDelete,
+      );
       setEmployees((prev) => prev.filter((e) => e._id !== deleteModal.id));
       setLoadedCount((prev) => prev - 1);
 
@@ -464,14 +440,13 @@ const EmployeeList = () => {
     }
   };
 
+  // 🚀 FIXED DOWNLOAD BACKUP LOGIC
   const handleFullBackup = async (monthToFetch = backupMonth) => {
     try {
       if (!monthToFetch)
         return toastRef.current.error("Please select a month to backup.");
-
       const lastDocKey = `backup_last_doc_${monthToFetch}_emp`;
       const savedLastDocId = localStorage.getItem(lastDocKey);
-
       toastRef.current.info(`Preparing backup for ${monthToFetch}...`);
 
       const res = await employeeService.getBackupChunk(
@@ -481,8 +456,13 @@ const EmployeeList = () => {
       );
 
       if (res.data.length === 0) {
+        // Clear the warning permanently even if 0 records are found
+        localStorage.setItem(`backup_employees_${monthToFetch}`, "true");
+        localStorage.removeItem(lastDocKey);
+        if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
+
         return toastRef.current.info(
-          `No more records found for ${monthToFetch}.`,
+          `No records found for ${monthToFetch}. Warning cleared.`,
         );
       }
 
@@ -495,8 +475,8 @@ const EmployeeList = () => {
         "Base Salary",
         "Salary Taken",
       ];
-      const rows = res.data.map((emp) => {
-        return [
+      const rows = res.data.map((emp) =>
+        [
           `"${emp.name || ""}"`,
           `"${emp.position || ""}"`,
           `"${emp.phone || ""}"`,
@@ -504,8 +484,8 @@ const EmployeeList = () => {
           `"${emp.status || "Active"}"`,
           Number(emp.initialSalary || emp.baseSalary || 0),
           Number(emp.salaryTaken || 0),
-        ].join(",");
-      });
+        ].join(","),
+      );
 
       const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -588,8 +568,7 @@ const EmployeeList = () => {
 
   const formatIdNumber = (type, number) => {
     if (!number) return "N/A";
-    if (type === "Aadhar" && number.length === 12)
-      return number.replace(/(\d{4})(\d{4})(\d{4})/, "$1 $2 $3");
+    if (type === "Aadhar" && number.length === 12) return "[Aadhaar Redacted]";
     return number;
   };
 
@@ -602,7 +581,6 @@ const EmployeeList = () => {
       animate="show"
       className="space-y-8 pb-10 relative"
     >
-      {/* ── Header ── */}
       <motion.div
         variants={itemVariants}
         className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4"
@@ -693,7 +671,6 @@ const EmployeeList = () => {
         </div>
       </motion.div>
 
-      {/* ── Backup Warning Banner ── */}
       {showBackupWarning && (
         <motion.div
           variants={itemVariants}
@@ -729,7 +706,6 @@ const EmployeeList = () => {
         </motion.div>
       )}
 
-      {/* ── Filter Conflict Warning Popup ── */}
       <AnimatePresence>
         {filterConflictWarning && (
           <motion.div
@@ -760,7 +736,6 @@ const EmployeeList = () => {
         )}
       </AnimatePresence>
 
-      {/* ── Unified Search & Filter Form ── */}
       <motion.form
         onSubmit={handleApplyAll}
         variants={itemVariants}
@@ -791,11 +766,7 @@ const EmployeeList = () => {
           </div>
           <button
             type="submit"
-            className={`h-11 px-5 rounded-r-xl font-bold text-xs tracking-wider transition-all flex items-center gap-2 border-y border-r border-transparent ${
-              localSearchTerm !== searchTerm
-                ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder} hover:brightness-110`
-                : "bg-zinc-800/50 text-zinc-500 border-zinc-800 cursor-default"
-            }`}
+            className={`h-11 px-5 rounded-r-xl font-bold text-xs tracking-wider transition-all flex items-center gap-2 border-y border-r border-transparent ${localSearchTerm !== searchTerm ? `${theme.primaryBg} ${theme.primaryText} ${theme.primaryBorder} hover:brightness-110` : "bg-zinc-800/50 text-zinc-500 border-zinc-800 cursor-default"}`}
           >
             <Search size={14} /> SEARCH
           </button>
@@ -887,7 +858,6 @@ const EmployeeList = () => {
         </div>
       </motion.form>
 
-      {/* ── Dynamic Filter Stats ── */}
       <AnimatePresence>
         {activeFiltersCount > 0 && !loading && (
           <motion.div
@@ -905,8 +875,7 @@ const EmployeeList = () => {
               </div>
               {!dynamicFilterStats ? (
                 <div className="text-zinc-500 text-xs font-mono flex items-center gap-2">
-                  <Info size={12} /> Stats temporarily offline (Quota Protection
-                  Active)
+                  <Info size={12} /> Stats offline
                 </div>
               ) : (
                 <>
@@ -915,11 +884,6 @@ const EmployeeList = () => {
                     <span className="text-white font-mono font-bold text-sm">
                       {dynamicFilterStats.count}
                     </span>
-                    {dynamicFilterStats.isFallback && (
-                      <span className="text-[9px] text-amber-400/70 font-mono border border-amber-500/20 bg-amber-500/10 px-1.5 rounded">
-                        ~approx
-                      </span>
-                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-zinc-500 text-xs">
@@ -952,7 +916,6 @@ const EmployeeList = () => {
         )}
       </AnimatePresence>
 
-      {/* ── Employee Cards Grid ── */}
       <motion.div
         variants={itemVariants}
         className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
@@ -961,11 +924,7 @@ const EmployeeList = () => {
           <div
             key={emp._id}
             id={emp._id}
-            className={`bg-[#09090B] border rounded-2xl p-6 transition-all duration-700 group relative flex flex-col ${
-              activeHighlight === emp._id
-                ? `animate-pulse bg-white/5 ring-1 ${isTransport ? "ring-cyan-500/50" : "ring-indigo-500/50"} border-transparent`
-                : `border-zinc-800/60 ${theme.primaryHoverBorder}`
-            }`}
+            className={`bg-[#09090B] border rounded-2xl p-6 transition-all duration-700 group relative flex flex-col ${activeHighlight === emp._id ? `animate-pulse bg-white/5 ring-1 ${isTransport ? "ring-cyan-500/50" : "ring-indigo-500/50"} border-transparent` : `border-zinc-800/60 ${theme.primaryHoverBorder}`}`}
           >
             <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
               <div
@@ -1078,7 +1037,6 @@ const EmployeeList = () => {
         ))}
       </motion.div>
 
-      {/* ── Empty State ── */}
       {employees.length === 0 && !loading && (
         <motion.div
           variants={itemVariants}
@@ -1098,7 +1056,6 @@ const EmployeeList = () => {
         </motion.div>
       )}
 
-      {/* ── Load More ── */}
       {hasMore && loadedCount < MAX_RECORDS_LIMIT && employees.length > 0 && (
         <motion.div variants={itemVariants} className="flex justify-center p-6">
           <Button
@@ -1117,7 +1074,6 @@ const EmployeeList = () => {
         </motion.div>
       )}
 
-      {/* ── Display Limit Warning ── */}
       {loadedCount >= MAX_RECORDS_LIMIT && (
         <motion.div variants={itemVariants} className="p-6 flex justify-center">
           <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md">
@@ -1131,7 +1087,6 @@ const EmployeeList = () => {
         </motion.div>
       )}
 
-      {/* ── Edit History Modal ── */}
       {historyModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#09090B] border border-zinc-800/60 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
@@ -1199,7 +1154,6 @@ const EmployeeList = () => {
         </div>
       )}
 
-      {/* ── ID Card Modal ── */}
       {idModal.isOpen && idModal.data && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
@@ -1278,7 +1232,6 @@ const EmployeeList = () => {
         </div>
       )}
 
-      {/* ── Wipe Modal (Backup lives here) ── */}
       {isDeleteAllOpen && !isManager && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
           <div
@@ -1290,7 +1243,6 @@ const EmployeeList = () => {
               <AlertOctagon size={28} />
               <h2 className="text-xl font-bold">Wipe Employee Database</h2>
             </div>
-
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-5 mb-6">
               <div className="flex items-start gap-3">
                 <ShieldAlert
@@ -1326,15 +1278,13 @@ const EmployeeList = () => {
                     `backup_last_doc_${backupMonth}_emp`,
                   ) && (
                     <p className="text-amber-300/70 text-[10px] font-mono mt-2 flex items-center gap-1">
-                      <RefreshCcw size={10} />
-                      Resume pointer found — next download continues from last
-                      position.
+                      <RefreshCcw size={10} /> Resume pointer found — next
+                      download continues from last position.
                     </p>
                   )}
                 </div>
               </div>
             </div>
-
             <p className="text-red-100/70 text-sm mb-4">
               Step 2 — Enter Admin password to permanently delete ALL records.{" "}
               <strong className="text-red-500">This cannot be undone.</strong>{" "}
