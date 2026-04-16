@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { auth, db } from "../config/firebase"; // 👈 Import db
+import { auth, db } from "../config/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore"; // 👈 Import onSnapshot
+import { doc, onSnapshot } from "firebase/firestore";
 import { verifyAndGetRole } from "../services/authService";
 
 const AuthContext = createContext();
@@ -12,14 +12,13 @@ export const AuthProvider = ({ children }) => {
 
   // 🚀 ENTERPRISE GRADE SESSION PERSISTENCE
   useEffect(() => {
-    let unsubscribeSnapshot = null; // To hold our Firestore listener
+    let unsubscribeSnapshot = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
           const role = await verifyAndGetRole(user);
 
-          // Get the stored session ID from local storage
           const storedAdminInfo = JSON.parse(localStorage.getItem("adminInfo"));
           const currentSessionId = storedAdminInfo?.data?.sessionId;
 
@@ -44,7 +43,6 @@ export const AuthProvider = ({ children }) => {
                 (s) => s.sessionId === currentSessionId,
               );
 
-              // If this device's session is no longer in the top 2, kick them out
               if (!isSessionValid && currentSessionId) {
                 console.warn(
                   "Logged out automatically: Logged in from too many devices.",
@@ -63,7 +61,7 @@ export const AuthProvider = ({ children }) => {
       } else {
         setAdmin(null);
         localStorage.removeItem("adminInfo");
-        if (unsubscribeSnapshot) unsubscribeSnapshot(); // Clean up listener
+        if (unsubscribeSnapshot) unsubscribeSnapshot();
       }
       setLoading(false);
     });
