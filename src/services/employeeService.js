@@ -2,7 +2,6 @@ import { db, auth } from "../config/firebase";
 import {
   collection,
   doc,
-  getDocs,
   getDoc,
   updateDoc,
   query,
@@ -27,25 +26,52 @@ const salaryCollection = collection(db, "salaryPayments");
 const statsDocRef = doc(db, "systemStats", "employees");
 const dailyLimitsRef = doc(db, "systemStats", "dailyLimits");
 
-// L1 Cache: In-Memory
+// L1 Cache & TTL Configuration
+const CACHE_TTL = 5 * 60 * 1000;
 let memoryCache = {
   queries: {},
   salaryLogs: null,
+  globalStats: null,
   isDirty: true,
   lastFetchTime: 0,
 };
 
 const markDirty = () => {
   memoryCache.isDirty = true;
-  localStorage.setItem("emp_last_update", Date.now().toString());
+  memoryCache.lastFetchTime = 0;
 };
 
-const buildCacheKey = (filters = {}) => {
-  return JSON.stringify({
+const buildCacheKey = (filters = {}) =>
+  JSON.stringify({
     salary: filters.salary ?? "All",
     search: (filters.search ?? "").trim().toLowerCase(),
     status: filters.status ?? "All",
   });
+
+// Incremental Aggregation (Zero-Read Stats Update)
+const updateLocalStats = (action, employeeObj) => {
+  if (!memoryCache.globalStats) return;
+  const initial = Number(employeeObj.initialSalary || 0);
+  const taken = Number(employeeObj.salaryTaken || 0);
+
+  if (action === "ADD") {
+    memoryCache.globalStats.count += 1;
+    memoryCache.globalStats.baseSalarySum += initial;
+    memoryCache.globalStats.salaryTakenSum += taken;
+  } else if (action === "DELETE") {
+    memoryCache.globalStats.count = Math.max(
+      0,
+      memoryCache.globalStats.count - 1,
+    );
+    memoryCache.globalStats.baseSalarySum = Math.max(
+      0,
+      memoryCache.globalStats.baseSalarySum - initial,
+    );
+    memoryCache.globalStats.salaryTakenSum = Math.max(
+      0,
+      memoryCache.globalStats.salaryTakenSum - taken,
+    );
+  }
 };
 
 const silentCacheUpdate = (target, action, payloadObj) => {
@@ -65,6 +91,7 @@ const silentCacheUpdate = (target, action, payloadObj) => {
       }
     });
     memoryCache.queries = next;
+    updateLocalStats(action, payloadObj);
   }
 
   if (target === "SALARY" && memoryCache.salaryLogs) {
@@ -77,7 +104,6 @@ const silentCacheUpdate = (target, action, payloadObj) => {
   }
 
   memoryCache.lastFetchTime = Date.now();
-  localStorage.setItem("emp_last_update", Date.now().toString());
 };
 
 const getLocalISTDate = () => {
@@ -97,10 +123,10 @@ const getMonthDateRange = (monthStr) => {
   };
 };
 
-// STRICT QUOTA ENFORCER: 2500 per day limit
+// Strict Daily Quota Enforcement via Transaction
 const checkAndReserveQuota = async (type, requestedAmount) => {
   const today = new Date().toISOString().split("T")[0];
-  const maxAllowed = 2500; // Hard Limit Enforced
+  const maxAllowed = 2500;
   let reserved = 0;
 
   await runTransaction(db, async (transaction) => {
@@ -154,18 +180,23 @@ export const validateFilters = (filters) => {
 };
 
 const employeeService = {
-  getLastFetchTime: () => memoryCache.lastFetchTime,
+  checkSyncStatus: () => {
+    if (memoryCache.isDirty) return "required";
+    if (Date.now() - memoryCache.lastFetchTime > CACHE_TTL) return "required";
+    return "up-to-date";
+  },
 
   getCachedEmployees: (filters) => {
     const key = buildCacheKey(filters);
-    if (!memoryCache.isDirty && memoryCache.queries[key]) {
+    if (
+      !memoryCache.isDirty &&
+      memoryCache.queries[key] &&
+      Date.now() - memoryCache.lastFetchTime <= CACHE_TTL
+    ) {
       return memoryCache.queries[key];
     }
     return null;
   },
-
-  getCachedSalaryLogs: () =>
-    !memoryCache.isDirty ? memoryCache.salaryLogs : null,
 
   getAllEmployees: async (
     filters = {},
@@ -175,13 +206,12 @@ const employeeService = {
   ) => {
     const filterKey = buildCacheKey(filters);
     const isLoadMore = !!lastVisibleDoc;
-
-    if (
+    const isCacheValid =
       !forceRefresh &&
       !memoryCache.isDirty &&
-      !isLoadMore &&
-      memoryCache.queries[filterKey]
-    ) {
+      Date.now() - memoryCache.lastFetchTime <= CACHE_TTL;
+
+    if (isCacheValid && !isLoadMore && memoryCache.queries[filterKey]) {
       return { data: memoryCache.queries[filterKey], lastVisible: null };
     }
 
@@ -230,39 +260,39 @@ const employeeService = {
     constraints.push(limit(limitCount));
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
-    try {
-      const q = query(empCollection, ...constraints);
-      let snapshot;
+    const q = query(empCollection, ...constraints);
+    let snapshot;
 
-      // Prefer Cache Over Network Logic
-      const timeSinceFetch = Date.now() - memoryCache.lastFetchTime;
-      if (!forceRefresh && timeSinceFetch < 300000) {
-        try {
-          snapshot = await getDocsFromCache(q);
-          if (snapshot.empty && !isLoadMore) throw new Error("Cache empty");
-        } catch {
-          snapshot = await getDocsFromServer(q);
-        }
-      } else {
+    if (!forceRefresh && isCacheValid) {
+      try {
+        snapshot = await getDocsFromCache(q);
+        if (snapshot.empty && !isLoadMore) throw new Error("Cache miss");
+      } catch {
         snapshot = await getDocsFromServer(q);
       }
-
-      let data = snapshot.docs.map((d) => ({ _id: d.id, ...d.data() }));
-      const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
-
-      if (!isLoadMore) {
-        memoryCache.queries[filterKey] = data;
-        memoryCache.isDirty = false;
-        memoryCache.lastFetchTime = Date.now();
-      }
-
-      return { data, lastVisible: newLastVisible };
-    } catch (error) {
-      throw error;
+    } else {
+      snapshot = await getDocsFromServer(q);
     }
+
+    let data = snapshot.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
+
+    if (!isLoadMore) {
+      memoryCache.queries[filterKey] = data;
+      memoryCache.isDirty = false;
+      memoryCache.lastFetchTime = Date.now();
+    }
+
+    return { data, lastVisible: newLastVisible };
   },
 
   getDynamicViewStats: async (filters = {}) => {
+    const isBaseQuery =
+      !filters.search && filters.status === "All" && filters.salary === "All";
+    if (isBaseQuery && memoryCache.globalStats && !memoryCache.isDirty) {
+      return memoryCache.globalStats;
+    }
+
     const validation = validateFilters(filters);
     if (!validation.valid) return null;
 
@@ -304,14 +334,17 @@ const employeeService = {
       });
       const d = snap.data();
 
-      return {
+      const stats = {
         count: d.totalRecords,
         baseSalarySum: d.totalBaseSalary,
         salaryTakenSum: d.totalSalaryTaken,
         isFallback: false,
       };
+
+      if (isBaseQuery) memoryCache.globalStats = stats;
+      return stats;
     } catch {
-      return null; // Strict aggregation ONLY. Removed fallback to getDocs.
+      return null;
     }
   },
 
@@ -322,6 +355,7 @@ const employeeService = {
       initialSalary: Number(employeeData.initialSalary || 0),
       salaryTaken: Number(employeeData.salaryTaken || 0),
       status: "Active",
+      version: 1,
       createdAt: getLocalISTDate(),
       createdBy: user?.email || "Unknown",
       createdRole: user?.role || "Admin",
@@ -347,40 +381,56 @@ const employeeService = {
     throw new Error("Employee not found");
   },
 
-  updateEmployee: async (id, updateData, user) => {
+  updateEmployee: async (id, updateData, user, currentLocalVersion) => {
     const docRef = doc(db, "employees", id);
-    const snapshot = await getDoc(docRef);
-    let currentHistory =
-      snapshot.exists() && snapshot.data().editHistory
-        ? snapshot.data().editHistory
-        : [];
-
     const currentEdit = {
       by: user?.email || "Unknown",
       role: user?.role || "Admin",
       at: getLocalISTDate(),
     };
 
-    // Strict requirement: Max 2 history items
-    currentHistory = [...currentHistory, currentEdit].slice(-2);
+    let nextPayload = null;
 
-    const payload = {
-      ...updateData,
-      nameLower: (updateData.name || "").toLowerCase(),
-      initialSalary: Number(updateData.initialSalary || 0),
-      salaryTaken: Number(updateData.salaryTaken || 0),
-      lastEditedBy: currentEdit.by,
-      lastEditedRole: currentEdit.role,
-      lastEditedAt: currentEdit.at,
-      editHistory: currentHistory,
-    };
+    // Optimistic Concurrency Control
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(docRef);
+      if (!snapshot.exists()) throw new Error("Document not found");
 
-    await updateDoc(docRef, payload);
-    silentCacheUpdate("EMPLOYEE", "EDIT", { _id: id, ...payload });
+      const serverData = snapshot.data();
+      if (serverData.version > currentLocalVersion) {
+        throw new Error(
+          "Conflict: Data modified by another user. Please refresh to sync.",
+        );
+      }
+
+      const history = [...(serverData.editHistory || []), currentEdit].slice(
+        -2,
+      );
+
+      nextPayload = {
+        ...updateData,
+        nameLower: (updateData.name || "").toLowerCase(),
+        initialSalary: Number(updateData.initialSalary || 0),
+        salaryTaken: Number(updateData.salaryTaken || 0),
+        version: increment(1),
+        lastEditedBy: currentEdit.by,
+        lastEditedRole: currentEdit.role,
+        lastEditedAt: currentEdit.at,
+        editHistory: history,
+      };
+
+      transaction.update(docRef, nextPayload);
+    });
+
+    silentCacheUpdate("EMPLOYEE", "EDIT", {
+      _id: id,
+      ...nextPayload,
+      version: currentLocalVersion + 1,
+    });
     return { message: "Updated successfully" };
   },
 
-  deleteEmployee: async (id, user) => {
+  deleteEmployee: async (id, user, employeeObj = {}) => {
     const userRole = user?.data?.role || user?.role;
     if (userRole === "manager") throw new Error("Action Denied.");
 
@@ -389,7 +439,7 @@ const employeeService = {
     batch.set(statsDocRef, { totalCount: increment(-1) }, { merge: true });
     await batch.commit();
 
-    silentCacheUpdate("EMPLOYEE", "DELETE", { _id: id });
+    silentCacheUpdate("EMPLOYEE", "DELETE", { _id: id, ...employeeObj });
     return { message: "Removed successfully" };
   },
 
@@ -416,7 +466,7 @@ const employeeService = {
 
     let totalDeleted = 0;
     while (totalDeleted < reserved) {
-      const chunkSize = Math.min(500, reserved - totalDeleted); // Max batch size 500
+      const chunkSize = Math.min(500, reserved - totalDeleted);
       const q = query(empCollection, limit(chunkSize));
       const snapshot = await getDocsFromServer(q);
 
@@ -548,7 +598,21 @@ const employeeService = {
     if (lastVisibleDoc) constraints.push(startAfter(lastVisibleDoc));
 
     const q = query(salaryCollection, ...constraints);
-    const snap = await getDocs(q);
+
+    let snap;
+    if (
+      !memoryCache.isDirty &&
+      Date.now() - memoryCache.lastFetchTime <= CACHE_TTL
+    ) {
+      try {
+        snap = await getDocsFromCache(q);
+        if (snap.empty && !isLoadMore) throw new Error("Cache empty");
+      } catch {
+        snap = await getDocsFromServer(q);
+      }
+    } else {
+      snap = await getDocsFromServer(q);
+    }
 
     const data = snap.docs.map((d) => {
       const payment = d.data();
