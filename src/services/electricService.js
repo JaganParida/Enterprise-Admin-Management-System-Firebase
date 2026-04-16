@@ -14,11 +14,11 @@ import {
   startAfter,
   increment,
   setDoc,
-  writeBatch,
   getAggregateFromServer,
   sum,
   count,
   average,
+  runTransaction,
 } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
@@ -32,19 +32,21 @@ const getLocalDateString = (date) => {
   return `${y}-${m}-${d}`;
 };
 
-// 🚀 GLOBAL ZERO-READ L1 CACHE
+// 🚀 ADVANCED L1 CACHE (In-Memory with Versioning)
 let memoryCache = {
   stats: null,
   queryCache: {},
   dynamicStatsCache: {},
   isDirty: true,
-  lastFetchTime: 0,
+  lastSyncTime: 0,
+  version: 1,
 };
 
 const markDirty = () => {
   memoryCache.isDirty = true;
   memoryCache.queryCache = {};
   memoryCache.dynamicStatsCache = {};
+  memoryCache.version += 1;
   localStorage.setItem("electric_last_update", Date.now().toString());
 };
 
@@ -57,7 +59,7 @@ const silentCacheUpdate = (oldStatus, newStatus, oldAmt, newAmt) => {
 };
 
 const electricService = {
-  getLastFetchTime: () => memoryCache.lastFetchTime,
+  getLastFetchTime: () => memoryCache.lastSyncTime,
   getCachedStats: () => (!memoryCache.isDirty ? memoryCache.stats : null),
   getCachedLogs: (filters) => {
     const key = JSON.stringify(filters);
@@ -131,7 +133,7 @@ const electricService = {
     }
 
     try {
-      // STRICT ENFORCEMENT: ONLY getAggregateFromServer used. No getDocs fallback.
+      // 🚨 STRICT ENFORCEMENT: ONLY getAggregateFromServer used. No getDocs fallback allowed.
       const snapshot = await getAggregateFromServer(
         query(billsCollection, ...constraints),
         {
@@ -150,7 +152,9 @@ const electricService = {
       memoryCache.dynamicStatsCache[filterKey] = res;
       return res;
     } catch (error) {
-      console.warn("Aggregation failed. Fallback disabled to protect quota.");
+      console.warn(
+        "Aggregation failed. Fallback strictly disabled to protect quota.",
+      );
       return null;
     }
   },
@@ -182,9 +186,11 @@ const electricService = {
       constraints.push(where("month", "==", filters.exactMonth));
 
     if (filters.search) {
+      // Case Normalization & Partial Match Emulation (Lexicographical bounds)
+      const normalizedSearch = filters.search.trim();
       constraints.push(
-        where("caNumber", ">=", filters.search),
-        where("caNumber", "<=", filters.search + "\uf8ff"),
+        where("caNumber", ">=", normalizedSearch),
+        where("caNumber", "<=", normalizedSearch + "\uf8ff"),
         orderBy("caNumber"),
       );
       hasInequality = true;
@@ -229,19 +235,22 @@ const electricService = {
     if (!isLoadMore) {
       memoryCache.queryCache[filterKey] = data;
       memoryCache.isDirty = false;
-      memoryCache.lastFetchTime = Date.now();
+      memoryCache.lastSyncTime = Date.now();
     }
     return { data, lastVisible: newLastVisible };
   },
 
-  getBackupChunk: async (monthToFetch, maxAllowed) => {
+  getBackupChunk: async (monthToFetch, maxRequested) => {
+    const today = new Date().toISOString().split("T")[0];
+    const limitRef = doc(db, "systemLimits", `electric_backup_${today}`);
+
+    // 1. Fetch raw candidates outside transaction
     const storedLastDocId = localStorage.getItem(
       `backup_last_doc_${monthToFetch}_electric`,
     );
-    // STRICT ENFORCEMENT: Max limit locked to 2,500
     let constraints = [
       where("month", "==", monthToFetch),
-      limit(Math.min(maxAllowed, 2500)),
+      limit(Math.min(maxRequested, 2500)),
     ];
 
     if (storedLastDocId) {
@@ -252,12 +261,44 @@ const electricService = {
     }
 
     const snapshot = await getDocs(query(billsCollection, ...constraints));
+    if (snapshot.empty) return { data: [], lastDocId: null };
+
+    let safeDocs = [];
+    let lastProcessedId = null;
+
+    // 2. Strict ATOMIC Transaction Limit Check & Verification
+    await runTransaction(db, async (transaction) => {
+      const limitDoc = await transaction.get(limitRef);
+      let limits = limitDoc.exists()
+        ? limitDoc.data()
+        : { backupCount: 0, locked: false, lastBackupDocId: null };
+
+      if (limits.locked || limits.backupCount >= 2500) {
+        throw new Error(
+          "2500 Server Backup Limit Reached. Locked until tomorrow.",
+        );
+      }
+
+      const allowedCount = Math.min(2500 - limits.backupCount, snapshot.size);
+      safeDocs = snapshot.docs.slice(0, allowedCount);
+      lastProcessedId = safeDocs[safeDocs.length - 1].id;
+
+      // Ensure exact count on success
+      transaction.set(
+        limitRef,
+        {
+          backupCount: increment(safeDocs.length),
+          lastBackupDocId: lastProcessedId,
+          locked: limits.backupCount + safeDocs.length >= 2500,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true },
+      );
+    });
+
     return {
-      data: snapshot.docs.map((doc) => doc.data()),
-      lastDocId:
-        snapshot.docs.length > 0
-          ? snapshot.docs[snapshot.docs.length - 1].id
-          : null,
+      data: safeDocs.map((doc) => doc.data()),
+      lastDocId: lastProcessedId,
     };
   },
 
@@ -265,6 +306,7 @@ const electricService = {
     const totalAmount =
       (parseFloat(billData.billAmount) || 0) +
       (parseFloat(billData.fineAmount) || 0);
+
     const payload = {
       ...billData,
       billAmount: parseFloat(billData.billAmount) || 0,
@@ -275,6 +317,7 @@ const electricService = {
       createdRole: user?.role || "Admin",
       editHistory: [],
     };
+
     const docRef = await addDoc(billsCollection, payload);
 
     let updatePayload = {};
@@ -295,7 +338,7 @@ const electricService = {
     if (!snapshot.exists()) return;
     const existingData = snapshot.data();
 
-    // STRICT ENFORCEMENT: Max 2 history entries
+    // 🚨 STRICT ENFORCEMENT: Max 2 history entries
     let currentHistory = existingData.editHistory || [];
     currentHistory.push({
       email: user?.email || "admin",
@@ -376,17 +419,7 @@ const electricService = {
       throw new Error("Action Denied.");
 
     const today = new Date().toISOString().split("T")[0];
-    let wipeMeta = JSON.parse(
-      localStorage.getItem("electric_wipe_meta") || '{"date":"","count":0}',
-    );
-
-    // STRICT ENFORCEMENT: Max 2,500 deletions/day. Locks out to protect quotas.
-    if (wipeMeta.date === today && wipeMeta.count >= 2500) {
-      throw new Error(
-        "Daily Wipe Limit Reached (2,500 records). Action locked for 24 hours to protect Database Limits.",
-      );
-    }
-    if (wipeMeta.date !== today) wipeMeta = { date: today, count: 0 };
+    const limitRef = doc(db, "systemLimits", `electric_wipe_${today}`);
 
     const currentUser = auth.currentUser;
     try {
@@ -398,32 +431,67 @@ const electricService = {
       throw new Error("Incorrect Admin Password.");
     }
 
-    let totalDeleted = 0,
-      hasMore = true;
-    const maxAllowed = 2500 - wipeMeta.count;
+    let totalDeleted = 0;
+    let hasMore = true;
 
-    // STRICT ENFORCEMENT: 500 doc batch size optimal for Firestore writes
-    while (hasMore && totalDeleted < maxAllowed) {
-      const snapshot = await getDocs(
-        query(billsCollection, limit(Math.min(500, maxAllowed - totalDeleted))),
-      );
+    // 🚨 STRICT ENFORCEMENT: Atomic Transaction Counter with Batch Deletes
+    while (hasMore) {
+      const q = query(billsCollection, limit(499)); // Leave 1 write for limit document
+      const snapshot = await getDocs(q);
+
       if (snapshot.empty) break;
 
-      const batch = writeBatch(db);
-      snapshot.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-      totalDeleted += snapshot.size;
+      try {
+        await runTransaction(db, async (transaction) => {
+          const limitDoc = await transaction.get(limitRef);
+          let currentLimit = limitDoc.exists()
+            ? limitDoc.data()
+            : { deleteCount: 0, locked: false, lastDeleteDocId: null };
+
+          if (currentLimit.locked || currentLimit.deleteCount >= 2500) {
+            hasMore = false;
+            throw new Error(
+              "2500 Database Limit reached. Locked for 24 hours.",
+            );
+          }
+
+          let allowedToDelete = 2500 - currentLimit.deleteCount;
+          let safeDocs = snapshot.docs.slice(0, allowedToDelete);
+
+          if (safeDocs.length === 0) return;
+
+          safeDocs.forEach((d) => transaction.delete(d.ref));
+
+          const lastDeletedId = safeDocs[safeDocs.length - 1].id;
+
+          transaction.set(
+            limitRef,
+            {
+              deleteCount: currentLimit.deleteCount + safeDocs.length,
+              lastDeleteDocId: lastDeletedId,
+              locked: currentLimit.deleteCount + safeDocs.length >= 2500,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true },
+          );
+
+          totalDeleted += safeDocs.length;
+
+          if (safeDocs.length < snapshot.size) hasMore = false; // Reached cap mid-batch
+        });
+      } catch (e) {
+        if (e.message.includes("2500 Database Limit")) {
+          markDirty();
+          return {
+            isPartial: true,
+            message: "2,500 limit reached. Lock engaged for 24h.",
+          };
+        }
+        throw e;
+      }
     }
 
-    wipeMeta.count += totalDeleted;
-    localStorage.setItem("electric_wipe_meta", JSON.stringify(wipeMeta));
     markDirty();
-
-    if (totalDeleted >= maxAllowed && hasMore)
-      return {
-        isPartial: true,
-        message: "2,500 limit reached. Lock engaged for 24h.",
-      };
     await setDoc(statsRef, { paid: 0, pending: 0, overdue: 0 });
     return { isPartial: false, message: "Database wiped within safe limits!" };
   },

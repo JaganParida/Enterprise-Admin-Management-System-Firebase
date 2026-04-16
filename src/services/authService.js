@@ -1,11 +1,11 @@
-import { auth, googleProvider, db } from "../config/firebase"; // 👈 Import db
+import { auth, googleProvider, db } from "../config/firebase";
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
   sendPasswordResetEmail,
   signOut,
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore"; // 👈 Import Firestore functions
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export const ALLOWED_USERS = {
   "maaflyashbricks2016@gmail.com": "admin",
@@ -58,14 +58,14 @@ export const loginAdmin = async (data) => {
   );
 
   const userRole = await verifyAndGetRole(userCredential.user);
-  const sessionId = await manageSessions(userCredential.user.uid); // 👈 Track Session
+  const sessionId = await manageSessions(userCredential.user.uid);
 
   return {
     data: {
       uid: userCredential.user.uid,
       email: userCredential.user.email,
       role: userRole,
-      sessionId: sessionId, // 👈 Return Session ID to Context
+      sessionId: sessionId,
     },
   };
 };
@@ -75,14 +75,14 @@ export const loginWithGoogle = async () => {
   const userCredential = await signInWithPopup(auth, googleProvider);
 
   const userRole = await verifyAndGetRole(userCredential.user);
-  const sessionId = await manageSessions(userCredential.user.uid); // 👈 Track Session
+  const sessionId = await manageSessions(userCredential.user.uid);
 
   return {
     data: {
       uid: userCredential.user.uid,
       email: userCredential.user.email,
       role: userRole,
-      sessionId: sessionId, // 👈 Return Session ID to Context
+      sessionId: sessionId,
     },
   };
 };
