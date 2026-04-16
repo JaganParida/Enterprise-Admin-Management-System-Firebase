@@ -6,8 +6,8 @@ import {
   updatePassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
-  GoogleAuthProvider, // 👈 Add this
-  reauthenticateWithPopup, // 👈 Add this
+  GoogleAuthProvider,
+  reauthenticateWithPopup,
 } from "firebase/auth";
 import {
   LayoutDashboard,
@@ -168,21 +168,16 @@ const GoogleTranslate = ({ isCollapsed }) => {
     addScript();
   }, []);
 
-  // 🔥 ROCK SOLID FIX: Correctly triggers Google Translate dropdown
   const changeLanguage = (langCode) => {
-    // 1. Set the cookie so Google persists it
     document.cookie = `googtrans=/en/${langCode}; path=/`;
     document.cookie = `googtrans=/en/${langCode}; path=/; domain=${window.location.hostname}`;
 
-    // 2. Locate the hidden Google Translate select element
     const select = document.querySelector(".goog-te-combo");
     if (select) {
-      // 3. Update value and trigger change natively
       select.value = langCode;
       const event = new Event("change", { bubbles: true, cancelable: true });
       select.dispatchEvent(event);
     } else {
-      // Fallback only if Google script completely fails to build the combo box
       window.location.reload();
     }
     setIsOpen(false);
@@ -208,7 +203,6 @@ const GoogleTranslate = ({ isCollapsed }) => {
       ref={dropdownRef}
       className={`px-3 py-4 border-t ${colors.border} mt-auto relative ${isCollapsed ? "flex justify-center" : ""}`}
     >
-      {/* 🔥 FIX: Changed display:none to opacity-0 so Google's script can still render the select box */}
       <div
         id="google_translate_element"
         className="absolute opacity-0 pointer-events-none w-0 h-0 overflow-hidden z-[-1]"
@@ -276,7 +270,8 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
 
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [isGoogleProvider, setIsGoogleProvider] = useState(false); // 👈 Track if user is Google
+  const [hasPassword, setHasPassword] = useState(false); // 👈 Updated State
+
   const [formData, setFormData] = useState({
     oldPassword: "",
     newPassword: "",
@@ -287,13 +282,13 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Check provider type when modal opens
+  // 🚀 Check if the user specifically has an Email/Password provider
   useEffect(() => {
     if (isOpen && auth.currentUser) {
-      const isGoogle = auth.currentUser.providerData.some(
-        (p) => p.providerId === "google.com",
+      const hasPass = auth.currentUser.providerData.some(
+        (p) => p.providerId === "password",
       );
-      setIsGoogleProvider(isGoogle);
+      setHasPassword(hasPass);
     }
   }, [isOpen]);
 
@@ -336,13 +331,8 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
     try {
       if (!user) throw new Error("No active user session.");
 
-      if (isGoogleProvider) {
-        // Handle Google Re-authentication
-        const provider = new GoogleAuthProvider();
-        await reauthenticateWithPopup(user, provider);
-        setStep(2);
-      } else {
-        // Handle Email/Password Re-authentication
+      if (hasPassword) {
+        // Force email/password verification if they have a password set
         if (!formData.oldPassword) {
           toast.error("Please enter current password.");
           setLoading(false);
@@ -353,8 +343,12 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
           formData.oldPassword,
         );
         await reauthenticateWithCredential(user, credential);
-        setStep(2);
+      } else {
+        // ONLY use Google popup if they have NO password set at all
+        const provider = new GoogleAuthProvider();
+        await reauthenticateWithPopup(user, provider);
       }
+      setStep(2);
     } catch (error) {
       console.error(error);
       toast.error(error.message || "Authentication failed. Try again.");
@@ -368,17 +362,32 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
     if (!isMatch) return toast.error("Confirmation password does not match.");
     if (strength < 3) return toast.error("Password is too weak.");
 
+    // 🚀 THE BULLETPROOF CHECK
+    if (hasPassword && formData.oldPassword === formData.newPassword) {
+      return toast.error(
+        "New password cannot be the same as your current password.",
+      );
+    }
+
     setLoading(true);
     const user = auth.currentUser;
     try {
       if (!user) throw new Error("No active user session.");
+
       await updatePassword(user, formData.newPassword);
+
       toast.success(
         "Password updated successfully! You can now login with Email & Password.",
       );
       handleModalClose();
     } catch (error) {
-      toast.error(error.message || "Failed to update password. Try again.");
+      if (error.code === "auth/requires-recent-login") {
+        toast.error(
+          "Session expired. Please log out and log back in to change your password.",
+        );
+      } else {
+        toast.error(error.message || "Failed to update password. Try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -415,7 +424,6 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
             transition={{ type: "spring", bounce: 0, duration: 0.4 }}
             className={`w-full max-w-md bg-[#09090B] border border-white/10 p-6 md:p-8 rounded-[24px] shadow-2xl relative z-10 flex flex-col`}
           >
-            {/* Header omitted for brevity, keep your existing header with Step X of 2 and Close button */}
             <div className="flex items-center justify-between mb-8 relative z-10">
               <div className="w-[80px]">
                 {step === 2 && (
@@ -459,7 +467,7 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
               </h3>
               <p className="text-sm text-zinc-400 px-4">
                 {step === 1
-                  ? isGoogleProvider
+                  ? !hasPassword
                     ? "Verify your Google account to set a password."
                     : "For your security, please confirm your current password."
                   : "Create a strong new password to secure your account."}
@@ -478,8 +486,8 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
                     onSubmit={handleVerifyCurrentPassword}
                     className="space-y-6"
                   >
-                    {/* Only show Old Password input if they are NOT a Google user */}
-                    {!isGoogleProvider && (
+                    {/* Only show Old Password input if they have a password set */}
+                    {hasPassword && (
                       <div className="relative group">
                         <Input
                           label="Current Password"
@@ -507,7 +515,7 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
                     <button
                       type="submit"
                       disabled={
-                        loading || (!isGoogleProvider && !formData.oldPassword)
+                        loading || (hasPassword && !formData.oldPassword)
                       }
                       className={`w-full bg-white text-black font-semibold py-3.5 rounded-xl shadow-lg transition-all hover:bg-zinc-200 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 group`}
                     >
@@ -515,7 +523,7 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
                         <RefreshCcw className="animate-spin" size={18} />
                       ) : (
                         <>
-                          {isGoogleProvider ? "Verify with Google" : "Continue"}
+                          {!hasPassword ? "Verify with Google" : "Continue"}
                           <ArrowRight
                             size={16}
                             className="group-hover:translate-x-1 transition-transform"
@@ -526,7 +534,6 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
                   </motion.form>
                 )}
 
-                {/* Step 2 remains exactly the same as your code */}
                 {step === 2 && (
                   <motion.form
                     key="step2"
@@ -537,7 +544,6 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
                     onSubmit={handleUpdatePassword}
                     className="space-y-5"
                   >
-                    {/* ... Keep your existing step 2 inputs ... */}
                     <div className="relative group">
                       <Input
                         label="New Password"
