@@ -19,11 +19,11 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// ⚡ L2 Cache: IndexedDB + Multi-Tab Coordination + 50MB Ceiling
+// ⚡ L2 Cache: IndexedDB + Multi-Tab Coordination + 50MB Ceiling (ZERO-READ support)
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager(),
-    cacheSizeBytes: 52428800, // 50 MB Max
+    cacheSizeBytes: 52428800,
   }),
 });
 
