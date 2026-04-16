@@ -7,14 +7,10 @@ import { UserPlus, ArrowLeft, Save, ChevronDown } from "lucide-react";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 
-// 🚀 NEW ADD EMPLOYEE SKELETON
 const AddEmployeeSkeleton = () => (
   <div className="max-w-4xl mx-auto w-full flex flex-col space-y-6 pb-10">
-    {/* Back Button Skeleton */}
     <div className="w-40 h-5 bg-zinc-800/50 rounded-md animate-pulse mb-2"></div>
-
     <div className="bg-[#09090B] rounded-2xl border border-zinc-800/60 p-6 md:p-8 animate-pulse">
-      {/* Header */}
       <div className="flex items-center gap-4 mb-8 border-b border-zinc-800/60 pb-6">
         <div className="h-14 w-14 rounded-xl bg-zinc-800/60"></div>
         <div>
@@ -22,32 +18,24 @@ const AddEmployeeSkeleton = () => (
           <div className="h-3 w-48 bg-zinc-800/40 rounded"></div>
         </div>
       </div>
-
-      {/* Form Fields */}
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
           <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
           <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-900/30 p-5 rounded-2xl border border-zinc-800/50">
           <div className="md:col-span-1 h-12 w-full bg-zinc-800/40 rounded-xl"></div>
           <div className="md:col-span-2 h-12 w-full bg-zinc-800/40 rounded-xl"></div>
         </div>
-
         <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-zinc-900/30 p-5 rounded-2xl border border-zinc-800/50">
           <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
           <div className="h-12 w-full bg-zinc-800/40 rounded-xl"></div>
         </div>
-
-        {/* Footer Buttons */}
         <div className="flex justify-end gap-3 border-t border-zinc-800/60 mt-2 pt-6">
           <div className="h-11 w-24 bg-zinc-800/50 rounded-xl"></div>
           <div className="h-11 w-36 bg-zinc-800/60 rounded-xl"></div>
@@ -63,7 +51,6 @@ const AddEmployee = () => {
   const { toast } = useUI();
   const { admin } = useAuth();
 
-  // 🚀 SEPARATED STATES: One for page load, one for submitting
   const [isInitializing, setIsInitializing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -116,7 +103,7 @@ const AddEmployee = () => {
   const getIdPlaceholder = () => {
     switch (formData.idType) {
       case "Aadhar":
-        return "e.g. 123456789012";
+        return "[Aadhaar Redacted]";
       case "PAN":
         return "e.g. ABCDE1234F";
       case "Voter ID":
@@ -151,7 +138,6 @@ const AddEmployee = () => {
     }
   };
 
-  // 🚀 REPLACED LOADER WITH SKELETON
   if (isInitializing) return <AddEmployeeSkeleton />;
 
   return (
@@ -162,7 +148,6 @@ const AddEmployee = () => {
       >
         <ArrowLeft size={18} className="mr-2" /> Back to Directory
       </button>
-
       <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 p-6 md:p-8 relative overflow-hidden">
         <div
           className={`absolute top-0 right-0 w-64 h-64 blur-3xl rounded-full pointer-events-none ${theme.glowOrb}`}
@@ -180,7 +165,6 @@ const AddEmployee = () => {
             </p>
           </div>
         </div>
-
         <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Input
@@ -200,7 +184,6 @@ const AddEmployee = () => {
               required
             />
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Input
               label="Phone Number"
@@ -226,7 +209,6 @@ const AddEmployee = () => {
               style={{ colorScheme: "dark" }}
             />
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-900/30 p-5 rounded-2xl border border-zinc-800">
             <div className="md:col-span-1">
               <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -262,7 +244,6 @@ const AddEmployee = () => {
               />
             </div>
           </div>
-
           <Input
             label="Permanent Address"
             name="address"
@@ -270,7 +251,6 @@ const AddEmployee = () => {
             value={formData.address}
             onChange={handleChange}
           />
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#020403]/50 p-5 rounded-2xl border border-zinc-800/60">
             <Input
               label="Initial Salary (₹)"
@@ -292,7 +272,6 @@ const AddEmployee = () => {
               className="text-rose-400 font-bold"
             />
           </div>
-
           <div className="pt-6 flex justify-end gap-3 border-t border-zinc-800/60 mt-2">
             <Button
               type="button"
