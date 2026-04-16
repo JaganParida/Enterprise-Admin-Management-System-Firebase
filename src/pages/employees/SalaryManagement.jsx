@@ -15,7 +15,6 @@ import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 import { motion } from "framer-motion";
 
-// HARD CAP FOR PERFORMANCE
 const MAX_RECORDS_LIMIT = 2000;
 
 const SalaryManagementSkeleton = () => (
@@ -48,7 +47,6 @@ const SalaryManagement = () => {
     toastRef.current = toast;
   }, [toast]);
 
-  // CONCEPT 1: Initialize from RAM cache — zero reads on re-navigation
   const cachedEmployees = employeeService.getCachedEmployees({ status: "All" });
   const cachedLogs = employeeService.getCachedSalaryLogs();
 
@@ -59,13 +57,12 @@ const SalaryManagement = () => {
   const [paying, setPaying] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // useRef prevents double-fetch in React StrictMode
   const hasFetched = useRef(false);
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadedCount, setLoadedCount] = useState(() => cachedLogs?.length || 0);
 
-  const searchParams = new URLSearchParams(location.search);
+  const searchParams = newSearchParams(location.search);
   const highlightId = searchParams.get("highlight");
 
   const currentPath =
@@ -112,7 +109,6 @@ const SalaryManagement = () => {
   useEffect(() => {
     if (hasFetched.current) return;
     hasFetched.current = true;
-
     if (cachedEmployees && cachedLogs) {
       setLoading(false);
       return;
@@ -173,7 +169,6 @@ const SalaryManagement = () => {
         currentUser,
       );
 
-      // Optimistic UI Update
       const newRecord = {
         _id: res.data._id,
         ...payloadToSave,
@@ -200,7 +195,7 @@ const SalaryManagement = () => {
       setPaymentData((prev) => ({ ...prev, amount: "", remarks: "" }));
     } catch {
       toastRef.current.error("Failed to record payment");
-      fetchData(); // Rollback and sync
+      fetchData();
     } finally {
       setPaying(false);
     }
@@ -215,7 +210,6 @@ const SalaryManagement = () => {
       animate="show"
       className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10"
     >
-      {/* ── Record Payment Form ── */}
       <motion.div variants={itemVariants} className="lg:col-span-1">
         <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 p-6 md:p-8 sticky top-24">
           <div className="flex items-center gap-3 mb-8">
@@ -231,7 +225,6 @@ const SalaryManagement = () => {
               </p>
             </div>
           </div>
-
           <form onSubmit={handlePayment} className="space-y-5">
             <div>
               <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2 ml-1">
@@ -259,7 +252,6 @@ const SalaryManagement = () => {
                 ))}
               </select>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Date"
@@ -295,7 +287,6 @@ const SalaryManagement = () => {
                 </select>
               </div>
             </div>
-
             <Input
               label="Amount (₹)"
               type="number"
@@ -314,21 +305,19 @@ const SalaryManagement = () => {
                 setPaymentData({ ...paymentData, remarks: e.target.value })
               }
             />
-
             <Button
               type="submit"
               variant="primary"
               className="w-full mt-4 rounded-xl"
               disabled={paying}
             >
-              <Plus size={18} className="mr-2" />
+              <Plus size={18} className="mr-2" />{" "}
               {paying ? "Recording..." : "Record Payment"}
             </Button>
           </form>
         </div>
       </motion.div>
 
-      {/* ── Payment History Table ── */}
       <motion.div variants={itemVariants} className="lg:col-span-2">
         <div className="bg-[#09090B] rounded-2xl shadow-xl border border-zinc-800/60 overflow-hidden h-full flex flex-col">
           <div className="p-6 border-b border-zinc-800/60 flex items-center justify-between">
@@ -341,7 +330,6 @@ const SalaryManagement = () => {
               Payment History
             </h2>
           </div>
-
           <div className="overflow-x-auto flex-1 custom-scrollbar">
             <table className="w-full text-left min-w-max">
               <thead className="bg-[#09090B] text-zinc-500 text-[10px] uppercase tracking-widest font-bold border-b border-zinc-800/60">
@@ -401,8 +389,6 @@ const SalaryManagement = () => {
               </tbody>
             </table>
           </div>
-
-          {/* ── Limit UI & Pagination ── */}
           <div className="p-6 border-t border-zinc-800/60 flex flex-col items-center gap-4 bg-zinc-900/10">
             {loadedCount >= MAX_RECORDS_LIMIT ? (
               <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-4 rounded-xl text-center max-w-md w-full">
