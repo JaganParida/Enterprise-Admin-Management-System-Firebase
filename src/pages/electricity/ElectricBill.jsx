@@ -565,12 +565,14 @@ const ElectricBill = () => {
       const monthlyKey = `backup_count_${monthToFetch}_electric`;
       const downloadedCount = Number(localStorage.getItem(monthlyKey) || 0);
 
+      // Fast-fail check locally before strict server block
       if (downloadedCount >= MAX_EXPORT_LIMIT)
         return toast.error(
           "2,500 daily export limit reached (Database Protection). Try again tomorrow.",
         );
 
       toast.info(`Fetching secure backup chunk...`);
+
       const res = await electricService.getBackupChunk(
         monthToFetch,
         MAX_EXPORT_LIMIT - downloadedCount,
@@ -608,17 +610,11 @@ const ElectricBill = () => {
         res.lastDocId,
       );
 
-      if (res.data.length === MAX_EXPORT_LIMIT - downloadedCount)
-        toast.warning(
-          "2,500 System Limit reached. Export next batch tomorrow.",
-        );
-      else {
-        toast.success(`Exported ${res.data.length} records securely!`);
-        localStorage.setItem(`backup_electric_${monthToFetch}`, "true");
-        if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
-      }
+      toast.success(`Exported ${res.data.length} records securely!`);
+      localStorage.setItem(`backup_electric_${monthToFetch}`, "true");
+      if (showBackupWarning === monthToFetch) setShowBackupWarning(null);
     } catch (e) {
-      toast.error("Export failed.");
+      toast.error(e.message || "Export failed.");
     }
   };
 
@@ -646,8 +642,29 @@ const ElectricBill = () => {
     }
   };
 
+  const validateForm = () => {
+    // strict Indian formatting for CA Number
+    if (!/^\d{12}$/.test(formData.caNumber)) {
+      toast.error(
+        "Invalid input: CA Number MUST be exactly 12 digits (Indian Standard).",
+      );
+      return false;
+    }
+    // Prevent bad negatives that corrupt totalAmount
+    if (
+      parseFloat(formData.billAmount) < 0 ||
+      parseFloat(formData.fineAmount) < 0
+    ) {
+      toast.error("Amounts cannot be negative.");
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validateForm()) return;
+
     setSaving(true);
     try {
       const currentUser = admin?.data || admin || {};
