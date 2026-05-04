@@ -3,13 +3,9 @@
 @tailwind utilities;
 
 @layer base {
-  /* ✅ FIXED: Added 'html' and hardcoded the colors.
-   This guarantees the browser paints the dark background instantly on refresh,
-   eliminating the FOUC (Flash of Unstyled Content).
-  */
   html, body {
-    background-color: #09090B;
-    color: #f4f4f5; /* zinc-100 */
+    background-color: #ffffff;
+    color: #1e293b; /* slate-800 */
     @apply antialiased selection:bg-indigo-500 selection:text-white;
   }
 }
@@ -19,10 +15,10 @@
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background-color: #09090B; /* Matches the main body background smoothly */
+  background-color: #f8fafc;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-zinc-800 rounded-full hover:bg-zinc-600 transition-colors;
+  @apply bg-slate-300 rounded-full hover:bg-slate-400 transition-colors;
 }
 
 /* Custom Scrollbar for Sidebar/Internal Divs */
@@ -30,7 +26,7 @@
   width: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  @apply bg-zinc-800 rounded-full hover:bg-zinc-600 transition-colors;
+  @apply bg-slate-300 rounded-full hover:bg-slate-400 transition-colors;
 }
 
 /* --- PRINT VIEW STYLING --- */
@@ -91,9 +87,9 @@ body {
   border-radius: 16px !important;
 }
 
-/* This makes the white Google menu look dark */
+/* This adjusts Google menu for light mode */
 iframe.goog-te-menu-frame {
-  filter: invert(0.9) hue-rotate(200deg) !important;
+  filter: none !important;
 }
 
 .goog-te-gadget-simple {
