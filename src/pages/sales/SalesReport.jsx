@@ -442,7 +442,7 @@ const SalesReport = () => {
     }
   };
 
-  // 🚀 FIX 3: Anti-Spam Search Applicator
+
   const handleApplyFilters = (e) => {
     if (e) e.preventDefault();
     if (searchCooldown > 0) return; // Block spam
