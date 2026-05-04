@@ -1,15 +1,3 @@
-/**
- * InvoiceList.jsx — Production-ready Sales Ledger
- * ─────────────────────────────────────────────────────────────────────────────
- * UX Contract:
- * • Navigation INTO this page → zero reads (L1 or L2 hit)
- * • Manual Sync button        → triggers a fresh L3 fetch
- * • Search / Filter buttons   → manual-trigger only, no debounce
- * • Status change             → optimistic UI, 1 read + 2 writes
- * • Delete                    → optimistic UI, 1 read + 2 writes
- * • Load More                 → cursor-based, max 2000 records
- */
-
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
